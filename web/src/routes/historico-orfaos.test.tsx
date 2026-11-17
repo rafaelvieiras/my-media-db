@@ -51,16 +51,16 @@ afterEach(() => {
 })
 
 describe('HistoricoOrfaosScreen', () => {
-  it('lista vazia mostra a mensagem de estado vazio', async () => {
+  it('an empty list shows the empty state message', async () => {
     vi.stubGlobal('fetch', fetchRouter())
     renderWithClient(<HistoricoOrfaosScreen />)
 
     expect(
-      await screen.findByText('Nenhum evento sem item relacionado'),
+      await screen.findByText('No event without a related item'),
     ).toBeInTheDocument()
   })
 
-  it('lista com itens mostra título e IDs formatados', async () => {
+  it('a list with items shows the title and the formatted IDs', async () => {
     vi.stubGlobal(
       'fetch',
       fetchRouter({
@@ -79,7 +79,7 @@ describe('HistoricoOrfaosScreen', () => {
     expect(screen.getByText(/Jellyfin/)).toBeInTheDocument()
   })
 
-  it('item sem raw_title cai no fallback com os IDs brutos', async () => {
+  it('an item without raw_title falls back to the raw IDs', async () => {
     vi.stubGlobal(
       'fetch',
       fetchRouter({
@@ -100,11 +100,11 @@ describe('HistoricoOrfaosScreen', () => {
     renderWithClient(<HistoricoOrfaosScreen />)
 
     expect(
-      await screen.findByText('Item sem título (tmdb=123 / imdb=tt999)'),
+      await screen.findByText('Item without a title (tmdb=123 / imdb=tt999)'),
     ).toBeInTheDocument()
   })
 
-  it('erro real do GET mostra ErrorState', async () => {
+  it('a real GET error shows the ErrorState', async () => {
     vi.stubGlobal(
       'fetch',
       fetchRouter({
@@ -115,12 +115,12 @@ describe('HistoricoOrfaosScreen', () => {
 
     expect(
       await screen.findByText(
-        'Não foi possível carregar os eventos sem item relacionado',
+        'Could not load the events without a related item',
       ),
     ).toBeInTheDocument()
   })
 
-  it('paginação: "Próxima" dispara nova chamada com offset maior', async () => {
+  it('pagination: "Next" triggers a new call with a bigger offset', async () => {
     const user = userEvent.setup()
     const fetchMock = fetchRouter({
       pagina: (params) => ({
@@ -134,7 +134,7 @@ describe('HistoricoOrfaosScreen', () => {
     renderWithClient(<HistoricoOrfaosScreen />)
 
     await screen.findByText('Duna')
-    const botaoProxima = screen.getByRole('button', { name: 'Próxima' })
+    const botaoProxima = screen.getByRole('button', { name: 'Next' })
     expect(botaoProxima).not.toBeDisabled()
 
     await user.click(botaoProxima)
@@ -147,12 +147,12 @@ describe('HistoricoOrfaosScreen', () => {
   })
 })
 
-it('renderiza o heading "Eventos sem item relacionado"', async () => {
+it('renders the "Events without a related item" heading', async () => {
   vi.stubGlobal('fetch', fetchRouter())
   renderWithClient(<HistoricoOrfaosScreen />)
   expect(
     await screen.findByRole('heading', {
-      name: 'Eventos sem item relacionado',
+      name: 'Events without a related item',
     }),
   ).toBeInTheDocument()
 })

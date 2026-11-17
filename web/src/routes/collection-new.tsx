@@ -4,6 +4,7 @@ import { SchemaForm } from '@/components/schema-form'
 import { NewEntityPage } from '@/components/new-entity-page'
 import { createCollection, type FieldDescriptor } from '@/lib/api'
 import { useCriarEntidade } from '@/lib/use-criar-entidade'
+import { useT } from '@/lib/i18n'
 import {
   schemaZod,
   valoresDeCriacao,
@@ -18,19 +19,21 @@ import {
 const CAMPOS_COLECAO = ['title', 'description']
 
 export function CollectionNewScreen() {
+  const t = useT()
   return (
-    <NewEntityPage title="Nova coleção">
+    <NewEntityPage title={t('collections.create.title')}>
       {(fields) => <CollectionNewForm fields={fields} />}
     </NewEntityPage>
   )
 }
 
 function CollectionNewForm({ fields }: { fields: FieldDescriptor[] }) {
+  const t = useT()
   const navigate = useNavigate()
   const camposColecao = fields.filter((f) => CAMPOS_COLECAO.includes(f.name))
   const { mutation, mensagemErro } = useCriarEntidade(
     createCollection,
-    'Não foi possível criar a coleção.',
+    t('collections.create.failed'),
   )
 
   function onSubmit(valores: ValoresForm) {
@@ -49,8 +52,8 @@ function CollectionNewForm({ fields }: { fields: FieldDescriptor[] }) {
       schema={schemaZod(camposColecao, 'criacao')}
       onSubmit={onSubmit}
       onCancel={() => navigate({ to: '/' })}
-      submitLabel="Criar coleção"
-      submitPendingLabel="Criando…"
+      submitLabel={t('collections.create.submit')}
+      submitPendingLabel={t('collections.create.submitting')}
       submitIcon={<FolderPlus aria-hidden />}
       isPending={mutation.isPending}
       mensagemErro={mensagemErro}

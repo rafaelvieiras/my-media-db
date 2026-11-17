@@ -9,7 +9,7 @@ import { baseEntity, okJson, settingsPadrao } from '@/test/entity-fixtures'
 // EntityEditShell: the "chrome" shared by the 3 edit subroutes —
 // header (poster+title+language), navigation sidebar with the active section
 // highlighted, and the "leave without saving" guard reapplied to the 3 links
-// of the sidebar + "Voltar ao item", now over the "dirty" state received via prop (only from the
+// of the sidebar + "Back to the item", now over the "dirty" state received via prop (only from the
 // current section — each subroute mounts a single block).
 const spies = vi.hoisted(() => ({ navigate: vi.fn() }))
 
@@ -58,53 +58,54 @@ function renderShell({
         secaoAtiva={secaoAtiva}
         sujo={sujo}
       >
-        <div>conteúdo da seção</div>
+        <div>section content</div>
       </EntityEditShell>
     </LanguageProvider>,
   )
 }
 
 describe('EntityEditShell', () => {
-  it('mostra o título do item e as 3 seções na sidebar', () => {
+  it('shows the item title and the 3 sections in the sidebar', () => {
     renderShell()
     expect(screen.getByText('Dune')).toBeInTheDocument()
     expect(
-      screen.getByRole('link', { name: 'Informações básicas' }),
+      screen.getByRole('link', { name: 'Basic information' }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('link', { name: 'IDs de terceiros' }),
+      screen.getByRole('link', { name: 'External IDs' }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('link', { name: 'Elenco e equipe' }),
+      screen.getByRole('link', { name: 'Cast and crew' }),
     ).toBeInTheDocument()
   })
 
-  it('destaca a seção ativa com aria-current', () => {
+  it('highlights the active section with aria-current', () => {
     renderShell({ secaoAtiva: 'ids' })
+    expect(screen.getByRole('link', { name: 'External IDs' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
     expect(
-      screen.getByRole('link', { name: 'IDs de terceiros' }),
-    ).toHaveAttribute('aria-current', 'page')
-    expect(
-      screen.getByRole('link', { name: 'Informações básicas' }),
+      screen.getByRole('link', { name: 'Basic information' }),
     ).not.toHaveAttribute('aria-current')
   })
 
-  it('sem sujeira, navegar para outra seção não confirma', async () => {
+  it('without changes, navigating to another section does not confirm', async () => {
     const confirmar = vi.fn()
     vi.stubGlobal('confirm', confirmar)
     const user = userEvent.setup()
     renderShell({ sujo: false })
-    await user.click(screen.getByRole('link', { name: 'Elenco e equipe' }))
+    await user.click(screen.getByRole('link', { name: 'Cast and crew' }))
     expect(confirmar).not.toHaveBeenCalled()
     expect(spies.navigate).not.toHaveBeenCalled()
   })
 
-  it('com sujeira, navegar para outra seção confirma antes de navegar', async () => {
+  it('with changes, navigating to another section confirms before navigating', async () => {
     const confirmar = vi.fn(() => true)
     vi.stubGlobal('confirm', confirmar)
     const user = userEvent.setup()
     renderShell({ sujo: true, secaoAtiva: 'basico' })
-    await user.click(screen.getByRole('link', { name: 'Elenco e equipe' }))
+    await user.click(screen.getByRole('link', { name: 'Cast and crew' }))
     expect(confirmar).toHaveBeenCalledTimes(1)
     expect(spies.navigate).toHaveBeenCalledWith({
       to: '/entities/$id/edit/creditos',
@@ -112,32 +113,32 @@ describe('EntityEditShell', () => {
     })
   })
 
-  it('com sujeira, cancelar a confirmação não navega', async () => {
+  it('with changes, cancelling the confirmation does not navigate', async () => {
     vi.stubGlobal(
       'confirm',
       vi.fn(() => false),
     )
     const user = userEvent.setup()
     renderShell({ sujo: true })
-    await user.click(screen.getByRole('link', { name: 'IDs de terceiros' }))
+    await user.click(screen.getByRole('link', { name: 'External IDs' }))
     expect(spies.navigate).not.toHaveBeenCalled()
   })
 
-  it('com sujeira, "Voltar ao item" confirma antes de navegar', async () => {
+  it('with changes, "Back to the item" confirms before navigating', async () => {
     vi.stubGlobal(
       'confirm',
       vi.fn(() => true),
     )
     const user = userEvent.setup()
     renderShell({ sujo: true })
-    await user.click(screen.getByRole('link', { name: /Voltar ao item/ }))
+    await user.click(screen.getByRole('link', { name: /Back to the item/ }))
     expect(spies.navigate).toHaveBeenCalledWith({
       to: '/entities/$id',
       params: { id: 'e1' },
     })
   })
 
-  it('sem sujeira, o beforeunload não é interceptado', () => {
+  it('without changes, beforeunload is not intercepted', () => {
     renderShell({ sujo: false })
     const evento = new Event('beforeunload', { cancelable: true })
     const preventDefault = vi.spyOn(evento, 'preventDefault')
@@ -145,7 +146,7 @@ describe('EntityEditShell', () => {
     expect(preventDefault).not.toHaveBeenCalled()
   })
 
-  it('com sujeira, dispara o aviso nativo (beforeunload)', () => {
+  it('with changes, it fires the native warning (beforeunload)', () => {
     renderShell({ sujo: true })
     const evento = new Event('beforeunload', { cancelable: true })
     const preventDefault = vi.spyOn(evento, 'preventDefault')

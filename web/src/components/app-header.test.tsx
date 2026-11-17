@@ -19,7 +19,7 @@ vi.mock('@/components/language-selector', () => ({
   LanguageSelector: () => <div data-testid="seletor-idioma-stub" />,
 }))
 
-const TODOS_OS_LINKS = ['Biblioteca', 'Buscar', 'Dashboard']
+const TODOS_OS_LINKS = ['Library', 'Search', 'Dashboard']
 
 function jsonResponse(body: unknown): Response {
   return { ok: true, status: 200, json: async () => body } as Response
@@ -39,10 +39,8 @@ async function abrirMenuMobile(tipos: EntityType[] = []) {
   stubEntityTypes(tipos)
   const user = userEvent.setup()
   renderWithClient(<AppHeader />)
-  await user.click(
-    screen.getByRole('button', { name: 'Abrir menu de navegação' }),
-  )
-  const painel = await screen.findByRole('dialog', { name: 'Navegação' })
+  await user.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+  const painel = await screen.findByRole('dialog', { name: 'Navigation' })
   return { user, painel }
 }
 
@@ -71,7 +69,7 @@ describe('AppHeader — colapso mobile (0075)', () => {
     }
 
     const botaoMenu = screen.getByRole('button', {
-      name: 'Abrir menu de navegação',
+      name: 'Open navigation menu',
     })
     expect(botaoMenu.className).toContain('md:hidden')
   })
@@ -82,14 +80,14 @@ describe('AppHeader — colapso mobile (0075)', () => {
     renderWithClient(<AppHeader />)
 
     // Closed, the Sheet does not even mount (Radix Portal) — only the desktop copy exists.
-    expect(screen.getAllByRole('link', { name: 'Biblioteca' })).toHaveLength(1)
-    expect(screen.queryByRole('heading', { name: 'Navegação' })).toBeNull()
+    expect(screen.getAllByRole('link', { name: 'Library' })).toHaveLength(1)
+    expect(screen.queryByRole('heading', { name: 'Navigation' })).toBeNull()
 
     await user.click(
-      screen.getByRole('button', { name: 'Abrir menu de navegação' }),
+      screen.getByRole('button', { name: 'Open navigation menu' }),
     )
 
-    const painel = await screen.findByRole('dialog', { name: 'Navegação' })
+    const painel = await screen.findByRole('dialog', { name: 'Navigation' })
 
     // No route of the original set leaves the user's reach in the menu —
     // queried INSIDE the panel (the desktop copy, now `aria-hidden` by
@@ -107,7 +105,7 @@ describe('AppHeader — colapso mobile (0075)', () => {
     await user.click(within(painel).getByRole('link', { name: 'Dashboard' }))
 
     await waitFor(() => {
-      expect(screen.queryByRole('dialog', { name: 'Navegação' })).toBeNull()
+      expect(screen.queryByRole('dialog', { name: 'Navigation' })).toBeNull()
     })
   })
 })
@@ -134,7 +132,7 @@ describe('AppHeader — dropdown "Biblioteca" (0110/0114)', () => {
     renderWithClient(<AppHeader />)
 
     const nav = screen.getByRole('navigation')
-    const link = within(nav).getByRole('link', { name: 'Biblioteca' })
+    const link = within(nav).getByRole('link', { name: 'Library' })
     expect(link).toHaveAttribute('href', '/')
   })
 
@@ -144,15 +142,15 @@ describe('AppHeader — dropdown "Biblioteca" (0110/0114)', () => {
     renderWithClient(<AppHeader />)
 
     await user.click(
-      screen.getByRole('button', { name: 'Filtrar biblioteca por tipo' }),
+      screen.getByRole('button', { name: 'Filter the library by type' }),
     )
 
     expect(
-      await screen.findByRole('menuitem', { name: 'Filmes' }),
+      await screen.findByRole('menuitem', { name: 'Movies' }),
     ).toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: 'Séries' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Series' })).toBeInTheDocument()
     expect(
-      screen.getByRole('menuitem', { name: 'Artistas' }),
+      screen.getByRole('menuitem', { name: 'Artists' }),
     ).toBeInTheDocument()
   })
 
@@ -162,9 +160,9 @@ describe('AppHeader — dropdown "Biblioteca" (0110/0114)', () => {
     renderWithClient(<AppHeader />)
 
     await user.click(
-      screen.getByRole('button', { name: 'Filtrar biblioteca por tipo' }),
+      screen.getByRole('button', { name: 'Filter the library by type' }),
     )
-    const item = await screen.findByRole('menuitem', { name: 'Artistas' })
+    const item = await screen.findByRole('menuitem', { name: 'Artists' })
     expect(item).toHaveAttribute('href', '/library/artists')
   })
 
@@ -174,10 +172,10 @@ describe('AppHeader — dropdown "Biblioteca" (0110/0114)', () => {
     renderWithClient(<AppHeader />)
 
     await user.click(
-      screen.getByRole('button', { name: 'Filtrar biblioteca por tipo' }),
+      screen.getByRole('button', { name: 'Filter the library by type' }),
     )
-    await screen.findByRole('menuitem', { name: 'Filmes' })
-    expect(screen.queryByRole('menuitem', { name: 'Álbuns' })).toBeNull()
+    await screen.findByRole('menuitem', { name: 'Movies' })
+    expect(screen.queryByRole('menuitem', { name: 'Albums' })).toBeNull()
   })
 
   it('mobile: o dropdown funciona por toque dentro do Sheet', async () => {
@@ -185,11 +183,11 @@ describe('AppHeader — dropdown "Biblioteca" (0110/0114)', () => {
 
     await user.click(
       within(painel).getByRole('button', {
-        name: 'Filtrar biblioteca por tipo',
+        name: 'Filter the library by type',
       }),
     )
 
-    const item = await screen.findByRole('menuitem', { name: 'Séries' })
+    const item = await screen.findByRole('menuitem', { name: 'Series' })
     expect(item).toHaveAttribute('href', '/library/series')
   })
 })

@@ -51,13 +51,15 @@ import {
   type RotuloSituacao,
 } from '@/lib/rich-detail'
 import { cn } from '@/lib/utils'
+import { useLocale, useT } from '@/lib/i18n'
+import type { Translate } from '@/lib/i18n/types'
 
 // RichDetailView is the SHARED RICH screen between the detail of the EXTERNAL item (before
 // importing) and the detail of the imported ENTITY (catalog). The two screens
 // have the SAME visual and information pattern — full-bleed IMMERSIVE hero (backdrop +
 // overlay + poster + synopsis + actions + ratings row),
 // a row of external links right below, genres, keywords, videos, collection,
-// similars — and differ only in the SLOTS: the external one brings the Importar button; the entity brings
+// similars — and differ only in the SLOTS: the external one brings the Import button; the entity brings
 // the "Gerenciar" dropdown, the override badges, the editor, the gallery/files and (via
 // `entityId`) the preferred logo/banner/disc and the player of the local theme song. The
 // backend serves the SAME rich shape in both DTOs (internal/richfields), so a
@@ -235,7 +237,7 @@ export function ImportarButton({
   type,
   parentId,
   size = 'default',
-  label = 'Importar',
+  label,
 }: {
   source: string
   sourceId: string
@@ -245,8 +247,11 @@ export function ImportarButton({
   // other types ignore it.
   parentId?: string
   size?: 'sm' | 'default' | 'lg'
+  // Overrides the default "Import" label (e.g. "Import collection") — the copy stays
+  // with the screen that owns the noun.
   label?: string
 }) {
+  const t = useT()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const importMutation = useMutation({
@@ -279,7 +284,9 @@ export function ImportarButton({
         ) : (
           <Download aria-hidden />
         )}
-        {importMutation.isPending ? 'Importando…' : label}
+        {importMutation.isPending
+          ? t('entity.action.importing')
+          : (label ?? t('entity.action.import'))}
       </Button>
       {mensagemErro ? (
         <span role="alert" className="text-sm font-medium text-destructive">
@@ -301,7 +308,7 @@ function ehYouTube(video: ExternalVideo): boolean {
 
 // YouTubeEmbedFrame is the <iframe> of the `youtube-nocookie` domain (without tracking
 // cookies) shared by the CLICK-TO-PLAY player of the `VideosRail` (VideoCard) and
-// by the "Assistir trailer" button of the hero (`TrailerModal` below) — a single
+// by the "Watch trailer" button of the hero (`TrailerModal` below) — a single
 // place that builds the embed URL, never duplicated between the two uses.
 function YouTubeEmbedFrame({
   videoKey,
@@ -326,6 +333,7 @@ function YouTubeEmbedFrame({
 // videos (rare in TMDB) keep the external link. We do not preload the iframe:
 // it avoids N players and the YouTube traffic/tracking before the owner wants to watch.
 function VideoCard({ video }: { video: ExternalVideo }) {
+  const t = useT()
   const [tocando, setTocando] = useState(false)
 
   if (!ehYouTube(video)) {
@@ -356,7 +364,7 @@ function VideoCard({ video }: { video: ExternalVideo }) {
           <button
             type="button"
             onClick={() => setTocando(true)}
-            aria-label={`Reproduzir ${video.name}`}
+            aria-label={t('entity.action.playVideo', { name: video.name })}
             className="group absolute inset-0 h-full w-full cursor-pointer"
           >
             <img
@@ -385,6 +393,7 @@ function VideoCard({ video }: { video: ExternalVideo }) {
 }
 
 function VideosRail({ videos }: { videos: ExternalVideo[] }) {
+  const t = useT()
   // Renderable = embeddable (YouTube+key) OR with an external link. The others disappear.
   const renderaveis = videos.filter((v) => ehYouTube(v) || v.url)
   if (renderaveis.length === 0) {
@@ -392,7 +401,9 @@ function VideosRail({ videos }: { videos: ExternalVideo[] }) {
   }
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="font-heading text-lg font-medium">Vídeos</h2>
+      <h2 className="font-heading text-lg font-medium">
+        {t('entity.section.videos')}
+      </h2>
       <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {renderaveis.map((video) => (
           <li key={`${video.site}:${video.key}`}>
@@ -411,7 +422,7 @@ function primeiroTrailer(videos: ExternalVideo[]): ExternalVideo | null {
   return videos.find((v) => v.type === 'Trailer' && ehYouTube(v)) ?? null
 }
 
-// TrailerModal is the full-screen overlay that opens on clicking "Assistir trailer"
+// TrailerModal is the full-screen overlay that opens on clicking "Watch trailer"
 // in the action bar of the hero: it reuses the SAME `YouTubeEmbedFrame` of the
 // `VideosRail`/`VideoCard` (without duplicating the embed logic), already in playing mode (the
 // click on the button already expresses the intention — without the extra step of clicking the
@@ -423,10 +434,11 @@ function TrailerModal({
   video: ExternalVideo
   onClose: () => void
 }) {
+  const t = useT()
   return (
     <div
       role="dialog"
-      aria-label={`Trailer de ${video.name}`}
+      aria-label={t('entity.hero.trailerOf', { name: video.name })}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
       onClick={onClose}
     >
@@ -439,7 +451,7 @@ function TrailerModal({
       <button
         type="button"
         onClick={onClose}
-        aria-label="Fechar trailer"
+        aria-label={t('entity.action.closeTrailer')}
         className="absolute right-4 top-4 flex size-10 items-center justify-center rounded-full bg-background/90 text-foreground shadow-lg"
       >
         <X className="size-5" aria-hidden />
@@ -448,10 +460,11 @@ function TrailerModal({
   )
 }
 
-// TrailerButton is the "Assistir trailer" button of the action bar (§4.3): it disappears
+// TrailerButton is the "Watch trailer" button of the action bar (§4.3): it disappears
 // when there is no playable trailer (`primeiroTrailer` null) — without falling back to
 // Teaser/Clip.
 function TrailerButton({ videos }: { videos: ExternalVideo[] }) {
+  const t = useT()
   const [aberto, setAberto] = useState(false)
   const trailer = primeiroTrailer(videos)
   if (!trailer) {
@@ -461,7 +474,7 @@ function TrailerButton({ videos }: { videos: ExternalVideo[] }) {
     <>
       <Button variant="outline" size="sm" onClick={() => setAberto(true)}>
         <Play aria-hidden />
-        Assistir trailer
+        {t('entity.action.watchTrailer')}
       </Button>
       {aberto ? (
         <TrailerModal video={trailer} onClose={() => setAberto(false)} />
@@ -470,8 +483,8 @@ function TrailerButton({ videos }: { videos: ExternalVideo[] }) {
   )
 }
 
-// TrailerDownloadButton is the "Baixar trailer" button (ADR-0025):
-// it materializes on disk the SAME trailer that "Assistir trailer" already plays embedded
+// TrailerDownloadButton is the "Download trailer" button (ADR-0025):
+// it materializes on disk the SAME trailer that "Watch trailer" already plays embedded
 // — purely additive, the embedded player stays the same with or without a local
 // download. It only appears with ALL the conditions: (a) `entityId` present (the
 // materialization needs a REAL folder in the library, which only exists for
@@ -486,6 +499,7 @@ function TrailerDownloadButton({
   entityId: string
   videos: ExternalVideo[]
 }) {
+  const t = useT()
   const trailer = primeiroTrailer(videos)
   const queryClient = useQueryClient()
   // `enabled: !!trailer` avoids the TWO network calls when the item does not even have a
@@ -524,7 +538,7 @@ function TrailerDownloadButton({
       <Button variant="outline" size="sm" asChild>
         <a href={trailerSrc(entityId)} target="_blank" rel="noreferrer">
           <Download aria-hidden />
-          Trailer baixado
+          {t('entity.action.trailerDownloaded')}
         </a>
       </Button>
     )
@@ -543,7 +557,9 @@ function TrailerDownloadButton({
         ) : (
           <Download aria-hidden />
         )}
-        {downloadMutation.isPending ? 'Baixando trailer…' : 'Baixar trailer'}
+        {downloadMutation.isPending
+          ? t('entity.action.downloadingTrailer')
+          : t('entity.action.downloadTrailer')}
       </Button>
       {mensagemErro ? (
         <span role="alert" className="text-sm font-medium text-destructive">
@@ -565,6 +581,7 @@ function ColecaoBand({
   source: string
   colecao: ExternalCollection
 }) {
+  const t = useT()
   const internalId = internalIdDe(colecao)
   const classeCard =
     'group flex items-center gap-3 rounded-xl bg-card p-3 ring-1 ring-foreground/10 transition hover:ring-foreground/30'
@@ -572,7 +589,7 @@ function ColecaoBand({
     <>
       <PosterImg
         src={colecao.poster_url}
-        alt={`Pôster da coleção ${colecao.name}`}
+        alt={t('entity.alt.collectionPoster', { name: colecao.name })}
         className="w-16 shrink-0"
       />
       <span className="font-medium group-hover:underline">{colecao.name}</span>
@@ -580,7 +597,9 @@ function ColecaoBand({
   )
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="font-heading text-lg font-medium">Coleção</h2>
+      <h2 className="font-heading text-lg font-medium">
+        {t('common.entityType.collection')}
+      </h2>
       {internalId != null ? (
         <Link
           to="/entities/$id"
@@ -604,7 +623,7 @@ function ColecaoBand({
 
 // SimilaresRail: each card navigates to the similar one. Internal-first (extended for the
 // music vertical): when the similar ALREADY is an entity (`internal_id`), the card links to `/entities/{id}` (the
-// INTERNAL destination, centralized) and gains the "Na biblioteca" badge; otherwise, to the external
+// INTERNAL destination, centralized) and gains the "In the library" badge; otherwise, to the external
 // detail of the target (`/external/$source/$type/$id`), navigable and not cataloged (the detail
 // persists on the first visit). It applies to both screens (external and entity).
 function SimilaresRail({
@@ -614,12 +633,15 @@ function SimilaresRail({
   source: string
   similares: ExternalSimilar[]
 }) {
+  const t = useT()
   if (similares.length === 0) {
     return null
   }
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="font-heading text-lg font-medium">Similares</h2>
+      <h2 className="font-heading text-lg font-medium">
+        {t('entity.section.similars')}
+      </h2>
       <ul className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
         {similares.map((item) => (
           <li key={`${item.type}:${item.source_id}`}>
@@ -633,7 +655,7 @@ function SimilaresRail({
 
 // SimilarCard renders ONE similar. The content (poster + title + year) is identical in the
 // two destinations — only the route changes (internal × external) and the internal item shows the
-// "Na biblioteca" badge. Extracted so as not to duplicate the markup between the two branches of the Link.
+// "In the library" badge. Extracted so as not to duplicate the markup between the two branches of the Link.
 function SimilarCard({
   source,
   item,
@@ -641,12 +663,13 @@ function SimilarCard({
   source: string
   item: ExternalSimilar
 }) {
+  const t = useT()
   const internalId = internalIdDe(item)
   const conteudo = (
     <>
       <PosterImg
         src={item.poster_url}
-        alt={`Pôster de ${item.title}`}
+        alt={t('entity.alt.poster', { title: item.title })}
         className="transition group-hover:ring-2 group-hover:ring-foreground/30"
       />
       <span className="line-clamp-2 text-xs font-medium group-hover:text-foreground">
@@ -654,7 +677,7 @@ function SimilarCard({
       </span>
       {internalId != null ? (
         <Badge variant="secondary" className="w-fit">
-          Na biblioteca
+          {t('entity.label.inLibrary')}
         </Badge>
       ) : item.year ? (
         <span className="text-xs text-muted-foreground">{item.year}</span>
@@ -751,6 +774,7 @@ function NotaMedalhao({
   value: number
   variant: 'local' | 'fonte'
 }) {
+  const t = useT()
   const ehLocal = variant === 'local'
   const raio = 16
   const circunferencia = 2 * Math.PI * raio
@@ -759,8 +783,14 @@ function NotaMedalhao({
   return (
     <div
       className="relative flex size-11 shrink-0 items-center justify-center"
-      aria-label={ehLocal ? `Sua nota: ${value.toFixed(1)}` : undefined}
-      title={ehLocal ? 'Sua nota' : 'Nota da fonte'}
+      aria-label={
+        ehLocal
+          ? t('entity.rating.yours', { value: value.toFixed(1) })
+          : undefined
+      }
+      title={
+        ehLocal ? t('entity.rating.yoursTitle') : t('entity.rating.source')
+      }
     >
       <svg viewBox="0 0 40 40" className="size-11 -rotate-90" aria-hidden>
         <circle
@@ -814,15 +844,25 @@ function NotaFonteBadge({ source, value }: { source: string; value: number }) {
   )
 }
 
+// rotuloArte translates the label of an artwork kind (the availability badges of the top
+// card). A kind outside the catalog echoes raw (never breaks the UI, same idiom as
+// `rotuloTipo` in entity-badges.ts).
+function rotuloArte(kind: string, t: Translate): string {
+  const chave = `entity.artwork.${kind}`
+  const rotulo = t(chave)
+  return rotulo === chave ? kind : rotulo
+}
+
 // SelosArtes is the availability ROW of the top card: it reads the
 // `available: {kind: count}` of the `/artwork` endpoint and shows one badge per kind
-// that EXISTS, with a pt-BR label + count (e.g.: "Pôster 23 · Fanart 40 · Logo 17").
+// that EXISTS, with a translated label + count (e.g.: "Poster 23 · Fanart 40 · Logo 17").
 // Empty/absent (movie without inventory, external screen) → null: the row does not appear.
 function SelosArtes({
   available,
 }: {
   available: Record<string, number> | undefined
 }) {
+  const t = useT()
   const selos = selosDisponibilidade(available)
   if (selos.length === 0) {
     return null
@@ -831,7 +871,7 @@ function SelosArtes({
     <div className="flex flex-wrap items-center gap-1.5 pt-1">
       {selos.map((selo) => (
         <Badge key={selo.kind} variant="outline">
-          {selo.label} {selo.count}
+          {rotuloArte(selo.kind, t)} {selo.count}
         </Badge>
       ))}
     </div>
@@ -878,9 +918,10 @@ function BannerFaixa({ banner }: { banner: Asset }) {
 // animation off for whoever asked for `prefers-reduced-motion: reduce` (native Tailwind
 // variant, without extra JS). It only appears with a preferred asset of the kind.
 function DiscoGiratorio({ disc }: { disc: Asset }) {
+  const t = useT()
   return (
     <div
-      title="Disco"
+      title={t('entity.artwork.disc')}
       className="absolute -bottom-3 -right-3 size-14 overflow-hidden rounded-full shadow-lg ring-2 ring-background sm:size-16"
     >
       <img
@@ -902,6 +943,7 @@ function DiscoGiratorio({ disc }: { disc: Asset }) {
 // it would be intrusive even if it allowed it); `loop` stays on in the element the whole
 // time (it only matters while playing).
 function TemaMusicalPlayer({ entityId }: { entityId: string }) {
+  const t = useT()
   const { data: temTema } = useQuery(entityThemeQueryOptions(entityId))
   const audioRef = useRef<HTMLAudioElement>(null)
   const [tocando, setTocando] = useState(false)
@@ -929,10 +971,12 @@ function TemaMusicalPlayer({ entityId }: { entityId: string }) {
         variant="outline"
         size="sm"
         onClick={alternar}
-        aria-label={tocando ? 'Pausar tema musical' : 'Tocar tema musical'}
+        aria-label={
+          tocando ? t('entity.action.pauseTheme') : t('entity.action.playTheme')
+        }
       >
         {tocando ? <Pause aria-hidden /> : <Music aria-hidden />}
-        {tocando ? 'Pausar tema' : 'Tocar tema'}
+        {tocando ? t('entity.action.pauseTheme') : t('entity.action.playTheme')}
       </Button>
       <audio
         ref={audioRef}
@@ -945,7 +989,7 @@ function TemaMusicalPlayer({ entityId }: { entityId: string }) {
   )
 }
 
-// ThemeDownloadButton is the "Baixar tema" button (ADR-0025):
+// ThemeDownloadButton is the "Download theme" button (ADR-0025):
 // it materializes on disk the automatic candidate of ThemerrDB for the SAME
 // theme.mp3 that TemaMusicalPlayer above starts to play — purely additive,
 // it never replaces a theme the owner already placed (the server refuses with 409, and
@@ -957,6 +1001,7 @@ function TemaMusicalPlayer({ entityId }: { entityId: string }) {
 // no `force`) and (c) yt-dlp is available. Any condition missing:
 // no button, no error.
 function ThemeDownloadButton({ entityId }: { entityId: string }) {
+  const t = useT()
   const queryClient = useQueryClient()
   const { data: candidato } = useQuery(
     entityThemeCandidatoQueryOptions(entityId),
@@ -1007,7 +1052,9 @@ function ThemeDownloadButton({ entityId }: { entityId: string }) {
         ) : (
           <Download aria-hidden />
         )}
-        {downloadMutation.isPending ? 'Baixando tema…' : 'Baixar tema'}
+        {downloadMutation.isPending
+          ? t('entity.action.downloadingTheme')
+          : t('entity.action.downloadTheme')}
       </Button>
       {mensagemErro ? (
         <span role="alert" className="text-sm font-medium text-destructive">
@@ -1020,7 +1067,7 @@ function ThemeDownloadButton({ entityId }: { entityId: string }) {
 
 // ── Credits: cast, crew and production companies (read-only) ─────────────────
 
-// TETO_ELENCO: how many actors the Cast shows BEFORE "Ver todos". The backend
+// TETO_ELENCO: how many actors the Cast shows BEFORE "Show all". The backend
 // persists ~top 50 by billing; the UI opens with the ~24 most billed and expands on
 // demand (huge grids — a movie with 76, a series with 781 — are not worth the initial scroll).
 const TETO_ELENCO = 24
@@ -1040,11 +1087,12 @@ function sufixoEpisodios(n: number | null | undefined): string | null {
 }
 
 // SeloNaBiblioteca is the same internal-first badge already used in collection/similars
-// (`Badge variant="secondary"`, text "Na biblioteca") — here compact (smaller px/py/text)
+// (`Badge variant="secondary"`, text "In the library") — here compact (smaller px/py/text)
 // to fit the tight cast card, with the `Library` icon reinforcing the
 // meaning without repeating text. Purely decorative (`aria-hidden`): the destination is already
 // announced by the `aria-label` of the Link that wraps it.
 function SeloNaBiblioteca() {
+  const t = useT()
   return (
     <Badge
       variant="secondary"
@@ -1052,7 +1100,7 @@ function SeloNaBiblioteca() {
       aria-hidden
     >
       <Library className="size-3" aria-hidden />
-      Na biblioteca
+      {t('entity.label.inLibrary')}
     </Badge>
   )
 }
@@ -1064,7 +1112,7 @@ function SeloNaBiblioteca() {
 //
 // Internal-first (phase D): when the credit carries a `personId` (the person was already
 // persisted by some import), the card links to the INTERNAL page of the person
-// (`/person/{id}`) and gains the "Na biblioteca" badge (same pattern as the similar/collection),
+// (`/person/{id}`) and gains the "In the library" badge (same pattern as the similar/collection),
 // Without a `personId`, the card degrades to the usual external link (TMDB, new
 // tab), without a badge — unchanged behavior.
 function PessoaCard({
@@ -1082,12 +1130,13 @@ function PessoaCard({
   eps: number | null | undefined
   personId?: string | null
 }) {
+  const t = useT()
   const sufEps = sufixoEpisodios(eps)
   const conteudo = (
     <>
       <PosterImg
         src={profileUrl}
-        alt={`Foto de ${name}`}
+        alt={t('entity.alt.personPhoto', { name })}
         className="transition group-hover:ring-2 group-hover:ring-foreground/30"
       />
       <span className="line-clamp-2 text-xs font-medium group-hover:text-foreground">
@@ -1109,7 +1158,7 @@ function PessoaCard({
       <Link
         to="/person/$personId"
         params={{ personId }}
-        aria-label={`Ver ${name} na biblioteca`}
+        aria-label={t('entity.credit.viewPersonInLibrary', { name })}
         className="group flex flex-col gap-1"
       >
         {conteudo}
@@ -1129,9 +1178,10 @@ function PessoaCard({
 }
 
 // ElencoGrid shows the cast in a grid, in billing order (`order`). It opens with the
-// TETO_ELENCO most billed ones; if there are more, a "Ver todos (N)" button expands the
-// whole list (and "Ver menos" collapses it). Empty → the section disappears.
+// TETO_ELENCO most billed ones; if there are more, a "Show all (N)" button expands the
+// whole list (and "Show less" collapses it). Empty → the section disappears.
 function ElencoGrid({ cast }: { cast: CreditCast[] }) {
+  const t = useT()
   const [expandido, setExpandido] = useState(false)
   if (cast.length === 0) {
     return null
@@ -1144,7 +1194,9 @@ function ElencoGrid({ cast }: { cast: CreditCast[] }) {
   const visiveis = expandido ? ordenado : ordenado.slice(0, TETO_ELENCO)
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="font-heading text-lg font-medium">Elenco</h2>
+      <h2 className="font-heading text-lg font-medium">
+        {t('entity.section.cast')}
+      </h2>
       <ul className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
         {visiveis.map((p, i) => (
           <li key={`${p.source_id}:${i}`}>
@@ -1167,7 +1219,9 @@ function ElencoGrid({ cast }: { cast: CreditCast[] }) {
           className="w-fit"
           onClick={() => setExpandido((v) => !v)}
         >
-          {expandido ? 'Ver menos' : `Ver todos (${ordenado.length})`}
+          {expandido
+            ? t('entity.action.showLess')
+            : t('entity.action.showAllCast', { n: ordenado.length })}
         </Button>
       ) : null}
     </section>
@@ -1197,11 +1251,16 @@ interface GrupoEquipe {
 
 // agruparEquipe groups the crew by `department` preserving the arrival order of the
 // members inside the group, and sorts the groups: Directing/Writing first, the rest in
-// alphabetical order (pt-BR). An empty department falls into a "Equipe" group.
-function agruparEquipe(crew: CreditCrew[]): GrupoEquipe[] {
+// alphabetical order (in the active locale). An empty department falls into a "Crew" group.
+function agruparEquipe(
+  crew: CreditCrew[],
+  t: Translate,
+  locale: string,
+): GrupoEquipe[] {
+  const semDepartamento = t('entity.section.crew')
   const mapa = new Map<string, CreditCrew[]>()
   for (const m of crew) {
-    const dep = m.department?.trim() || 'Equipe'
+    const dep = m.department?.trim() || semDepartamento
     const lista = mapa.get(dep)
     if (lista) {
       lista.push(m)
@@ -1216,7 +1275,7 @@ function agruparEquipe(crew: CreditCrew[]): GrupoEquipe[] {
       const rb = rankDepartamento(b.department)
       return ra !== rb
         ? ra - rb
-        : a.department.localeCompare(b.department, 'pt-BR')
+        : a.department.localeCompare(b.department, locale)
     })
 }
 
@@ -1234,12 +1293,13 @@ function MembroNome({
   sourceId: string
   personId?: string | null
 }) {
+  const t = useT()
   if (personId) {
     return (
       <Link
         to="/person/$personId"
         params={{ personId }}
-        aria-label={`Ver ${name} na biblioteca`}
+        aria-label={t('entity.credit.viewPersonInLibrary', { name })}
         className="inline-flex items-center gap-1 font-medium hover:underline"
       >
         <Library className="size-3 text-muted-foreground" aria-hidden />
@@ -1271,7 +1331,7 @@ function grupoTemFoto(department: string): boolean {
 
 // GrupoEquipeFotos shows ONE prioritized department as a grid of cards with a
 // photo — it reuses the SAME `PessoaCard` of the `ElencoGrid` (full visual parity,
-// including the "Na biblioteca" badge and the graceful degradation without `profile_url`).
+// including the "In the library" badge and the graceful degradation without `profile_url`).
 function GrupoEquipeFotos({ grupo }: { grupo: GrupoEquipe }) {
   return (
     <div className="flex flex-col gap-2">
@@ -1331,13 +1391,17 @@ function GrupoEquipeTexto({ grupo }: { grupo: GrupoEquipe }) {
 // (Directing/Writing) in a grid with photos (parity with the Cast); the others in a
 // compact textual list, as it already was. Empty → the section disappears.
 function EquipeGrupos({ crew }: { crew: CreditCrew[] }) {
+  const t = useT()
+  const locale = useLocale()
   if (crew.length === 0) {
     return null
   }
-  const grupos = agruparEquipe(crew)
+  const grupos = agruparEquipe(crew, t, locale)
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="font-heading text-lg font-medium">Equipe</h2>
+      <h2 className="font-heading text-lg font-medium">
+        {t('entity.section.crew')}
+      </h2>
       <div className="flex flex-col gap-4">
         {grupos.map((grupo) =>
           grupoTemFoto(grupo.department) ? (
@@ -1355,12 +1419,15 @@ function EquipeGrupos({ crew }: { crew: CreditCrew[] }) {
 // chip with a light background (so dark logos show up in the dark theme) or the name in a
 // `<Badge>` when there is no logo. Empty → the section disappears.
 function ProdutorasBand({ companies }: { companies: CreditCompany[] }) {
+  const t = useT()
   if (companies.length === 0) {
     return null
   }
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="font-heading text-lg font-medium">Produtoras</h2>
+      <h2 className="font-heading text-lg font-medium">
+        {t('entity.section.companies')}
+      </h2>
       <ul className="flex flex-wrap items-center gap-3">
         {companies.map((c, i) => (
           <li key={`${c.source_id}:${i}`}>
@@ -1409,8 +1476,8 @@ function HeroImersivo({
   detail: RichDetail
   situacao: RotuloSituacao | null
   titleBadges?: ReactNode
-  // Actions of the item: "Assistir trailer" + the "Gerenciar" dropdown (entity)
-  // or "Importar" (external) — now INSIDE the hero, close to the title, instead of
+  // Actions of the item: "Watch trailer" + the "Gerenciar" dropdown (entity)
+  // or "Import" (external) — now INSIDE the hero, close to the title, instead of
   // in a separate bar above it (a deliberate deviation from the reference print,
   // which uses 2-3 loose buttons — §1).
   actions?: ReactNode
@@ -1422,6 +1489,7 @@ function HeroImersivo({
   disc?: Asset
   entityId?: string
 }) {
+  const t = useT()
   return (
     <div className="dark relative left-1/2 right-1/2 grid w-screen -mx-[50vw]">
       {/* Contrast fix: the `dark` class here is DELIBERATE and
@@ -1446,7 +1514,10 @@ function HeroImersivo({
           ambiguity between the overlapping grid items. */}
       <div className="relative z-0 col-start-1 row-start-1">
         {detail.type === 'episode' ? (
-          <StillFrame src={detail.stillUrl} alt={`Still de ${detail.title}`} />
+          <StillFrame
+            src={detail.stillUrl}
+            alt={t('entity.alt.still', { title: detail.title })}
+          />
         ) : (
           <HeroBackdropFundo src={detail.backdropUrl} />
         )}
@@ -1473,8 +1544,8 @@ function HeroImersivo({
               src={detail.posterUrl}
               alt={
                 detail.type === 'artista'
-                  ? `Foto de ${detail.title}`
-                  : `Capa de ${detail.title}`
+                  ? t('entity.alt.personPhoto', { name: detail.title })
+                  : t('entity.alt.albumCover', { title: detail.title })
               }
               circular={detail.type === 'artista'}
             />
@@ -1482,7 +1553,7 @@ function HeroImersivo({
             <div className="relative w-40 shrink-0 sm:w-56">
               <PosterImg
                 src={detail.posterUrl}
-                alt={`Pôster de ${detail.title}`}
+                alt={t('entity.alt.poster', { title: detail.title })}
               />
               <FaixaStatusPoster situacao={situacao} />
               {disc ? <DiscoGiratorio disc={disc} /> : null}
@@ -1507,7 +1578,7 @@ function HeroImersivo({
                   {detail.year}
                 </span>
               ) : null}
-              <Badge variant="outline">{rotuloTipo(detail.type)}</Badge>
+              <Badge variant="outline">{rotuloTipo(detail.type, t)}</Badge>
               {/* "Assistido" badge: only the ENTITY screen passes `entityId` —
                   the same gate as `TemaMusicalPlayer`/logo/banner/disc above. It reads the
                   history (kind="assistir") and disappears without any `completed`
@@ -1516,7 +1587,7 @@ function HeroImersivo({
               {titleBadges}
             </div>
 
-            {/* Actions: trailer + "Gerenciar"/"Importar", close to the title —
+            {/* Actions: trailer + "Gerenciar"/"Import", close to the title —
                 it replaces the former separate `BarraAcoesHero` above the hero. It disappears
                 entirely when there is neither a trailer nor `actions` (the same guard
                 as before, now inside the component itself). */}
@@ -1646,9 +1717,9 @@ export function RichDetailView({
   source: string
   // "back" area (Link or button) — each screen decides the destination.
   back?: ReactNode
-  // Badges next to the title (status, "editado") — entity.
+  // Badges next to the title (status, "edited") — entity.
   titleBadges?: ReactNode
-  // Actions INSIDE the hero, close to the title (Importar on the external one; the
+  // Actions INSIDE the hero, close to the title (Import on the external one; the
   // "Gerenciar" dropdown on the entity) — the trailer joins them at the side, computed in
   // the `HeroImersivo` itself.
   actions?: ReactNode
@@ -1670,7 +1741,8 @@ export function RichDetailView({
   // SITUATION badge of the series: it only exists when the source informed the situation
   // (enriched series). For movie/episode the field is absent → `situacao` is null and
   // the badge does not appear — without gating by type, only by the presence of the data.
-  const situacao = rotuloSituacao(detail.airingStatus)
+  const t = useT()
+  const situacao = rotuloSituacao(detail.airingStatus, t)
 
   // Preferred logo/banner/disc: the SAME call to `GET .../assets`
   // that the gallery (art-gallery.tsx) uses, here only to extract the three kinds of the
@@ -1709,7 +1781,9 @@ export function RichDetailView({
 
       {detail.keywords.length > 0 ? (
         <section className="flex flex-col gap-2">
-          <h2 className="font-heading text-lg font-medium">Palavras-chave</h2>
+          <h2 className="font-heading text-lg font-medium">
+            {t('entity.section.keywords')}
+          </h2>
           <div className="flex flex-wrap gap-1.5">
             {detail.keywords.map((k) => (
               <Badge key={k} variant="secondary">

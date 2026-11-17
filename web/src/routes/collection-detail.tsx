@@ -8,6 +8,8 @@ import {
 } from '@/lib/api'
 import { collectionDetailQueryOptions } from '@/lib/queries'
 import { useLanguage } from '@/lib/language-context'
+import { useT } from '@/lib/i18n'
+import type { Translate } from '@/lib/i18n/types'
 import { internalIdDe } from '@/lib/internal-id'
 import { srcDeImagem } from '@/lib/rich-detail'
 import { Button } from '@/components/ui/button'
@@ -22,19 +24,23 @@ import { ImportarButton } from '@/components/rich-detail-view'
 
 // propsDeErro chooses title/message by HTTP status: 404 (absent in the source) ×
 // 502/503 (source unavailable/without a collection) × the rest (generic).
-function propsDeErro(error: unknown): { title: string; message?: string } {
+function propsDeErro(
+  error: unknown,
+  t: Translate,
+): { title: string; message?: string } {
   const status = error instanceof ApiError ? error.status : 0
   const message = error instanceof Error ? error.message : undefined
   if (status === 404) {
-    return { title: 'Coleção não encontrada na fonte', message }
+    return { title: t('collections.detail.notFound'), message }
   }
   if (status === 502 || status === 503) {
-    return { title: 'Fonte indisponível no momento', message }
+    return { title: t('collections.detail.unavailable'), message }
   }
-  return { title: 'Não foi possível carregar a coleção', message }
+  return { title: t('collections.detail.error'), message }
 }
 
 export function CollectionDetailScreen() {
+  const t = useT()
   const { source, id } = useParams({ from: '/collection/$source/$id' })
   const { lang } = useLanguage()
   const router = useRouter()
@@ -45,11 +51,11 @@ export function CollectionDetailScreen() {
   return (
     <main className="mx-auto max-w-4xl px-4 py-6">
       {isPending ? (
-        <LoadingState label="Carregando coleção…" />
+        <LoadingState label={t('collections.detail.loading')} />
       ) : isError ? (
         <>
           <VoltarButton onClick={() => router.history.back()} />
-          <ErrorState {...propsDeErro(error)} />
+          <ErrorState {...propsDeErro(error, t)} />
         </>
       ) : (
         <div className="flex flex-col gap-6">
@@ -75,10 +81,10 @@ export function CollectionDetailScreen() {
                   {data.name}
                 </h1>
                 {/* Internal-first: if the collection was ALREADY imported, the header takes
-                    to the internal entity ("Ver coleção") instead of offering the import again.
+                    to the internal entity ("View collection") instead of offering the import again.
                     Otherwise, the button imports the WHOLE collection — it becomes an entity
                     type='collection' with the member movies linked; it navigates to
-                    /entities/{novoId}. A label distinct from the "Importar" of the parts. */}
+                    /entities/{novoId}. A label distinct from the "Import" of the parts. */}
                 {internalIdDe(data) != null ? (
                   <Button asChild>
                     <Link
@@ -86,7 +92,7 @@ export function CollectionDetailScreen() {
                       params={{ id: internalIdDe(data) as string }}
                     >
                       <Library aria-hidden />
-                      Ver coleção
+                      {t('collections.detail.view')}
                     </Link>
                   </Button>
                 ) : (
@@ -94,7 +100,7 @@ export function CollectionDetailScreen() {
                     source={source}
                     sourceId={id}
                     type="collection"
-                    label="Importar coleção"
+                    label={t('collections.detail.import')}
                   />
                 )}
               </div>
@@ -106,7 +112,7 @@ export function CollectionDetailScreen() {
 
           <section className="flex flex-col gap-3">
             <h2 className="font-heading text-lg font-medium">
-              Filmes da coleção
+              {t('collections.detail.movies')}
             </h2>
             {data.parts.length > 0 ? (
               <ul className="grid gap-3 sm:grid-cols-2">
@@ -120,7 +126,7 @@ export function CollectionDetailScreen() {
               </ul>
             ) : (
               <p className="text-sm text-muted-foreground">
-                Esta coleção não tem itens.
+                {t('collections.detail.empty')}
               </p>
             )}
           </section>
@@ -152,6 +158,7 @@ function comoResultado(
 // VoltarButton goes back in the history (the collection is always reached by navigation
 // from a detail page).
 function VoltarButton({ onClick }: { onClick: () => void }) {
+  const t = useT()
   return (
     <button
       type="button"
@@ -159,7 +166,7 @@ function VoltarButton({ onClick }: { onClick: () => void }) {
       className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
     >
       <ArrowLeft className="size-4" aria-hidden />
-      Voltar
+      {t('common.action.back')}
     </button>
   )
 }

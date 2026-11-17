@@ -26,9 +26,9 @@ function stubIdsEEnrich(idsResp: () => Response, enrichResp: () => Response) {
   return m
 }
 
-// salvarECorpo clicks "Salvar IDs", waits for the call and returns the `external_ids` sent.
+// salvarECorpo clicks "Save IDs", waits for the call and returns the `external_ids` sent.
 async function salvarECorpo(m: ReturnType<typeof vi.fn>) {
-  fireEvent.click(screen.getByText('Salvar IDs'))
+  fireEvent.click(screen.getByText('Save IDs'))
   await vi.waitFor(() => expect(m).toHaveBeenCalled())
   return (corpoEnviado(m) as { external_ids: Record<string, string> })
     .external_ids
@@ -37,7 +37,7 @@ async function salvarECorpo(m: ReturnType<typeof vi.fn>) {
 afterEach(() => vi.restoreAllMocks())
 
 describe('ExternalIdsEditor', () => {
-  it('mostra os ids externos atuais', () => {
+  it('shows the current external ids', () => {
     putIds(() => okJson({}, 200))
     renderWithClient(
       <ExternalIdsEditor
@@ -46,13 +46,13 @@ describe('ExternalIdsEditor', () => {
       />,
     )
     const fontes = screen
-      .getAllByLabelText('Fonte do id externo')
+      .getAllByLabelText('External id source')
       .map((i) => (i as HTMLInputElement).value)
     expect(fontes).toContain('tmdb')
     expect(fontes).toContain('imdb')
   })
 
-  it('salva o mapa de ids via PUT', async () => {
+  it('saves the map of ids via PUT', async () => {
     const m = putIds(() => okJson({ id: 'e1' }, 200))
     renderWithClient(
       <ExternalIdsEditor id="e1" externalIds={{ tmdb: '603' }} />,
@@ -60,39 +60,39 @@ describe('ExternalIdsEditor', () => {
     expect(await salvarECorpo(m)).toEqual({ tmdb: '603' })
   })
 
-  it('adiciona uma fonte nova e a inclui no mapa salvo', async () => {
+  it('adds a new source and includes it in the saved map', async () => {
     const m = putIds(() => okJson({ id: 'e1' }, 200))
     renderWithClient(<ExternalIdsEditor id="e1" externalIds={{}} />)
-    fireEvent.click(screen.getByText('Adicionar fonte'))
-    fireEvent.change(screen.getByLabelText('Fonte do id externo'), {
+    fireEvent.click(screen.getByText('Add source'))
+    fireEvent.change(screen.getByLabelText('External id source'), {
       target: { value: 'tmdb' },
     })
-    fireEvent.change(screen.getByLabelText('Id na fonte tmdb'), {
+    fireEvent.change(screen.getByLabelText('Id in the source tmdb'), {
       target: { value: '99' },
     })
     expect(await salvarECorpo(m)).toEqual({ tmdb: '99' })
   })
 
-  it('remover deixa o mapa sem a fonte', async () => {
+  it('removing leaves the map without the source', async () => {
     const m = putIds(() => okJson({ id: 'e1' }, 200))
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     renderWithClient(
       <ExternalIdsEditor id="e1" externalIds={{ tmdb: '603' }} />,
     )
-    fireEvent.click(screen.getByLabelText('Remover tmdb'))
+    fireEvent.click(screen.getByLabelText('Remove tmdb'))
     expect(await salvarECorpo(m)).toEqual({})
   })
 
-  it('mostra erro inline quando o PUT falha', async () => {
+  it('shows an inline error when the PUT fails', async () => {
     putIds(() => erroJson(404, 'not_found', 'entidade nao encontrada'))
     renderWithClient(
       <ExternalIdsEditor id="e1" externalIds={{ tmdb: '603' }} />,
     )
-    fireEvent.click(screen.getByText('Salvar IDs'))
+    fireEvent.click(screen.getByText('Save IDs'))
     expect(await screen.findByText('entidade nao encontrada')).toBeTruthy()
   })
 
-  it('salvar e re-enriquecer grava os ids e DEPOIS enriquece', async () => {
+  it('save and re-enrich writes the ids and THEN enriches', async () => {
     const m = stubIdsEEnrich(
       () => okJson({ id: 'e1' }, 200),
       () => okJson({ id: 'e1', title: 'Matrix' }, 200),
@@ -100,14 +100,14 @@ describe('ExternalIdsEditor', () => {
     renderWithClient(
       <ExternalIdsEditor id="e1" externalIds={{ tmdb: '603' }} />,
     )
-    fireEvent.click(screen.getByText('Salvar e re-enriquecer'))
+    fireEvent.click(screen.getByText('Save and re-enrich'))
     await vi.waitFor(() => expect(m).toHaveBeenCalledTimes(2))
     // Order: first the PUT of the ids, then the POST of the enrich (the enrich reads the saved id).
     expect(m.mock.calls[0][1]?.method).toBe('PUT')
     expect(m.mock.calls[1][1]?.method).toBe('POST')
   })
 
-  it('re-enriquecer mostra erro da fonte inline (ids ja salvos)', async () => {
+  it('re-enriching shows the source error inline (ids already saved)', async () => {
     stubIdsEEnrich(
       () => okJson({ id: 'e1' }, 200),
       () => erroJson(502, 'external_source_error', 'a fonte externa falhou'),
@@ -115,7 +115,7 @@ describe('ExternalIdsEditor', () => {
     renderWithClient(
       <ExternalIdsEditor id="e1" externalIds={{ tmdb: '603' }} />,
     )
-    fireEvent.click(screen.getByText('Salvar e re-enriquecer'))
+    fireEvent.click(screen.getByText('Save and re-enrich'))
     expect(await screen.findByText('a fonte externa falhou')).toBeTruthy()
   })
 })
@@ -123,7 +123,7 @@ describe('ExternalIdsEditor', () => {
 // "Leave without saving" guard: onDirtyChange reflects whether the current map
 // diverges from the last loaded/saved one — only on the transition.
 describe('ExternalIdsEditor — onDirtyChange (0073)', () => {
-  it('reporta false ao montar (nada editado)', () => {
+  it('reports false on mount (nothing edited)', () => {
     const onDirtyChange = vi.fn()
     renderWithClient(
       <ExternalIdsEditor
@@ -136,7 +136,7 @@ describe('ExternalIdsEditor — onDirtyChange (0073)', () => {
     expect(onDirtyChange).toHaveBeenCalledTimes(1)
   })
 
-  it('reporta true ao adicionar uma fonte', () => {
+  it('reports true when a source is added', () => {
     const onDirtyChange = vi.fn()
     renderWithClient(
       <ExternalIdsEditor
@@ -145,14 +145,14 @@ describe('ExternalIdsEditor — onDirtyChange (0073)', () => {
         onDirtyChange={onDirtyChange}
       />,
     )
-    fireEvent.click(screen.getByText('Adicionar fonte'))
-    fireEvent.change(screen.getByLabelText('Fonte do id externo'), {
+    fireEvent.click(screen.getByText('Add source'))
+    fireEvent.change(screen.getByLabelText('External id source'), {
       target: { value: 'tmdb' },
     })
     expect(onDirtyChange).toHaveBeenLastCalledWith(true)
   })
 
-  it('reporta true ao remover uma fonte existente', () => {
+  it('reports true when an existing source is removed', () => {
     const onDirtyChange = vi.fn()
     renderWithClient(
       <ExternalIdsEditor
@@ -161,11 +161,11 @@ describe('ExternalIdsEditor — onDirtyChange (0073)', () => {
         onDirtyChange={onDirtyChange}
       />,
     )
-    fireEvent.click(screen.getByLabelText('Remover tmdb'))
+    fireEvent.click(screen.getByLabelText('Remove tmdb'))
     expect(onDirtyChange).toHaveBeenLastCalledWith(true)
   })
 
-  it('volta a false depois de "Salvar IDs" com sucesso', async () => {
+  it('goes back to false after a successful "Save IDs"', async () => {
     const m = putIds(() => okJson({ id: 'e1' }, 200))
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     const onDirtyChange = vi.fn()
@@ -176,9 +176,9 @@ describe('ExternalIdsEditor — onDirtyChange (0073)', () => {
         onDirtyChange={onDirtyChange}
       />,
     )
-    fireEvent.click(screen.getByLabelText('Remover tmdb'))
+    fireEvent.click(screen.getByLabelText('Remove tmdb'))
     expect(onDirtyChange).toHaveBeenLastCalledWith(true)
-    fireEvent.click(screen.getByText('Salvar IDs'))
+    fireEvent.click(screen.getByText('Save IDs'))
     await vi.waitFor(() => expect(m).toHaveBeenCalled())
     await vi.waitFor(() =>
       expect(onDirtyChange).toHaveBeenLastCalledWith(false),
@@ -189,30 +189,30 @@ describe('ExternalIdsEditor — onDirtyChange (0073)', () => {
 // "Empty it by accident" guard: saving an empty map is a full-replace
 // PUT that wipes the identity of the entity — it should only confirm when it is
 // a net removal (there was something saved before).
-describe('ExternalIdsEditor — guard de mapa vazio (0098)', () => {
-  it('pede confirmação ao remover a única fonte e salvar', async () => {
+describe('ExternalIdsEditor — empty map guard (0098)', () => {
+  it('asks for confirmation when the only source is removed and saved', async () => {
     const m = putIds(() => okJson({ id: 'e1' }, 200))
     const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(true)
     renderWithClient(
       <ExternalIdsEditor id="e1" externalIds={{ tmdb: '603' }} />,
     )
-    fireEvent.click(screen.getByLabelText('Remover tmdb'))
+    fireEvent.click(screen.getByLabelText('Remove tmdb'))
     expect(await salvarECorpo(m)).toEqual({})
     expect(confirmar).toHaveBeenCalledTimes(1)
   })
 
-  it('cancelar a confirmação não envia o PUT', () => {
+  it('cancelling the confirmation does not send the PUT', () => {
     const m = putIds(() => okJson({ id: 'e1' }, 200))
     vi.spyOn(window, 'confirm').mockReturnValue(false)
     renderWithClient(
       <ExternalIdsEditor id="e1" externalIds={{ tmdb: '603' }} />,
     )
-    fireEvent.click(screen.getByLabelText('Remover tmdb'))
-    fireEvent.click(screen.getByText('Salvar IDs'))
+    fireEvent.click(screen.getByLabelText('Remove tmdb'))
+    fireEvent.click(screen.getByText('Save IDs'))
     expect(m).not.toHaveBeenCalled()
   })
 
-  it('cancelar a confirmação no "Salvar e re-enriquecer" não chama nenhuma rota', () => {
+  it('cancelling the confirmation in "Save and re-enrich" calls no route', () => {
     const m = stubIdsEEnrich(
       () => okJson({ id: 'e1' }, 200),
       () => okJson({ id: 'e1' }, 200),
@@ -221,12 +221,12 @@ describe('ExternalIdsEditor — guard de mapa vazio (0098)', () => {
     renderWithClient(
       <ExternalIdsEditor id="e1" externalIds={{ tmdb: '603' }} />,
     )
-    fireEvent.click(screen.getByLabelText('Remover tmdb'))
-    fireEvent.click(screen.getByText('Salvar e re-enriquecer'))
+    fireEvent.click(screen.getByLabelText('Remove tmdb'))
+    fireEvent.click(screen.getByText('Save and re-enrich'))
     expect(m).not.toHaveBeenCalled()
   })
 
-  it('salvar um mapa não-vazio não pede confirmação', async () => {
+  it('saving a non-empty map does not ask for confirmation', async () => {
     const m = putIds(() => okJson({ id: 'e1' }, 200))
     const confirmar = vi.spyOn(window, 'confirm')
     renderWithClient(
@@ -236,7 +236,7 @@ describe('ExternalIdsEditor — guard de mapa vazio (0098)', () => {
     expect(confirmar).not.toHaveBeenCalled()
   })
 
-  it('item sem ids desde o início: salvar vazio não pede confirmação', async () => {
+  it('item without ids from the start: saving empty does not ask for confirmation', async () => {
     const m = putIds(() => okJson({ id: 'e1' }, 200))
     const confirmar = vi.spyOn(window, 'confirm')
     renderWithClient(<ExternalIdsEditor id="e1" externalIds={{}} />)

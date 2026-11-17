@@ -13,10 +13,13 @@ import {
 } from '@/test/entity-fixtures'
 
 // Route `/entities/$id/edit` (split into subroutes later): the
-// "Informações básicas" section — the form driven by descriptors. It covers the
+// "Basic information" section — the form driven by descriptors. It covers the
 // per-language semantics preserved from the old editor: set empty ×
-// Limpar, {add,remove} tags, neutral scalar, number, inline 422 and the navigation
+// Clear, {add,remove} tags, neutral scalar, number, inline 422 and the navigation
 // back, plus the "leave without saving" guard, now local to this section.
+//
+// The field labels ("Título", "Sinopse", ...) come from the descriptors served by
+// the backend, so they are data and stay as the API sends them.
 const spies = vi.hoisted(() => ({ navigate: vi.fn() }))
 
 // DYNAMIC import of the Link mock (`@/test/router-mock`) — the factory of
@@ -123,7 +126,7 @@ function renderEdit(opts: Opcoes = {}): Espioes {
 
 // Waits for the form to load (the Save button appears when entity+blob+descriptors arrive).
 async function esperarForm() {
-  await screen.findByRole('button', { name: 'Salvar alterações' })
+  await screen.findByRole('button', { name: 'Save changes' })
 }
 
 async function editar(opts: Opcoes = {}) {
@@ -138,62 +141,64 @@ async function salvarEEsperarPatch(
   espioes: Espioes,
   corpo: unknown,
 ) {
-  await user.click(screen.getByRole('button', { name: 'Salvar alterações' }))
+  await user.click(screen.getByRole('button', { name: 'Save changes' }))
   await waitFor(() => expect(espioes.onPatch).toHaveBeenCalledTimes(1))
   expect(espioes.onPatch).toHaveBeenCalledWith('pt-BR', corpo)
 }
 
-describe('EntityEditBasicoScreen — edição por idioma', () => {
-  it('editar o título faz PATCH com lang e corpo certos', async () => {
+describe('EntityEditBasicoScreen — per-language editing', () => {
+  it('editing the title sends PATCH with the right lang and body', async () => {
     const { user, espioes } = await editar()
     await user.type(screen.getByLabelText('Título'), 'Duna')
     await salvarEEsperarPatch(user, espioes, { title: 'Duna' })
   })
 
-  it('"Limpar" de campo traduzível chama DELETE com o lang corrente', async () => {
+  it('"Clear" of a translatable field calls DELETE with the current lang', async () => {
     const { user, espioes } = await editar({
       blob: { description: { 'pt-BR': 'Sinopse pt' } },
     })
-    await user.click(screen.getByRole('button', { name: 'Limpar sinopse' }))
+    await user.click(screen.getByRole('button', { name: 'Clear sinopse' }))
     await waitFor(() => expect(espioes.onDelete).toHaveBeenCalledTimes(1))
     expect(espioes.onDelete).toHaveBeenCalledWith('description', 'pt-BR')
   })
 
-  it('campo neutro grava escalar (sem dimensão de idioma)', async () => {
+  it('a neutral field saves a scalar (no language dimension)', async () => {
     const { user, espioes } = await editar()
     await user.type(screen.getByLabelText('Título original'), 'Dune Zwei')
     await salvarEEsperarPatch(user, espioes, { original_title: 'Dune Zwei' })
   })
 
-  it('"Limpar" de campo neutro chama DELETE SEM lang', async () => {
+  it('"Clear" of a neutral field calls DELETE WITHOUT lang', async () => {
     const { user, espioes } = await editar({ blob: { original_title: 'Dune' } })
     await user.click(
-      screen.getByRole('button', { name: 'Limpar título original' }),
+      screen.getByRole('button', { name: 'Clear título original' }),
     )
     await waitFor(() => expect(espioes.onDelete).toHaveBeenCalledTimes(1))
     expect(espioes.onDelete).toHaveBeenCalledWith('original_title', null)
   })
 
-  it('tags: adicionar um chip vira { add } no PATCH', async () => {
+  it('tags: adding a chip becomes { add } in the PATCH', async () => {
     const { user, espioes } = await editar()
-    await user.type(screen.getByLabelText('Adicionar tag'), 'Clássico')
-    await user.click(screen.getByRole('button', { name: 'Adicionar' }))
+    await user.type(screen.getByLabelText('Add a tag'), 'Clássico')
+    await user.click(screen.getByRole('button', { name: 'Add' }))
     await salvarEEsperarPatch(user, espioes, {
       tags: { add: ['Clássico'], remove: [] },
     })
   })
 
-  it('tags: remover um chip vira { remove } no PATCH', async () => {
+  it('tags: removing a chip becomes { remove } in the PATCH', async () => {
     const { user, espioes } = await editar({
       entityOver: { tags: ['Ação', 'Drama'] },
     })
-    await user.click(screen.getByRole('button', { name: 'Remover tag Ação' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Remove the tag Ação' }),
+    )
     await salvarEEsperarPatch(user, espioes, {
       tags: { add: [], remove: ['Ação'] },
     })
   })
 
-  it('esvaziar um campo traduzível semeado manda null (definir vazio ≠ limpar)', async () => {
+  it('emptying a seeded translatable field sends null (set empty ≠ clear)', async () => {
     const { user, espioes } = await editar({
       blob: { description: { 'pt-BR': 'Sinopse pt' } },
     })
@@ -202,20 +207,20 @@ describe('EntityEditBasicoScreen — edição por idioma', () => {
     expect(espioes.onDelete).not.toHaveBeenCalled()
   })
 
-  it('definir a nota local grava o número neutro', async () => {
+  it('setting the local rating saves the neutral number', async () => {
     const { user, espioes } = await editar()
     await user.type(screen.getByLabelText('Sua nota'), '9.5')
     await salvarEEsperarPatch(user, espioes, { local_rating: 9.5 })
   })
 
-  it('esvaziar a nota semeada e salvar manda null', async () => {
+  it('emptying the seeded rating and saving sends null', async () => {
     const { user, espioes } = await editar({ blob: { local_rating: 7 } })
     await user.clear(screen.getByLabelText('Sua nota'))
     await salvarEEsperarPatch(user, espioes, { local_rating: null })
     expect(espioes.onDelete).not.toHaveBeenCalled()
   })
 
-  it('erro 422 do PATCH aparece inline e o form permanece', async () => {
+  it('a 422 from the PATCH shows inline and the form stays', async () => {
     const { user } = await editar({
       patchErro: {
         status: 422,
@@ -224,7 +229,7 @@ describe('EntityEditBasicoScreen — edição por idioma', () => {
       },
     })
     await user.type(screen.getByLabelText('Título'), 'Duna')
-    await user.click(screen.getByRole('button', { name: 'Salvar alterações' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent(
         'campo não editorial',
@@ -233,9 +238,9 @@ describe('EntityEditBasicoScreen — edição por idioma', () => {
     expect(spies.navigate).not.toHaveBeenCalled()
   })
 
-  it('salvar sem alterações volta ao detalhe sem chamar a API', async () => {
+  it('saving with no changes goes back to the detail without calling the API', async () => {
     const { user, espioes } = await editar()
-    await user.click(screen.getByRole('button', { name: 'Salvar alterações' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
     await waitFor(() =>
       expect(spies.navigate).toHaveBeenCalledWith({
         to: '/entities/$id',
@@ -245,9 +250,9 @@ describe('EntityEditBasicoScreen — edição por idioma', () => {
     expect(espioes.onPatch).not.toHaveBeenCalled()
   })
 
-  it('Cancelar volta ao detalhe sem gravar', async () => {
+  it('Cancel goes back to the detail without saving', async () => {
     const { user, espioes } = await editar()
-    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(spies.navigate).toHaveBeenCalledWith({
       to: '/entities/$id',
       params: { id: 'e1' },
@@ -256,7 +261,7 @@ describe('EntityEditBasicoScreen — edição por idioma', () => {
     expect(espioes.onDelete).not.toHaveBeenCalled()
   })
 
-  it('id inexistente (404) mostra o estado de erro', async () => {
+  it('a missing id (404) shows the error state', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) => {
@@ -282,25 +287,28 @@ describe('EntityEditBasicoScreen — edição por idioma', () => {
         <EntityEditBasicoScreen />
       </LanguageProvider>,
     )
-    expect(
-      await screen.findByText('Não foi possível carregar o item'),
-    ).toBeInTheDocument()
+    expect(await screen.findByText(ESTADO_ERRO)).toBeInTheDocument()
   })
 })
+
+// The item loading/error state comes from `components/query-states.tsx`, which
+// another domain owns: this query tolerates both labels so the test does not depend
+// on that extraction.
+const ESTADO_ERRO = /Não foi possível carregar o item|Could not load the item/
 
 // "Leave without saving" guard, now local to the section: only the "dirty" state of the
 // SchemaForm — the EntityEditShell intercepts the "Voltar ao item" link + the links
 // of the sidebar + the native beforeunload.
-describe('EntityEditBasicoScreen — guard de sair sem salvar (0073/0080)', () => {
+describe('EntityEditBasicoScreen — leave without saving guard (0073/0080)', () => {
   function linkVoltar() {
-    return screen.getByRole('link', { name: /Voltar ao item/ })
+    return screen.getByRole('link', { name: /Back to the item/ })
   }
 
   afterEach(() => {
     vi.unstubAllGlobals()
   })
 
-  it('sem alterações, "Voltar ao item" navega direto sem confirmação', async () => {
+  it('with no changes, "Back to the item" navigates straight away without confirmation', async () => {
     const confirmar = vi.fn()
     vi.stubGlobal('confirm', confirmar)
     const { user } = await editar()
@@ -311,7 +319,7 @@ describe('EntityEditBasicoScreen — guard de sair sem salvar (0073/0080)', () =
     expect(spies.navigate).not.toHaveBeenCalled()
   })
 
-  it('editar o Título dispara confirmação (Voltar e sidebar); cancelar mantém a edição', async () => {
+  it('editing the Title fires the confirmation (Back and sidebar); cancelling keeps the edit', async () => {
     const confirmar = vi.fn(() => false)
     vi.stubGlobal('confirm', confirmar)
     const { user } = await editar()
@@ -325,12 +333,12 @@ describe('EntityEditBasicoScreen — guard de sair sem salvar (0073/0080)', () =
 
     // The same guard also intercepts the click on ANOTHER section of the sidebar,
     // not only "Voltar ao item".
-    await user.click(screen.getByRole('link', { name: 'IDs de terceiros' }))
+    await user.click(screen.getByRole('link', { name: 'External IDs' }))
     expect(confirmar).toHaveBeenCalledTimes(2)
     expect(spies.navigate).not.toHaveBeenCalled()
   })
 
-  it('editar o Título e confirmar a saída navega', async () => {
+  it('editing the Title and confirming the exit navigates', async () => {
     vi.stubGlobal(
       'confirm',
       vi.fn(() => true),
@@ -344,7 +352,7 @@ describe('EntityEditBasicoScreen — guard de sair sem salvar (0073/0080)', () =
     })
   })
 
-  it('dispara o aviso nativo (beforeunload) só enquanto há alteração pendente', async () => {
+  it('fires the native warning (beforeunload) only while there is a pending change', async () => {
     const { user } = await editar()
     const evento = new Event('beforeunload', { cancelable: true })
     const preventDefault = vi.spyOn(evento, 'preventDefault')

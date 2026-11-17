@@ -13,11 +13,11 @@ import { renderRota } from '@/test/route-tree-harness'
 // CRITICAL (ADR-0012): re-enriching an entity with an overridden title and a tag
 // removed by the owner cannot revert that investment — only the fields WITHOUT
 // override reflect the new data from the source. It tests the real route tree: it fires
-// "Salvar e re-enriquecer" in the "IDs de terceiros" subroute and checks the
-// result by navigating to the "Informações básicas" subroute (the shared
+// "Save and re-enrich" in the "External IDs" subroute and checks the
+// result by navigating to the "Basic information" subroute (the shared
 // sidebar, `EntityEditShell`, keeps the two subroutes in the same tree).
-describe('enrich não-destrutivo (Fase 3)', () => {
-  it('preserva título editado e tag removida ao "Salvar e re-enriquecer"', async () => {
+describe('non-destructive enrich (Phase 3)', () => {
+  it('preserves the edited title and the removed tag on "Save and re-enrich"', async () => {
     const id = '7'
 
     // State BEFORE the re-enrich: the owner has already edited the title (override) and removed
@@ -41,7 +41,7 @@ describe('enrich não-destrutivo (Fase 3)', () => {
     let enrichChamado = false
 
     server.use(
-      // "Salvar e re-enriquecer" writes the ids (unchanged here) BEFORE
+      // "Save and re-enrich" writes the ids (unchanged here) BEFORE
       // enriching — it returns the entity as it is.
       http.put(`/api/v1/entities/${id}/external-ids`, () =>
         HttpResponse.json(entidades.get(id)),
@@ -65,7 +65,7 @@ describe('enrich não-destrutivo (Fase 3)', () => {
       }),
     )
 
-    // It checks the "before" state in the "Informações básicas" section first.
+    // It checks the "before" state in the "Basic information" section first.
     await renderRota(`/entities/${id}/edit`)
 
     const tituloInput = await screen.findByLabelText('Título')
@@ -81,19 +81,19 @@ describe('enrich não-destrutivo (Fase 3)', () => {
       'Sinopse antiga da fonte.',
     )
 
-    // It fires "Salvar e re-enriquecer" in the "IDs de terceiros" subroute —
+    // It fires "Save and re-enrich" in the "External IDs" subroute —
     // same shared sidebar/header (`EntityEditShell`), navigation
     // through the real Link (no mock in this MSW suite).
-    fireEvent.click(screen.getByRole('link', { name: 'IDs de terceiros' }))
-    await screen.findByText('Salvar e re-enriquecer')
+    fireEvent.click(screen.getByRole('link', { name: 'External IDs' }))
+    await screen.findByText('Save and re-enrich')
 
-    fireEvent.click(screen.getByText('Salvar e re-enriquecer'))
+    fireEvent.click(screen.getByText('Save and re-enrich'))
 
     await waitFor(() => expect(enrichChamado).toBe(true))
 
-    // It goes back to "Informações básicas" to check the result of the enrich.
+    // It goes back to "Basic information" to check the result of the enrich.
     fireEvent.click(
-      await screen.findByRole('link', { name: 'Informações básicas' }),
+      await screen.findByRole('link', { name: 'Basic information' }),
     )
 
     // New data from the source arrived (placeholder of the synopsis, field WITHOUT override).

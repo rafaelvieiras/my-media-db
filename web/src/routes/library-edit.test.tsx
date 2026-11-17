@@ -11,6 +11,9 @@ import { erroJson } from '@/test/detail-harness'
 // `libraryQueryOptions`), saves via PATCH (the path re-basing) and concentrates the
 // removal in a "danger zone" with a 2-step confirmation (`alertdialog`,
 // same pattern as `/orphans`).
+//
+// The interface language falls back to English in these tests (no stored
+// preference), so the assertions use the English copy of the `library` catalog.
 const spies = vi.hoisted(() => ({
   navigate: vi.fn(),
   back: vi.fn(),
@@ -59,7 +62,7 @@ function fetchRouter(opts: {
         ? opts.deleteResp()
         : ({ ok: true, status: 204 } as Response)
     }
-    throw new Error(`rota não mockada: ${method} ${u}`)
+    throw new Error(`unmocked route: ${method} ${u}`)
   })
 }
 
@@ -77,14 +80,14 @@ function chamouDelete(fetchMock: ReturnType<typeof fetchRouter>): boolean {
   )
 }
 
-// Clicks "Salvar", waits for the success navigation and returns the body (already
+// Clicks "Save", waits for the success navigation and returns the body (already
 // parsed) of PATCH /library/s1 — the submit tests only vary in what they
 // filled in before and in what they check after this common point.
 async function clicarSalvarEPegarCorpo(
   user: ReturnType<typeof userEvent.setup>,
   fetchMock: ReturnType<typeof fetchRouter>,
 ) {
-  await user.click(screen.getByRole('button', { name: 'Salvar' }))
+  await user.click(screen.getByRole('button', { name: 'Save' }))
 
   await waitFor(() =>
     expect(spies.navigate).toHaveBeenCalledWith({ to: '/dashboard/library' }),
@@ -97,7 +100,7 @@ async function clicarSalvarEPegarCorpo(
   return JSON.parse(String(chamada?.[1]?.body))
 }
 
-// abrirZonaDePerigo mounts the screen, clicks "Remover datasource" and returns
+// abrirZonaDePerigo mounts the screen, clicks "Remove datasource" and returns
 // `user`/`fetchMock` for the test to continue (confirm or cancel).
 async function abrirZonaDePerigo() {
   const user = userEvent.setup()
@@ -105,24 +108,24 @@ async function abrirZonaDePerigo() {
   vi.stubGlobal('fetch', fetchMock)
   renderWithClient(<LibraryEditScreen />)
 
-  await screen.findByLabelText('Caminho do datasource')
-  await user.click(screen.getByRole('button', { name: 'Remover datasource' }))
+  await screen.findByLabelText('Datasource path')
+  await user.click(screen.getByRole('button', { name: 'Remove datasource' }))
   return { user, fetchMock }
 }
 
 describe('LibraryEditScreen', () => {
-  it('pré-carrega o caminho atual do datasource', async () => {
+  it('preloads the current path of the datasource', async () => {
     vi.stubGlobal('fetch', fetchRouter({ fonte: source() }))
     renderWithClient(<LibraryEditScreen />)
 
     await waitFor(() =>
-      expect(screen.getByLabelText('Caminho do datasource')).toHaveValue(
+      expect(screen.getByLabelText('Datasource path')).toHaveValue(
         '/mnt/atual',
       ),
     )
   })
 
-  it('pré-carrega o override de reentativa de enriquecimento quando a fonte já tem um', async () => {
+  it('preloads the enrichment retry override when the source already has one', async () => {
     vi.stubGlobal(
       'fetch',
       fetchRouter({ fonte: source({ retroactive_enrichment_days: 45 }) }),
@@ -131,14 +134,12 @@ describe('LibraryEditScreen', () => {
 
     await waitFor(() =>
       expect(
-        screen.getByLabelText(
-          'Reentativa de enriquecimento (dias) do datasource',
-        ),
+        screen.getByLabelText('Datasource enrichment retry (days)'),
       ).toHaveValue(45),
     )
   })
 
-  it('limpa o override de reentativa (campo vazio) e envia null no PATCH', async () => {
+  it('clears the retry override (empty field) and sends null in the PATCH', async () => {
     const user = userEvent.setup()
     const fetchMock = fetchRouter({
       fonte: source({ retroactive_enrichment_days: 45 }),
@@ -147,7 +148,7 @@ describe('LibraryEditScreen', () => {
     renderWithClient(<LibraryEditScreen />)
 
     const input = await screen.findByLabelText(
-      'Reentativa de enriquecimento (dias) do datasource',
+      'Datasource enrichment retry (days)',
     )
     await waitFor(() => expect(input).toHaveValue(45))
     await user.clear(input)
@@ -158,22 +159,20 @@ describe('LibraryEditScreen', () => {
     })
   })
 
-  it('mostra "Datasource não encontrado" quando o id não existe na lista', async () => {
+  it('shows "Datasource not found" when the id is not in the list', async () => {
     vi.stubGlobal('fetch', fetchRouter({}))
     renderWithClient(<LibraryEditScreen />)
 
-    expect(
-      await screen.findByText('Datasource não encontrado'),
-    ).toBeInTheDocument()
+    expect(await screen.findByText('Datasource not found')).toBeInTheDocument()
   })
 
-  it('salva o novo caminho via PATCH e navega para /dashboard/library', async () => {
+  it('saves the new path via PATCH and navigates to /dashboard/library', async () => {
     const user = userEvent.setup()
     const fetchMock = fetchRouter({ fonte: source() })
     vi.stubGlobal('fetch', fetchMock)
     renderWithClient(<LibraryEditScreen />)
 
-    const input = await screen.findByLabelText('Caminho do datasource')
+    const input = await screen.findByLabelText('Datasource path')
     await user.clear(input)
     await user.type(input, '/mnt/novo')
     const corpo = await clicarSalvarEPegarCorpo(user, fetchMock)
@@ -182,37 +181,37 @@ describe('LibraryEditScreen', () => {
     })
   })
 
-  it('mostra o erro 422 inline ao salvar um caminho inválido e não navega', async () => {
+  it('shows the 422 error inline when saving an invalid path and does not navigate', async () => {
     const user = userEvent.setup()
     vi.stubGlobal(
       'fetch',
       fetchRouter({
         fonte: source(),
         patchResp: () =>
-          erroJson(422, 'invalid_path', 'o caminho informado não existe'),
+          erroJson(422, 'invalid_path', 'the informed path does not exist'),
       }),
     )
     renderWithClient(<LibraryEditScreen />)
 
-    const input = await screen.findByLabelText('Caminho do datasource')
+    const input = await screen.findByLabelText('Datasource path')
     await user.clear(input)
     await user.type(input, '/nao/existe')
-    await user.click(screen.getByRole('button', { name: 'Salvar' }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
 
     expect(
-      await screen.findByText('o caminho informado não existe'),
+      await screen.findByText('the informed path does not exist'),
     ).toBeInTheDocument()
     expect(spies.navigate).not.toHaveBeenCalled()
   })
 
-  it('remover exige confirmação em 2 passos antes de chamar a API', async () => {
+  it('removal requires a 2-step confirmation before calling the API', async () => {
     const { user, fetchMock } = await abrirZonaDePerigo()
 
     expect(screen.getByRole('alertdialog')).toBeInTheDocument()
     // It did not call DELETE just by opening the confirmation.
     expect(chamouDelete(fetchMock)).toBe(false)
 
-    await user.click(screen.getByRole('button', { name: 'Confirmar remoção' }))
+    await user.click(screen.getByRole('button', { name: 'Confirm removal' }))
 
     await waitFor(() => expect(chamouDelete(fetchMock)).toBe(true))
     await waitFor(() =>
@@ -220,9 +219,9 @@ describe('LibraryEditScreen', () => {
     )
   })
 
-  it('cancelar a confirmação de remoção não chama a API', async () => {
+  it('cancelling the removal confirmation does not call the API', async () => {
     const { user, fetchMock } = await abrirZonaDePerigo()
-    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
 
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
     expect(chamouDelete(fetchMock)).toBe(false)

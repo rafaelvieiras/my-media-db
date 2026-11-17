@@ -8,8 +8,8 @@ import { renderWithClient } from '@/test/render'
 // The creation and the editing/removal of a path migrated to dedicated
 // routes (`/library/new`, `/library/$id/edit` — covered in
 // `library-new.test.tsx`/`library-edit.test.tsx`). This list only covers what
-// stays here: empty state, path+badge+progress, "Escanear", the watch
-// switch and the "Adicionar datasource"/"Editar" links.
+// stays here: empty state, path+badge+progress, "Scan", the watch
+// switch and the "Add datasource"/"Edit" links.
 vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/link-mock')).LinkMock,
 }))
@@ -68,27 +68,25 @@ afterEach(() => {
 })
 
 describe('DatasourceList', () => {
-  it('mostra o estado vazio quando não há datasources', async () => {
+  it('shows the empty state when there are no datasources', async () => {
     vi.stubGlobal('fetch', fetchRouter([], idle))
     renderWithClient(<DatasourceList />)
     await waitFor(() =>
-      expect(
-        screen.getByText('Nenhum datasource cadastrado'),
-      ).toBeInTheDocument(),
+      expect(screen.getByText('No datasource registered')).toBeInTheDocument(),
     )
   })
 
-  it('mostra o link "Adicionar datasource" apontando para /dashboard/library/new', async () => {
+  it('shows the "Add datasource" link pointing to /dashboard/library/new', async () => {
     vi.stubGlobal('fetch', fetchRouter([], idle))
     renderWithClient(<DatasourceList />)
 
     const link = await screen.findByRole('link', {
-      name: /Adicionar datasource/,
+      name: /Add datasource/,
     })
     expect(link).toHaveAttribute('href', '/dashboard/library/new')
   })
 
-  it('lista o datasource com estado e progresso de scan em andamento', async () => {
+  it('lists the datasource with its state and the scan progress in flight', async () => {
     const source = sourceFixture()
     vi.stubGlobal(
       'fetch',
@@ -106,21 +104,21 @@ describe('DatasourceList', () => {
     expect(screen.getByText('online')).toBeInTheDocument()
     await waitFor(() =>
       expect(
-        screen.getByText('Escaneando… 5 de 10 arquivos vistos'),
+        screen.getByText('Scanning… 5 of 10 files seen'),
       ).toBeInTheDocument(),
     )
   })
 
-  it('o link "Editar" de cada linha aponta para /dashboard/library/$id/edit', async () => {
+  it('the "Edit" link of each row points to /dashboard/library/$id/edit', async () => {
     const source = sourceFixture({ id: '42' })
     vi.stubGlobal('fetch', fetchRouter([source], idle))
     renderWithClient(<DatasourceList />)
 
-    const link = await screen.findByRole('link', { name: /Editar/ })
+    const link = await screen.findByRole('link', { name: /Edit/ })
     expect(link).toHaveAttribute('href', '/dashboard/library/42/edit')
   })
 
-  it('dispara o scan ao clicar em Escanear', async () => {
+  it('triggers the scan when Scan is clicked', async () => {
     const user = userEvent.setup()
     const source = sourceFixture({
       id: '7',
@@ -133,7 +131,7 @@ describe('DatasourceList', () => {
     renderWithClient(<DatasourceList />)
 
     await waitFor(() => expect(screen.getByText('/tv')).toBeInTheDocument())
-    await user.click(screen.getByRole('button', { name: /Escanear/ }))
+    await user.click(screen.getByRole('button', { name: /^Scan$/ }))
 
     await waitFor(() =>
       expect(
@@ -146,7 +144,7 @@ describe('DatasourceList', () => {
     )
   })
 
-  it('liga o watch de filesystem via PATCH ao alternar o switch', async () => {
+  it('turns the filesystem watch on via PATCH when the switch is toggled', async () => {
     const user = userEvent.setup()
     const source = sourceFixture({ id: '9' })
     const fetchMock = fetchRouter([source], idle)
@@ -157,7 +155,7 @@ describe('DatasourceList', () => {
       expect(screen.getByText('/mnt/filmes')).toBeInTheDocument(),
     )
     const toggle = screen.getByRole('switch', {
-      name: 'Observar mudanças nesta pasta',
+      name: 'Watch this folder for changes',
     })
     expect(toggle).not.toBeChecked()
     await user.click(toggle)
@@ -177,7 +175,7 @@ describe('DatasourceList', () => {
     await waitFor(() => expect(toggle).toBeChecked())
   })
 
-  it('não tem mais formulário fixo no topo nem botão de remoção direto na lista', async () => {
+  it('no longer has a fixed form at the top nor a removal button in the list', async () => {
     const source = sourceFixture()
     vi.stubGlobal('fetch', fetchRouter([source], idle))
     renderWithClient(<DatasourceList />)
@@ -185,11 +183,9 @@ describe('DatasourceList', () => {
     await waitFor(() =>
       expect(screen.getByText('/mnt/filmes')).toBeInTheDocument(),
     )
+    expect(screen.queryByLabelText('Datasource path')).not.toBeInTheDocument()
     expect(
-      screen.queryByLabelText('Caminho do datasource'),
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: 'Remover datasource' }),
+      screen.queryByRole('button', { name: 'Remove datasource' }),
     ).not.toBeInTheDocument()
   })
 })

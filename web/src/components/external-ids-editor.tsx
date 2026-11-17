@@ -4,6 +4,7 @@ import { KeyRound, Plus, RefreshCw, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ApiError, enrichEntity, updateExternalIds } from '@/lib/api'
+import { useT } from '@/lib/i18n'
 
 // An editable row of the external identity: source (e.g. tmdb) + id IN THE SOURCE. `key` is
 // only for React to reconcile the rows when adding/removing (it does not go to the API).
@@ -60,6 +61,7 @@ export function ExternalIdsEditor({
   onDirtyChange?: (sujo: boolean) => void
 }) {
   const queryClient = useQueryClient()
+  const t = useT()
   const [linhas, setLinhas] = useState<Linha[]>(() => linhasDe(externalIds))
   const [proximaKey, setProximaKey] = useState(() => linhas.length)
   // Baseline of what is stored (loaded or successfully saved) — compared
@@ -138,9 +140,7 @@ export function ExternalIdsEditor({
     const removendoTudo =
       Object.keys(mapaNovo).length === 0 && Object.keys(salvo).length > 0
     if (!removendoTudo) return true
-    return window.confirm(
-      'Isso vai remover todos os IDs externos desta entity. Ela pode parar de casar com eventos de webhook e integrações externas até ser re-vinculada. Continuar?',
-    )
+    return window.confirm(t('entity.edit.ids.confirmRemoveAll'))
   }
 
   const erroAtivo = sincronizar.error ?? mutation.error
@@ -148,7 +148,7 @@ export function ExternalIdsEditor({
     erroAtivo instanceof ApiError
       ? erroAtivo.message
       : mutation.isError || sincronizar.isError
-        ? 'Não foi possível salvar os IDs externos.'
+        ? t('entity.edit.ids.saveError')
         : null
 
   return (
@@ -156,19 +156,17 @@ export function ExternalIdsEditor({
       <div className="flex flex-col gap-1">
         <h2 className="flex items-center gap-2 font-heading text-lg font-medium">
           <KeyRound className="size-4" aria-hidden />
-          IDs externos
+          {t('entity.edit.ids.title')}
         </h2>
         <p className="text-sm text-muted-foreground">
-          Fixe o id de cada fonte (ex.: tmdb) para sincronizar este item no
-          futuro. Deixe o id em branco para remover a fonte; depois você pode
-          re-enriquecer.
+          {t('entity.edit.ids.description')}
         </p>
       </div>
 
       <div className="flex flex-col gap-2">
         {linhas.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Nenhum id externo definido.
+            {t('entity.edit.ids.empty')}
           </p>
         ) : (
           linhas.map((l) => (
@@ -176,21 +174,25 @@ export function ExternalIdsEditor({
               <Input
                 value={l.source}
                 onChange={(e) => alterar(l.key, 'source', e.target.value)}
-                placeholder="fonte (ex.: tmdb)"
-                aria-label="Fonte do id externo"
+                placeholder={t('entity.edit.ids.sourcePlaceholder')}
+                aria-label={t('entity.edit.ids.sourceLabel')}
                 className="max-w-[10rem]"
               />
               <Input
                 value={l.value}
                 onChange={(e) => alterar(l.key, 'value', e.target.value)}
-                placeholder="id na fonte"
-                aria-label={`Id na fonte ${l.source || '(nova)'}`}
+                placeholder={t('entity.edit.ids.valuePlaceholder')}
+                aria-label={t('entity.edit.ids.valueLabel', {
+                  source: l.source || t('entity.edit.ids.newSource'),
+                })}
               />
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                aria-label={`Remover ${l.source || 'fonte'}`}
+                aria-label={t('entity.edit.ids.remove', {
+                  source: l.source || t('entity.edit.ids.sourceFallback'),
+                })}
                 onClick={() => remover(l.key)}
               >
                 <X aria-hidden />
@@ -207,15 +209,14 @@ export function ExternalIdsEditor({
       ) : null}
       {avisoFusao && !mensagemErro ? (
         <p role="status" className="text-sm text-muted-foreground">
-          Duplicata mesclada automaticamente — o item já importado foi combinado
-          com este.
+          {t('entity.edit.ids.mergeNotice')}
         </p>
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
         <Button type="button" variant="outline" size="sm" onClick={adicionar}>
           <Plus aria-hidden />
-          Adicionar fonte
+          {t('entity.edit.ids.addSource')}
         </Button>
         <Button
           type="button"
@@ -227,7 +228,9 @@ export function ExternalIdsEditor({
             if (confirmarSeVazio(mapa)) mutation.mutate(mapa)
           }}
         >
-          {mutation.isPending ? 'Salvando…' : 'Salvar IDs'}
+          {mutation.isPending
+            ? t('common.action.saving')
+            : t('entity.edit.ids.save')}
         </Button>
         <Button
           type="button"
@@ -242,7 +245,9 @@ export function ExternalIdsEditor({
             className={sincronizar.isPending ? 'animate-spin' : undefined}
             aria-hidden
           />
-          {sincronizar.isPending ? 'Sincronizando…' : 'Salvar e re-enriquecer'}
+          {sincronizar.isPending
+            ? t('entity.edit.ids.syncing')
+            : t('entity.edit.ids.saveAndReenrich')}
         </Button>
       </div>
     </section>

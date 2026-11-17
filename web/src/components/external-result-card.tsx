@@ -3,6 +3,7 @@ import { type ExternalResult } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ImportarButton, PosterImg } from '@/components/rich-detail-view'
+import { useT } from '@/lib/i18n'
 
 // Visual core (poster + title + year + truncated synopsis) of an EXTERNAL result,
 // shared by `ExternalResultCard` (import) and `CorrectMatchResultCard`
@@ -19,11 +20,12 @@ export function ExternalResultContent({
   result: ExternalResult
   internalId?: string | null
 }) {
+  const t = useT()
   const conteudo = (
     <>
       <PosterImg
         src={result.poster_url}
-        alt={`Pôster de ${result.title}`}
+        alt={t('entity.alt.poster', { title: result.title })}
         className="w-20 shrink-0"
       />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -72,7 +74,7 @@ export function ExternalResultContent({
 // Card of an EXTERNAL result ("not saved") in the IMPORT search: it reuses the visual
 // core (`ExternalResultContent`) and adds the Importar button as a shortcut, outside
 // the anchor (a button does not nest in a link). When `internalId` exists, the item already is
-// an entity of the library — it shows the "Na biblioteca" badge and does NOT offer Importar (it avoids
+// an entity of the library — it shows the "In the library" badge and does NOT offer Import (it avoids
 // reimporting what is already cataloged).
 export function ExternalResultCard({
   result,
@@ -81,12 +83,13 @@ export function ExternalResultCard({
   result: ExternalResult
   internalId?: string | null
 }) {
+  const t = useT()
   return (
     <li className="flex flex-col gap-2 rounded-xl bg-card p-3 ring-1 ring-foreground/10">
       <ExternalResultContent result={result} internalId={internalId} />
       {internalId != null ? (
         <Badge variant="secondary" className="w-fit">
-          Na biblioteca
+          {t('entity.label.inLibrary')}
         </Badge>
       ) : (
         <ImportarButton
@@ -101,10 +104,10 @@ export function ExternalResultCard({
 }
 
 // Card of an EXTERNAL result in the CORRECT search (Review queue): same
-// visual core as `ExternalResultCard`, but the action is "Usar este" (it calls
+// visual core as `ExternalResultCard`, but the action is "Use this" (it calls
 // `correctMatch` via `onEscolher`), not Importar. Unlike the import flow,
 // `internalId` does NOT hide the action — it is precisely the duplicate merge case:
-// the "Na biblioteca" badge appears ALONGSIDE the button, never in its place.
+// the "In the library" badge appears ALONGSIDE the button, never in its place.
 export function CorrectMatchResultCard({
   result,
   internalId = null,
@@ -116,13 +119,14 @@ export function CorrectMatchResultCard({
   pendente?: boolean
   onEscolher: (r: ExternalResult) => void
 }) {
+  const t = useT()
   return (
     <li className="flex flex-col gap-2 rounded-xl bg-card p-3 ring-1 ring-foreground/10">
       <ExternalResultContent result={result} internalId={internalId} />
       <div className="flex flex-wrap items-center gap-2">
         {internalId != null ? (
           <Badge variant="secondary" className="w-fit">
-            Na biblioteca
+            {t('entity.label.inLibrary')}
           </Badge>
         ) : null}
         <Button
@@ -130,7 +134,7 @@ export function CorrectMatchResultCard({
           disabled={pendente}
           onClick={() => onEscolher(result)}
         >
-          Usar este
+          {t('collections.correct.useThis')}
         </Button>
       </div>
     </li>

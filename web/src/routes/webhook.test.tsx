@@ -62,16 +62,16 @@ afterEach(() => {
 })
 
 describe('WebhookScreen', () => {
-  it('mostra a seção de webhooks de saída como placeholder, sem chamada de API', async () => {
+  it('shows the outbound webhooks section as a placeholder, without an API call', async () => {
     const fetchMock = fetchRouter()
     vi.stubGlobal('fetch', fetchMock)
     renderWithClient(<WebhookScreen />)
 
     expect(
-      await screen.findByRole('heading', { name: 'Webhooks de saída' }),
+      await screen.findByRole('heading', { name: 'Outbound webhooks' }),
     ).toBeInTheDocument()
     expect(
-      screen.getByText('Nenhum webhook de saída disponível ainda.'),
+      screen.getByText('No outbound webhook available yet.'),
     ).toBeInTheDocument()
     expect(
       fetchMock.mock.calls.every(
@@ -80,7 +80,7 @@ describe('WebhookScreen', () => {
     ).toBe(true)
   })
 
-  it('estado vazio (404): mostra "nenhum token" e gera um novo ao clicar', async () => {
+  it('empty state (404): shows "no token" and generates one on click', async () => {
     const user = userEvent.setup()
     const fetchMock = fetchRouter({
       postResposta: { token: 'token-recem-gerado' },
@@ -89,13 +89,13 @@ describe('WebhookScreen', () => {
     renderWithClient(<WebhookScreen />)
 
     expect(
-      await screen.findByText('Nenhum token gerado ainda.'),
+      await screen.findByText('No token generated yet.'),
     ).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Gerar token' }))
+    await user.click(screen.getByRole('button', { name: 'Generate token' }))
 
     await waitFor(() =>
-      expect(screen.getByLabelText('Token do webhook')).toHaveValue(
+      expect(screen.getByLabelText('Webhook token')).toHaveValue(
         'token-recem-gerado',
       ),
     )
@@ -107,52 +107,50 @@ describe('WebhookScreen', () => {
     expect(postCall).toBeDefined()
   })
 
-  it('token existente: campo mascarado por padrão, toggle mostra/oculta', async () => {
+  it('existing token: field masked by default, toggle shows/hides', async () => {
     const user = userEvent.setup()
     vi.stubGlobal('fetch', fetchRouter({ tokenInicial: 'abc123token' }))
     renderWithClient(<WebhookScreen />)
 
-    const campo = await screen.findByLabelText('Token do webhook')
+    const campo = await screen.findByLabelText('Webhook token')
     expect(campo).toHaveAttribute('type', 'password')
     expect(campo).toHaveValue('abc123token')
 
-    await user.click(screen.getByRole('button', { name: 'Mostrar token' }))
+    await user.click(screen.getByRole('button', { name: 'Show token' }))
     expect(campo).toHaveAttribute('type', 'text')
 
-    await user.click(screen.getByRole('button', { name: 'Ocultar token' }))
+    await user.click(screen.getByRole('button', { name: 'Hide token' }))
     expect(campo).toHaveAttribute('type', 'password')
   })
 
-  it('copia o token e a URL do webhook para a área de transferência', async () => {
+  it('copies the token and the webhook URL to the clipboard', async () => {
     const user = userEvent.setup()
     const writeText = mockarClipboard()
     vi.stubGlobal('fetch', fetchRouter({ tokenInicial: 'abc123token' }))
     renderWithClient(<WebhookScreen />)
-    await screen.findByLabelText('Token do webhook')
+    await screen.findByLabelText('Webhook token')
 
-    await user.click(screen.getByRole('button', { name: 'Copiar token' }))
+    await user.click(screen.getByRole('button', { name: 'Copy token' }))
     expect(writeText).toHaveBeenCalledWith('abc123token')
     expect(
-      await screen.findByRole('button', { name: 'Copiado!' }),
+      await screen.findByRole('button', { name: 'Copied!' }),
     ).toBeInTheDocument()
 
-    await user.click(
-      screen.getByRole('button', { name: 'Copiar URL do webhook' }),
-    )
+    await user.click(screen.getByRole('button', { name: 'Copy webhook URL' }))
     expect(writeText).toHaveBeenCalledWith(
       expect.stringContaining('/api/v1/webhooks/jellyfin?token=abc123token'),
     )
   })
 
-  it('regenerar pede confirmação; cancelar não chama o POST', async () => {
+  it('regenerate asks for confirmation; cancelling does not call the POST', async () => {
     const user = userEvent.setup()
     const fetchMock = fetchRouter({ tokenInicial: 'abc123token' })
     vi.stubGlobal('fetch', fetchMock)
     vi.spyOn(window, 'confirm').mockReturnValue(false)
     renderWithClient(<WebhookScreen />)
-    await screen.findByLabelText('Token do webhook')
+    await screen.findByLabelText('Webhook token')
 
-    await user.click(screen.getByRole('button', { name: 'Gerar novo token' }))
+    await user.click(screen.getByRole('button', { name: 'Generate new token' }))
 
     expect(window.confirm).toHaveBeenCalled()
     expect(
@@ -164,7 +162,7 @@ describe('WebhookScreen', () => {
     ).toBe(false)
   })
 
-  it('regenerar confirmado: substitui o token exibido', async () => {
+  it('confirmed regenerate: replaces the displayed token', async () => {
     const user = userEvent.setup()
     const fetchMock = fetchRouter({
       tokenInicial: 'token-antigo',
@@ -173,18 +171,18 @@ describe('WebhookScreen', () => {
     vi.stubGlobal('fetch', fetchMock)
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     renderWithClient(<WebhookScreen />)
-    await screen.findByLabelText('Token do webhook')
+    await screen.findByLabelText('Webhook token')
 
-    await user.click(screen.getByRole('button', { name: 'Gerar novo token' }))
+    await user.click(screen.getByRole('button', { name: 'Generate new token' }))
 
     await waitFor(() =>
-      expect(screen.getByLabelText('Token do webhook')).toHaveValue(
+      expect(screen.getByLabelText('Webhook token')).toHaveValue(
         'token-substituto',
       ),
     )
   })
 
-  it('estado de erro real (não-404) mostra ErrorState', async () => {
+  it('real error state (non-404) shows the ErrorState', async () => {
     vi.stubGlobal(
       'fetch',
       fetchRouter({
@@ -194,18 +192,18 @@ describe('WebhookScreen', () => {
     renderWithClient(<WebhookScreen />)
 
     expect(
-      await screen.findByText('Não foi possível carregar o token do webhook'),
+      await screen.findByText('Could not load the webhook token'),
     ).toBeInTheDocument()
   })
 })
 
 // Ensures that the main heading of the screen is also present (structure smoke test,
 // useful to catch import/broken-route regressions).
-it('renderiza o heading "Webhook"', async () => {
+it('renders the "Webhook" heading', async () => {
   vi.stubGlobal('fetch', fetchRouter())
   renderWithClient(<WebhookScreen />)
   const heading = await screen.findByRole('heading', { name: 'Webhook' })
   expect(
-    within(heading.closest('main')!).getByText(/Webhook de entrada/),
+    within(heading.closest('main')!).getByText(/Inbound webhook/),
   ).toBeInTheDocument()
 })

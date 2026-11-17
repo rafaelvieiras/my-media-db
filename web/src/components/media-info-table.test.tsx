@@ -13,7 +13,7 @@ afterEach(() => {
 })
 
 describe('MediaInfoTable', () => {
-  it('mostra carregamento e depois os arquivos com mediainfo legível', async () => {
+  it('shows loading and then the files with readable mediainfo', async () => {
     const file: MediaFile = {
       id: 'f1',
       path: '/mnt/filmes/Matrix (1999)/Matrix.mkv',
@@ -31,19 +31,19 @@ describe('MediaInfoTable', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(filesResponse([file])))
 
     renderWithClient(<MediaInfoTable entityId="e1" />)
-    expect(screen.getByText('Carregando arquivos…')).toBeInTheDocument()
+    expect(screen.getByText('Loading files…')).toBeInTheDocument()
 
     await waitFor(() =>
       expect(screen.getByText('Matrix.mkv')).toBeInTheDocument(),
     )
     expect(screen.getByText('1080p · HEVC · HDR10 · 5.1')).toBeInTheDocument()
     expect(screen.getByText("Director's Cut")).toBeInTheDocument()
-    expect(screen.getByText('Parte 1')).toBeInTheDocument()
-    expect(screen.getByText('presente')).toBeInTheDocument()
+    expect(screen.getByText('Part 1')).toBeInTheDocument()
+    expect(screen.getByText('present')).toBeInTheDocument()
     expect(screen.getByText(/E-AC3 · 5.1 · Português/)).toBeInTheDocument()
   })
 
-  it('marca arquivos ausentes e sem informações técnicas', async () => {
+  it('flags missing files and files without technical information', async () => {
     const file: MediaFile = {
       id: 'f2',
       path: '/x/y.mkv',
@@ -56,21 +56,21 @@ describe('MediaInfoTable', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(filesResponse([file])))
 
     renderWithClient(<MediaInfoTable entityId="e1" />)
-    await waitFor(() => expect(screen.getByText('ausente')).toBeInTheDocument())
-    expect(screen.getByText('Sem informações técnicas')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('missing')).toBeInTheDocument())
+    expect(screen.getByText('No technical information')).toBeInTheDocument()
   })
 
-  it('mostra vazio quando não há arquivos', async () => {
+  it('shows the empty state when there is no file', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(filesResponse([])))
     renderWithClient(<MediaInfoTable entityId="e1" />)
     await waitFor(() =>
       expect(
-        screen.getByText('Nenhum arquivo associado a este item.'),
+        screen.getByText('No file associated with this item.'),
       ).toBeInTheDocument(),
     )
   })
 
-  it('mostra estado de erro', async () => {
+  it('shows the error state', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -83,9 +83,7 @@ describe('MediaInfoTable', () => {
     )
     renderWithClient(<MediaInfoTable entityId="e1" />)
     await waitFor(() =>
-      expect(
-        screen.getByText('Não foi possível carregar os arquivos'),
-      ).toBeInTheDocument(),
+      expect(screen.getByText('Could not load the files')).toBeInTheDocument(),
     )
   })
 })

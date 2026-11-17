@@ -30,36 +30,36 @@ const externo: ExternalResult = {
 afterEach(() => vi.restoreAllMocks())
 
 describe('ExternalResultCard', () => {
-  it('linka o pôster/título para a tela de detalhe do externo', () => {
+  it('links the poster/title to the external detail screen', () => {
     renderWithClient(<ExternalResultCard result={externo} />)
 
     const link = screen.getByRole('link', { name: /The Matrix/ })
     expect(link.getAttribute('href')).toBe('/external/tmdb/movie/603')
   })
 
-  it('mantém o botão Importar como atalho fora da âncora', () => {
+  it('keeps the Import button as a shortcut outside the anchor', () => {
     renderWithClient(<ExternalResultCard result={externo} />)
 
     // The button exists and is not nested in the link (an anchor does not contain the button).
-    const botao = screen.getByRole('button', { name: /Importar/ })
+    const botao = screen.getByRole('button', { name: /Import/ })
     const link = screen.getByRole('link', { name: /The Matrix/ })
     expect(link.contains(botao)).toBe(false)
   })
 
-  it('com internalId linka para o interno, marca "Na biblioteca" e some o Importar', () => {
+  it('with internalId it links to the internal one, shows "In the library" and drops Import', () => {
     // Internal-first: the item is already an entity — link to /entities/{id}, badge and
-    // NO Importar (it does not reimport what is already cataloged).
+    // NO Import (it does not reimport what is already cataloged).
     renderWithClient(<ExternalResultCard result={externo} internalId="ent-9" />)
 
     const link = screen.getByRole('link', { name: /The Matrix/ })
     expect(link.getAttribute('href')).toBe('/entities/ent-9')
-    expect(screen.getByText('Na biblioteca')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /Importar/ })).toBeNull()
+    expect(screen.getByText('In the library')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Import/ })).toBeNull()
   })
 })
 
 describe('CorrectMatchResultCard (0074)', () => {
-  it('mostra pôster/sinopse (mesmo miolo do ExternalResultCard) e chama onEscolher com o resultado', async () => {
+  it('shows poster/synopsis (same core as ExternalResultCard) and calls onEscolher with the result', async () => {
     const user = userEvent.setup()
     const onEscolher = vi.fn()
     renderWithClient(
@@ -67,11 +67,11 @@ describe('CorrectMatchResultCard (0074)', () => {
     )
 
     expect(screen.getByText('Um hacker descobre a verdade.')).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: 'Usar este' }))
+    await user.click(screen.getByRole('button', { name: 'Use this' }))
     expect(onEscolher).toHaveBeenCalledWith(externo)
   })
 
-  it('com internalId mostra o selo "Na biblioteca" JUNTO do "Usar este" (não esconde a ação, diferente do Importar)', () => {
+  it('with internalId it shows the "In the library" badge ALONGSIDE "Use this" (the action stays, unlike Import)', () => {
     // Duplicate merge case: the result already is an internal entity, but the
     // correction still needs to be able to pick it.
     renderWithClient(
@@ -82,9 +82,7 @@ describe('CorrectMatchResultCard (0074)', () => {
       />,
     )
 
-    expect(screen.getByText('Na biblioteca')).toBeTruthy()
-    expect(
-      screen.getByRole('button', { name: 'Usar este' }),
-    ).toBeInTheDocument()
+    expect(screen.getByText('In the library')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Use this' })).toBeInTheDocument()
   })
 })

@@ -70,7 +70,7 @@ afterEach(() => {
 })
 
 describe('ExternalAlbumView', () => {
-  it('exibe o header do álbum (nome/ano/gênero) e o link Ver álbum quando já interno', async () => {
+  it('shows the album header (name/year/genre) and the View album link when already internal', async () => {
     stubExternalFetch(() => okJson(album()))
     renderAlbum()
 
@@ -78,37 +78,37 @@ describe('ExternalAlbumView', () => {
       await screen.findByRole('heading', { name: 'Fake Album' }),
     ).toBeTruthy()
     expect(screen.getByText('1999 · rock')).toBeTruthy()
-    const ver = screen.getByRole('link', { name: /Ver álbum/ })
+    const ver = screen.getByRole('link', { name: /View album/ })
     expect(ver.getAttribute('href')).toBe('/entities/album-1')
   })
 
-  it('faixa já catalogada linka pro detalhe interno e mostra "na biblioteca"', async () => {
+  it('already cataloged track links to the internal detail and shows "in the library"', async () => {
     stubExternalFetch(() => okJson(album()))
     renderAlbum()
     await screen.findByRole('heading', { name: 'Fake Album' })
 
     const link = screen.getByRole('link', { name: 'Track One' })
     expect(link.getAttribute('href')).toBe('/entities/faixa-1')
-    expect(screen.getByText('na biblioteca')).toBeTruthy()
+    expect(screen.getByText('In the library')).toBeTruthy()
   })
 
-  it('faixa faltando ganha o botão Importar', async () => {
+  it('missing track gains the Import button', async () => {
     stubExternalFetch(() => okJson(album()))
     renderAlbum()
     await screen.findByRole('heading', { name: 'Fake Album' })
 
     expect(screen.getByText('Track Two')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Importar' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Import' })).toBeTruthy()
   })
 
-  it('Importar faixa envia type=faixa e parent_id=id interno do álbum', async () => {
+  it('Importing a track sends type=faixa and parent_id=internal album id', async () => {
     const fetchMock = stubExternalFetch(() => okJson(album()))
     renderAlbum()
     await screen.findByRole('heading', { name: 'Fake Album' })
 
     await userEvent
       .setup()
-      .click(screen.getByRole('button', { name: 'Importar' }))
+      .click(screen.getByRole('button', { name: 'Import' }))
 
     await vi.waitFor(() => {
       const chamada = fetchMock.mock.calls.find(
@@ -128,27 +128,25 @@ describe('ExternalAlbumView', () => {
     })
   })
 
-  it('álbum sem faixas mostra o aviso', async () => {
+  it('album without tracks shows the notice', async () => {
     stubExternalFetch(() => okJson(album({ tracks: [] })))
     renderAlbum()
     expect(
-      await screen.findByText('Este álbum não tem faixas na fonte.'),
+      await screen.findByText('This album has no tracks in the source.'),
     ).toBeTruthy()
   })
 
-  it('404: álbum inexistente na fonte', async () => {
+  it('404: album missing from the source', async () => {
     stubExternalFetch(() => erroJson(404, 'not_found', 'não existe'))
     renderAlbum()
     expect(
-      await screen.findByText('Álbum não encontrado na fonte'),
+      await screen.findByText('Album not found in the source'),
     ).toBeTruthy()
   })
 
-  it('503: fonte sem a capacidade seletiva de álbum', async () => {
+  it('503: source without the selective album capability', async () => {
     stubExternalFetch(() => erroJson(503, 'unavailable', 'sem album'))
     renderAlbum()
-    expect(
-      await screen.findByText('Fonte indisponível no momento'),
-    ).toBeTruthy()
+    expect(await screen.findByText('Source unavailable right now')).toBeTruthy()
   })
 })

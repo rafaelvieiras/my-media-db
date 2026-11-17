@@ -5,6 +5,7 @@ import { PosterCard } from '@/components/poster-card'
 import { ErrorState, LoadingState } from '@/components/query-states'
 import { rotuloTipoPlural } from '@/lib/entity-badges'
 import { tipoParaSlug } from '@/lib/library-slugs'
+import { useT } from '@/lib/i18n'
 import {
   Carousel,
   CarouselContent,
@@ -38,6 +39,7 @@ export function RecentlyAddedRail({
   label: string
   lang?: string
 }) {
+  const t = useT()
   const { data, isPending, isError, isSuccess, error } = useQuery(
     entitiesQueryOptions(
       { type, sort: '-created_at', limit: ITENS_POR_CARROSSEL, owned: true },
@@ -54,13 +56,15 @@ export function RecentlyAddedRail({
       {isPending ? (
         <>
           <RailTitulo type={type} label={label} />
-          <LoadingState label={`Carregando ${label.toLowerCase()}…`} />
+          <LoadingState
+            label={t('media.rail.loading', { label: label.toLowerCase() })}
+          />
         </>
       ) : isError ? (
         <>
           <RailTitulo type={type} label={label} />
           <ErrorState
-            title={`Não foi possível carregar "${label}"`}
+            title={t('media.rail.loadError', { label })}
             message={error instanceof Error ? error.message : undefined}
           />
         </>
@@ -96,6 +100,7 @@ export function RecentlyAddedRail({
 // sub-nodes, so this should not happen in practice) only omits the link, without
 // breaking the title.
 function RailTitulo({ type, label }: { type: string; label: string }) {
+  const t = useT()
   const slug = tipoParaSlug(type)
   return (
     <div className="flex items-center gap-3">
@@ -106,7 +111,7 @@ function RailTitulo({ type, label }: { type: string; label: string }) {
           params={{ entitySlug: slug }}
           className="text-sm text-muted-foreground hover:text-foreground hover:underline"
         >
-          Ver Todos
+          {t('media.rail.viewAll')}
         </Link>
       ) : null}
     </div>
@@ -125,6 +130,7 @@ function RailTitulo({ type, label }: { type: string; label: string }) {
 // below keeps working normally and already has its own error state.
 export function RecentlyAddedSection({ lang }: { lang?: string } = {}) {
   const { data, isSuccess } = useQuery(entityTypesQueryOptions)
+  const t = useT()
 
   if (!isSuccess || data.length === 0) {
     return null
@@ -136,7 +142,7 @@ export function RecentlyAddedSection({ lang }: { lang?: string } = {}) {
         <RecentlyAddedRail
           key={tipo.type}
           type={tipo.type}
-          label={rotuloTipoPlural(tipo.type)}
+          label={rotuloTipoPlural(tipo.type, t)}
           lang={lang}
         />
       ))}

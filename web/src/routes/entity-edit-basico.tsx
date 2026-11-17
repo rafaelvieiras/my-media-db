@@ -18,6 +18,8 @@ import {
   entityQueryOptions,
   overrideBlobQueryOptions,
 } from '@/lib/queries'
+import { useT } from '@/lib/i18n'
+import type { Translate } from '@/lib/i18n/types'
 import { useLanguage } from '@/lib/language-context'
 import {
   construirPatchEdicao,
@@ -101,6 +103,7 @@ function EntityEditBasicoForm({
 }) {
   const qc = useQueryClient()
   const navigate = useNavigate()
+  const t = useT()
 
   const sementes = valoresDeEdicao(fields, blob, lang, entity)
 
@@ -152,7 +155,7 @@ function EntityEditBasicoForm({
       : limpar.error instanceof ApiError
         ? limpar.error.message
         : salvar.isError || limpar.isError
-          ? 'Não foi possível salvar as alterações.'
+          ? t('entity.edit.basic.saveError')
           : null
 
   return (
@@ -162,11 +165,11 @@ function EntityEditBasicoForm({
       schema={schemaZod(fields, 'edicao')}
       onSubmit={onSubmit}
       onCancel={() => navigate({ to: '/entities/$id', params: { id } })}
-      submitLabel="Salvar alterações"
-      submitPendingLabel="Salvando…"
+      submitLabel={t('entity.edit.basic.saveChanges')}
+      submitPendingLabel={t('common.action.saving')}
       isPending={ocupado}
       mensagemErro={mensagemErro}
-      placeholders={placeholdersDe(fields, entity)}
+      placeholders={placeholdersDe(fields, entity, t)}
       onClear={(campo, traduzivel) => limpar.mutate({ campo, traduzivel })}
       clearDisabled={ocupado}
       lang={lang}
@@ -182,21 +185,24 @@ function EntityEditBasicoForm({
 function placeholdersDe(
   fields: FieldDescriptor[],
   entity: ResolvedEntity,
+  t: Translate,
 ): Record<string, string> {
   const out: Record<string, string> = {}
   for (const d of fields) {
     if (d.name === 'local_rating') {
       out[d.name] =
         entity.vote_average != null
-          ? `Fonte: ${entity.vote_average.toFixed(1)}`
-          : 'Sem nota'
+          ? t('entity.edit.basic.sourceRating', {
+              value: entity.vote_average.toFixed(1),
+            })
+          : t('entity.edit.basic.noRating')
       continue
     }
     const valor = (entity as unknown as Record<string, unknown>)[d.name]
     if (typeof valor === 'string' && valor !== '') {
       out[d.name] = valor
     } else if (d.widget === 'date') {
-      out[d.name] = 'AAAA-MM-DD'
+      out[d.name] = t('entity.edit.basic.datePlaceholder')
     }
   }
   return out

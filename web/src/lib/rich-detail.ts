@@ -10,6 +10,7 @@ import {
   type ExternalVideo,
   type ResolvedEntity,
 } from '@/lib/api'
+import type { Translate } from '@/lib/i18n/types'
 
 // NORMALIZED model of the shared rich screen (RichDetailView) and the adapters of the
 // two sources. It lives outside the component file so it does not trigger
@@ -32,7 +33,7 @@ export interface RichDetail {
   certification: string | null
   // Display SITUATION of a SERIES: RAW string from the source (TMDB "Returning
   // Series"|"Ended"|… or TVDB status.name), exposed verbatim — the UI translates the
-  // label into pt-BR via `rotuloSituacao`. Absent/undefined for a movie and for a TVDB-only series without
+  // label into the interface language via `rotuloSituacao`. Absent/undefined for a movie and for a TVDB-only series without
   // a match; in that case the situation badge does not appear.
   airingStatus?: string | null
   voteAverage: number | null
@@ -173,9 +174,9 @@ export function srcDeImagem(url: string | null): string | null {
 
 // ── Series situation (airing_status) ─────────────────────────────────────────
 
-// The situation arrives RAW from the source: the backend does not translate it. The pt-BR label and the
-// color of the badge are a UI decision. `variant` reuses the variants of the design system of
-// `<Badge>`: `default` (highlight, primary) for the "live" states (airing/
+// The situation arrives RAW from the source: the backend does not translate it. The
+// label (in the interface language) and the color of the badge are a UI decision. `variant`
+// reuses the variants of the design system of `<Badge>`: `default` (highlight, primary) for the "live" states (airing/
 // production/premiere) and `secondary` (neutral) for the "closed" ones (ended/canceled/
 // planned) — the same tone that the certification already uses.
 export type VarianteSituacao = 'default' | 'secondary'
@@ -188,34 +189,38 @@ export interface RotuloSituacao {
 // Covers BOTH vocabularies (the value may come from either source): TMDB ("Returning
 // Series"/"Ended"/"Canceled"/"In Production"/"Planned"/"Pilot") and TVDB ("Continuing"/
 // "Ended"/"Upcoming"/"Canceled"). Keys normalized (lowercase) to match
-// case variations and the British "Cancelled".
-const SITUACAO_LABELS: Record<string, RotuloSituacao> = {
+// case variations and the British "Cancelled". The value is the catalog key of the label.
+const SITUACAO_CHAVES: Record<
+  string,
+  { key: string; variant: VarianteSituacao }
+> = {
   // TMDB
-  'returning series': { label: 'Em exibição', variant: 'default' },
-  ended: { label: 'Encerrada', variant: 'secondary' },
-  canceled: { label: 'Cancelada', variant: 'secondary' },
-  cancelled: { label: 'Cancelada', variant: 'secondary' },
-  'in production': { label: 'Em produção', variant: 'default' },
-  planned: { label: 'Planejada', variant: 'secondary' },
-  pilot: { label: 'Piloto', variant: 'secondary' },
+  'returning series': { key: 'entity.situation.airing', variant: 'default' },
+  ended: { key: 'entity.situation.ended', variant: 'secondary' },
+  canceled: { key: 'entity.situation.canceled', variant: 'secondary' },
+  cancelled: { key: 'entity.situation.canceled', variant: 'secondary' },
+  'in production': { key: 'entity.situation.inProduction', variant: 'default' },
+  planned: { key: 'entity.situation.planned', variant: 'secondary' },
+  pilot: { key: 'entity.situation.pilot', variant: 'secondary' },
   // TVDB
-  continuing: { label: 'Em exibição', variant: 'default' },
-  upcoming: { label: 'Em breve', variant: 'default' },
+  continuing: { key: 'entity.situation.airing', variant: 'default' },
+  upcoming: { key: 'entity.situation.upcoming', variant: 'default' },
 }
 
-// rotuloSituacao translates the raw situation into the pt-BR label + badge variant. An ABSENT/
-// empty value → null (the UI does not render the badge — that is the case of a movie and of a TVDB-only series
-// without a match). An UNKNOWN RAW value (outside the vocabularies) → it shows the raw
+// rotuloSituacao translates the raw situation into the label (in the interface language) +
+// badge variant. An ABSENT/empty value → null (the UI does not render the badge — that is the case of a movie and
+// of a TVDB-only series without a match). An UNKNOWN RAW value (outside the vocabularies) → it shows the raw
 // one capitalized with a neutral color, it never disappears silently.
 export function rotuloSituacao(
   status: string | null | undefined,
+  t: Translate,
 ): RotuloSituacao | null {
   if (!status || !status.trim()) {
     return null
   }
-  const conhecido = SITUACAO_LABELS[status.trim().toLowerCase()]
+  const conhecido = SITUACAO_CHAVES[status.trim().toLowerCase()]
   if (conhecido) {
-    return conhecido
+    return { label: t(conhecido.key), variant: conhecido.variant }
   }
   const cru = status.trim()
   return {

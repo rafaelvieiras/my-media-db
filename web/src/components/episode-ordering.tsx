@@ -4,6 +4,8 @@ import { Select } from '@/components/ui/select'
 import { CardNumerado, GradeMembros } from '@/components/entity-members'
 import { ErrorState, LoadingState } from '@/components/query-states'
 import { useLanguage } from '@/lib/language-context'
+import { useT } from '@/lib/i18n'
+import type { Translate } from '@/lib/i18n/types'
 import { entityEpisodesQueryOptions } from '@/lib/queries'
 
 // Episode ordering selector: on the series screen, it switches the display
@@ -13,18 +15,18 @@ import { entityEpisodesQueryOptions } from '@/lib/queries'
 // entity), with the episode cards numbered in the chosen order. The order lives in the
 // search param of the route; this module only consumes/fires the switch.
 
-// rotuloOrdem gives the friendly name of an order: it maps the known ones and capitalizes the
-// others (a new order from the source appears readable without touching here). Internal to the module
-// (react-refresh: the component file only exports components) — exercised by the
-// labels of the options of SeletorOrdenacao.
-function rotuloOrdem(ordem: string): string {
+// rotuloOrdem gives the friendly name of an order: it maps the known ones (through the
+// catalog) and capitalizes the others (a new order from the source appears readable
+// without touching here). Internal to the module (react-refresh: the component file only
+// exports components) — exercised by the labels of the options of SeletorOrdenacao.
+function rotuloOrdem(ordem: string, t: Translate): string {
   switch (ordem) {
     case 'official':
-      return 'Oficial'
+      return t('media.ordering.official')
     case 'dvd':
-      return 'DVD'
+      return t('media.ordering.dvd')
     case 'absolute':
-      return 'Absoluto'
+      return t('media.ordering.absolute')
     default:
       return ordem.charAt(0).toUpperCase() + ordem.slice(1)
   }
@@ -42,16 +44,17 @@ export function SeletorOrdenacao({
   options: string[]
   onChange: (ordem: string) => void
 }) {
+  const t = useT()
   return (
     <Select
-      aria-label="Ordem de exibição dos episódios"
+      aria-label={t('media.ordering.selectLabel')}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       className="w-auto"
     >
       {options.map((o) => (
         <option key={o} value={o}>
-          {rotuloOrdem(o)}
+          {rotuloOrdem(o, t)}
         </option>
       ))}
     </Select>
@@ -74,22 +77,23 @@ export function EpisodiosAgrupados({
   seletor: ReactNode
 }) {
   const { lang } = useLanguage()
+  const t = useT()
   const { data, isPending, isError } = useQuery(
     entityEpisodesQueryOptions(id, ordering, lang),
   )
   return (
     <section className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="font-heading text-lg font-medium">Episódios</h2>
+        <h2 className="font-heading text-lg font-medium">
+          {t('common.entityTypePlural.episode')}
+        </h2>
         {seletor}
       </div>
-      {isPending ? <LoadingState label="Carregando episódios…" /> : null}
-      {isError ? (
-        <ErrorState title="Não foi possível carregar os episódios" />
-      ) : null}
+      {isPending ? <LoadingState label={t('media.ordering.loading')} /> : null}
+      {isError ? <ErrorState title={t('media.ordering.loadError')} /> : null}
       {data && data.groups.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          Esta série ainda não tem episódios nesta ordem.
+          {t('media.ordering.empty')}
         </p>
       ) : null}
       {data?.groups.map((grupo, indice) => (
@@ -103,7 +107,7 @@ export function EpisodiosAgrupados({
             isError={false}
             carregando=""
             erro=""
-            vazio="Nenhum episódio."
+            vazio={t('media.ordering.groupEmpty')}
             render={(card) => <CardNumerado card={card} />}
           />
         </div>

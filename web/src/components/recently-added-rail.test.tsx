@@ -40,7 +40,7 @@ afterEach(() => {
 })
 
 describe('RecentlyAddedRail', () => {
-  it('busca com sort=-created_at/owned=true/limit=10 e renderiza os itens reais', async () => {
+  it('fetches with sort=-created_at/owned=true/limit=10 and renders the real items', async () => {
     const items = [
       card({ id: 'a', title: 'Matrix', type: 'movie' }),
       card({ id: 'b', title: 'Duna', type: 'movie' }),
@@ -48,11 +48,11 @@ describe('RecentlyAddedRail', () => {
     const fetchMock = vi.fn().mockResolvedValue(entityList(items))
     vi.stubGlobal('fetch', fetchMock)
 
-    renderWithClient(<RecentlyAddedRail type="movie" label="Filmes" />)
+    renderWithClient(<RecentlyAddedRail type="movie" label="Movies" />)
 
     await waitFor(() => expect(screen.getByText('Matrix')).toBeInTheDocument())
     expect(screen.getByText('Duna')).toBeInTheDocument()
-    expect(screen.getByText('Filmes')).toBeInTheDocument()
+    expect(screen.getByText('Movies')).toBeInTheDocument()
 
     const url = new URL(fetchMock.mock.calls[0][0] as string, 'http://x')
     expect(url.pathname).toBe('/api/v1/entities')
@@ -62,39 +62,39 @@ describe('RecentlyAddedRail', () => {
     expect(url.searchParams.get('limit')).toBe('10')
   })
 
-  it('o título tem um link "Ver Todos" pra "/library/movies" (briefing 0114)', async () => {
+  it('the title has a "View all" link to "/library/movies" (briefing 0114)', async () => {
     const items = [card({ id: 'a', title: 'Matrix', type: 'movie' })]
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(entityList(items)))
 
-    renderWithClient(<RecentlyAddedRail type="movie" label="Filmes" />)
+    renderWithClient(<RecentlyAddedRail type="movie" label="Movies" />)
 
-    const link = await screen.findByRole('link', { name: 'Ver Todos' })
+    const link = await screen.findByRole('link', { name: 'View all' })
     expect(link).toHaveAttribute('href', '/library/movies')
   })
 
-  it('sem slug mapeado pro tipo, não renderiza "Ver Todos" (defensivo)', async () => {
-    const items = [card({ id: 'a', title: 'Álbum X', type: 'album' })]
+  it('without a slug mapped for the type, it does not render "View all" (defensive)', async () => {
+    const items = [card({ id: 'a', title: 'Album X', type: 'album' })]
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(entityList(items)))
 
-    renderWithClient(<RecentlyAddedRail type="album" label="Álbuns" />)
+    renderWithClient(<RecentlyAddedRail type="album" label="Albums" />)
 
-    await waitFor(() => expect(screen.getByText('Álbum X')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Album X')).toBeInTheDocument())
     expect(
-      screen.queryByRole('link', { name: 'Ver Todos' }),
+      screen.queryByRole('link', { name: 'View all' }),
     ).not.toBeInTheDocument()
   })
 
-  it('mostra o estado de carregamento com o rótulo', () => {
+  it('shows the loading state with the label', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() => new Promise<Response>(() => {})),
     )
-    renderWithClient(<RecentlyAddedRail type="movie" label="Filmes" />)
-    expect(screen.getByText('Filmes')).toBeInTheDocument()
-    expect(screen.getByText(/Carregando filmes/i)).toBeInTheDocument()
+    renderWithClient(<RecentlyAddedRail type="movie" label="Movies" />)
+    expect(screen.getByText('Movies')).toBeInTheDocument()
+    expect(screen.getByText(/Loading movies/i)).toBeInTheDocument()
   })
 
-  it('mostra o estado de erro', async () => {
+  it('shows the error state', async () => {
     vi.stubGlobal(
       'fetch',
       vi
@@ -103,26 +103,24 @@ describe('RecentlyAddedRail', () => {
           jsonResponse({ error: { code: 'x', message: 'falhou' } }, false, 500),
         ),
     )
-    renderWithClient(<RecentlyAddedRail type="movie" label="Filmes" />)
+    renderWithClient(<RecentlyAddedRail type="movie" label="Movies" />)
     await waitFor(() =>
-      expect(
-        screen.getByText('Não foi possível carregar "Filmes"'),
-      ).toBeInTheDocument(),
+      expect(screen.getByText('Could not load "Movies"')).toBeInTheDocument(),
     )
   })
 
-  it('não renderiza nada (nem o título) quando o schema não tem item', async () => {
+  it('renders nothing (not even the title) when the schema has no item', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(entityList([])))
     const { container } = renderWithClient(
-      <RecentlyAddedRail type="album" label="Álbuns" />,
+      <RecentlyAddedRail type="album" label="Albums" />,
     )
     await waitFor(() => expect(container).toBeEmptyDOMElement())
-    expect(screen.queryByText('Álbuns')).not.toBeInTheDocument()
+    expect(screen.queryByText('Albums')).not.toBeInTheDocument()
   })
 })
 
 describe('RecentlyAddedSection', () => {
-  it('não renderiza nada quando GET /entities/types devolve lista vazia (biblioteca zerada)', async () => {
+  it('renders nothing when GET /entities/types returns an empty list (empty library)', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((input: RequestInfo | URL) => {
@@ -137,7 +135,7 @@ describe('RecentlyAddedSection', () => {
     await waitFor(() => expect(container).toBeEmptyDOMElement())
   })
 
-  it('renderiza um carrossel por tipo devolvido, incluindo música (0105-0107), sem lista hardcoded', async () => {
+  it('renders one carousel per returned type, music included (0105-0107), with no hardcoded list', async () => {
     const tipos: EntityType[] = [
       { type: 'movie', count: 21 },
       { type: 'album', count: 3 },
@@ -164,8 +162,8 @@ describe('RecentlyAddedSection', () => {
 
     renderWithClient(<RecentlyAddedSection lang="pt-BR" />)
 
-    await waitFor(() => expect(screen.getByText('Filmes')).toBeInTheDocument())
-    expect(screen.getByText('Álbuns')).toBeInTheDocument()
-    expect(screen.getByText('Artistas')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('Movies')).toBeInTheDocument())
+    expect(screen.getByText('Albums')).toBeInTheDocument()
+    expect(screen.getByText('Artists')).toBeInTheDocument()
   })
 })

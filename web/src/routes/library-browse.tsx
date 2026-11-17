@@ -4,6 +4,7 @@ import { EmptyState } from '@/components/query-states'
 import { rotuloTipoPlural } from '@/lib/entity-badges'
 import { slugParaTipo } from '@/lib/library-slugs'
 import { useLanguage } from '@/lib/language-context'
+import { useT } from '@/lib/i18n'
 
 // Route `/library/$entitySlug` (ADR-0030): the complete, paginated listing of
 // ONE top-level type at a time — the `PosterGrid` that used to live inside
@@ -17,6 +18,7 @@ import { useLanguage } from '@/lib/language-context'
 // An invalid slug/type without a mapping (`library-slugs.ts`) falls into a coherent
 // empty state — never a hard 404 nor a crash (an explicit decision).
 export function LibraryBrowseScreen() {
+  const t = useT()
   const { entitySlug } = useParams({ from: '/library/$entitySlug' })
   const { lang } = useLanguage()
   const type = slugParaTipo(entitySlug)
@@ -25,8 +27,8 @@ export function LibraryBrowseScreen() {
     return (
       <main className="mx-auto max-w-6xl px-4 py-6">
         <EmptyState
-          title="Tipo de biblioteca não encontrado"
-          description="O link usado não corresponde a nenhum tipo de biblioteca conhecido."
+          title={t('library.browse.notFoundTitle')}
+          description={t('library.browse.notFoundDescription')}
         />
       </main>
     )
@@ -35,7 +37,7 @@ export function LibraryBrowseScreen() {
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">
       <h1 className="mb-4 font-heading text-xl font-semibold">
-        {rotuloTipoPlural(type)}
+        {rotuloTipoPlural(type, t)}
       </h1>
       <PosterGrid lang={lang} type={type} />
     </main>

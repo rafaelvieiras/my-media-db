@@ -22,16 +22,16 @@ afterEach(() => {
 })
 
 describe('PosterGrid', () => {
-  it('mostra o estado de carregamento', () => {
+  it('shows the loading state', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() => new Promise<Response>(() => {})),
     )
     renderWithClient(<PosterGrid type="movie" />)
-    expect(screen.getByText('Carregando catálogo…')).toBeInTheDocument()
+    expect(screen.getByText('Loading the catalog…')).toBeInTheDocument()
   })
 
-  it('mostra o estado de erro', async () => {
+  it('shows the error state', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(erroJson(500, 'x', 'falhou')),
@@ -39,21 +39,21 @@ describe('PosterGrid', () => {
     renderWithClient(<PosterGrid type="movie" />)
     await waitFor(() =>
       expect(
-        screen.getByText('Não foi possível carregar o catálogo'),
+        screen.getByText('Could not load the catalog'),
       ).toBeInTheDocument(),
     )
   })
 
-  it('mostra o estado vazio que orienta o usuário', async () => {
+  it('shows the empty state that guides the user', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(page([], 0)))
     renderWithClient(<PosterGrid type="movie" />)
     await waitFor(() =>
-      expect(screen.getByText('Nenhum item no catálogo')).toBeInTheDocument(),
+      expect(screen.getByText('No items in the catalog')).toBeInTheDocument(),
     )
-    expect(screen.getByText(/adicione um datasource/i)).toBeInTheDocument()
+    expect(screen.getByText(/add a datasource/i)).toBeInTheDocument()
   })
 
-  it('renderiza os cards e a contagem da paginação', async () => {
+  it('renders the cards and the pagination count', async () => {
     const items: EntityCard[] = [
       {
         id: 'a',
@@ -70,10 +70,10 @@ describe('PosterGrid', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(page(items, 1)))
     renderWithClient(<PosterGrid type="movie" />)
     await waitFor(() => expect(screen.getByText('Alfa')).toBeInTheDocument())
-    expect(screen.getByText('1–1 de 1')).toBeInTheDocument()
+    expect(screen.getByText('1–1 of 1')).toBeInTheDocument()
   })
 
-  it('busca com o `type` recebido via prop, fixo (0114)', async () => {
+  it('fetches with the `type` received via prop, fixed (0114)', async () => {
     const fetchMock = vi.fn().mockResolvedValue(page([]))
     vi.stubGlobal('fetch', fetchMock)
     renderWithClient(<PosterGrid type="artista" />)

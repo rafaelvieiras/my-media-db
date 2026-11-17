@@ -44,8 +44,15 @@ import {
 import { aspectPorTipo, ehDraft, rotuloTipo } from '@/lib/entity-badges'
 import { internalIdDe } from '@/lib/internal-id'
 import { useLanguage } from '@/lib/language-context'
+import { useLocale, useT } from '@/lib/i18n'
+import type { Translate } from '@/lib/i18n/types'
 
 const DEBOUNCE_MS = 350
+
+// The catalog has no ICU plural rules, so the caller picks the `_one`/`_other` suffix.
+function pluralKey(base: string, n: number): string {
+  return `${base}_${n === 1 ? 'one' : 'other'}`
+}
 
 // Route `/review`: the curation queue. It lists the items
 // that the scanner FLAGGED — `draft` (not identified) and low confidence — and gives the
@@ -58,6 +65,8 @@ const DEBOUNCE_MS = 350
 // sections instead of 185 cards, and the candidate preview is only fetched when the owner
 // opens the row (before, one request per card on mount — N+1).
 export function ReviewScreen() {
+  const t = useT()
+  const locale = useLocale()
   const qc = useQueryClient()
   const { data, isPending, isError, error } = useQuery(reviewQueueQueryOptions)
   const [resumoLote, setResumoLote] = useState<string | null>(null)
@@ -68,22 +77,26 @@ export function ReviewScreen() {
       qc.invalidateQueries({ queryKey: ['review'] })
       qc.invalidateQueries({ queryKey: ['entities'] })
       setResumoLote(
-        `${resultado.resolved_count} resolvidos automaticamente, ${resultado.pending_count} continuam para revisão manual.`,
+        t('review.queue.autoSyncSummary', {
+          resolved: resultado.resolved_count,
+          pending: resultado.pending_count,
+        }),
       )
     },
   })
 
-  const grupos = agruparRevisao(data ?? [])
+  const grupos = agruparRevisao(data ?? [], t, locale)
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-6">
       <div className="mb-4 flex flex-col gap-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex flex-col gap-1">
-            <h1 className="font-heading text-xl font-semibold">Revisão</h1>
+            <h1 className="font-heading text-xl font-semibold">
+              {t('review.queue.title')}
+            </h1>
             <p className="text-sm text-muted-foreground">
-              Itens casados com baixa confiança e não identificados, agrupados
-              pelo álbum, série ou pasta de origem.
+              {t('review.queue.subtitle')}
             </p>
           </div>
           <Button
@@ -101,8 +114,8 @@ export function ReviewScreen() {
               <Wand2 aria-hidden />
             )}
             {autoMatchLote.isPending
-              ? 'Sincronizando…'
-              : 'Auto-sincronizar elegíveis'}
+              ? t('review.queue.syncing')
+              : t('review.queue.autoSyncAll')}
           </Button>
         </div>
         {resumoLote ? (
@@ -112,23 +125,27 @@ export function ReviewScreen() {
         ) : null}
         {data && data.length > 0 ? (
           <p className="text-xs text-muted-foreground">
-            {data.length} {data.length === 1 ? 'item' : 'itens'} em{' '}
-            {grupos.length} {grupos.length === 1 ? 'grupo' : 'grupos'}
+            {t(pluralKey('common.label.countItems', data.length), {
+              n: data.length,
+            })}{' '}
+            {t(pluralKey('review.queue.countInGroups', grupos.length), {
+              n: grupos.length,
+            })}
           </p>
         ) : null}
       </div>
 
       {isPending ? (
-        <LoadingState label="Carregando a fila de revisão…" />
+        <LoadingState label={t('review.queue.loading')} />
       ) : isError ? (
         <ErrorState
-          title="Não foi possível carregar a revisão"
+          title={t('review.queue.loadError')}
           message={error instanceof Error ? error.message : undefined}
         />
       ) : grupos.length === 0 ? (
         <EmptyState
-          title="Nada para revisar"
-          description="Nenhum item pendente de curadoria — tudo casado com confiança."
+          title={t('review.queue.emptyTitle')}
+          description={t('review.queue.emptyDescription')}
         />
       ) : (
         <ul className="flex flex-col gap-2">
@@ -155,17 +172,27 @@ type GrupoRevisao = {
 // biggest group comes first (it is what weighs most in the queue).
 const ORDEM_KINDS = ['pasta', 'serie', 'album', 'sem_arquivo']
 
-const ROTULO_KIND: Record<string, string> = {
-  pasta: 'pasta',
-  serie: 'série',
-  album: 'álbum',
-  sem_arquivo: 'sem arquivo',
+const CHAVE_KIND: Record<string, string> = {
+  pasta: 'review.group.kind.pasta',
+  serie: 'review.group.kind.serie',
+  album: 'review.group.kind.album',
+  sem_arquivo: 'review.group.kind.semArquivo',
+}
+
+// Label of the section kind; a kind the catalog does not know echoes raw.
+function rotuloKind(kind: string, t: Translate): string {
+  const chave = CHAVE_KIND[kind]
+  return chave ? t(chave) : kind
 }
 
 // agruparRevisao builds the sections from the `review_group` annotated by the backend.
 // An item without a group (older backend) falls into its own "sem arquivo" section — the screen
 // never hides an item of the queue.
-function agruparRevisao(cards: EntityCard[]): GrupoRevisao[] {
+function agruparRevisao(
+  cards: EntityCard[],
+  t: Translate,
+  locale: string,
+): GrupoRevisao[] {
   const porChave = new Map<string, GrupoRevisao>()
   for (const card of cards) {
     const grupo = card.review_group
@@ -178,7 +205,7 @@ function agruparRevisao(cards: EntityCard[]): GrupoRevisao[] {
     porChave.set(key, {
       key,
       kind: grupo?.kind ?? 'sem_arquivo',
-      label: grupo?.label ?? 'Sem arquivo',
+      label: grupo?.label ?? t('review.group.noFileLabel'),
       items: [card],
     })
   }
@@ -193,25 +220,25 @@ function agruparRevisao(cards: EntityCard[]): GrupoRevisao[] {
     if (a.items.length !== b.items.length) {
       return b.items.length - a.items.length
     }
-    return a.label.localeCompare(b.label, 'pt-BR')
+    return a.label.localeCompare(b.label, locale)
   })
 }
 
-// Reason for the review, in pt-BR: draft = not identified; otherwise, low confidence
+// Reason for the review: draft = not identified; otherwise, low confidence
 // with the percentage of the card (the backend only queues the ones < the threshold).
-function motivoRevisao(card: EntityCard): string {
+function motivoRevisao(card: EntityCard, t: Translate): string {
   if (ehDraft(card.status)) {
-    return 'não identificado'
+    return t('review.row.notIdentified')
   }
-  return `baixa confiança (${card.match_confidence}%)`
+  return t('review.row.lowConfidence', { score: card.match_confidence ?? 0 })
 }
 
 // resumoDoGrupo describes the closed section: number of items + the DOMINANT
 // reason (the first item already comes ordered from the backend by worst confidence).
-function resumoDoGrupo(grupo: GrupoRevisao): string {
+function resumoDoGrupo(grupo: GrupoRevisao, t: Translate): string {
   const itens = grupo.items.length
-  const unidade = itens === 1 ? 'item' : 'itens'
-  return `${itens} ${unidade} · ${motivoRevisao(grupo.items[0])}`
+  const contagem = t(pluralKey('common.label.countItems', itens), { n: itens })
+  return `${contagem} · ${motivoRevisao(grupo.items[0], t)}`
 }
 
 // Invalidation after confirming/correcting: the queue (`['review']`) changes, the grid
@@ -223,12 +250,17 @@ function invalidarRevisao(qc: QueryClient, id: string) {
   qc.invalidateQueries({ queryKey: ['entity', id] })
 }
 
-// pt-BR label of the source of the candidate: "local" came from the catalog already
+// Label of the source of the candidate: "local" came from the catalog already
 // imported (it merges via `fundirEntities`), "external" came from the remote provider
-// (same path as "Corrigir"). Used both by the warning of the batch auto-match
+// (same path as "Correct"). Used both by the warning of the batch auto-match
 // and by the source badge of the preview (`PreviewBloco`).
-function rotuloMetodo(method: 'local' | 'external' | 'none'): string {
-  return method === 'local' ? 'catálogo local' : 'provedor externo'
+function rotuloMetodo(
+  method: 'local' | 'external' | 'none',
+  t: Translate,
+): string {
+  return method === 'local'
+    ? t('review.preview.methodLocal')
+    : t('review.preview.methodExternal')
 }
 
 // Candidate "applicable" from the preview: `found=true` AND a non-null `target` —
@@ -244,6 +276,7 @@ function candidatoValido(
 // ── Section (group) ─────────────────────────────────────────────────────────
 
 function SecaoRevisao({ grupo }: { grupo: GrupoRevisao }) {
+  const t = useT()
   const qc = useQueryClient()
   const [aberto, setAberto] = useState(false)
   const [resumo, setResumo] = useState<string | null>(null)
@@ -254,7 +287,10 @@ function SecaoRevisao({ grupo }: { grupo: GrupoRevisao }) {
       qc.invalidateQueries({ queryKey: ['review'] })
       qc.invalidateQueries({ queryKey: ['entities'] })
       setResumo(
-        `${resultado.resolved_count} resolvido(s) · ${resultado.pending_count} ainda pendente(s)`,
+        t('review.group.summary', {
+          resolved: resultado.resolved_count,
+          pending: resultado.pending_count,
+        }),
       )
     },
   })
@@ -278,11 +314,11 @@ function SecaoRevisao({ grupo }: { grupo: GrupoRevisao }) {
             {grupo.label}
           </span>
           <span className="text-xs text-muted-foreground">
-            {resumoDoGrupo(grupo)}
+            {resumoDoGrupo(grupo, t)}
           </span>
         </span>
         <Badge variant="outline" className="shrink-0">
-          {ROTULO_KIND[grupo.kind] ?? grupo.kind}
+          {rotuloKind(grupo.kind, t)}
         </Badge>
       </button>
 
@@ -304,8 +340,8 @@ function SecaoRevisao({ grupo }: { grupo: GrupoRevisao }) {
                 <Wand2 aria-hidden />
               )}
               {autoMatchGrupo.isPending
-                ? 'Sincronizando…'
-                : 'Auto-sincronizar este grupo'}
+                ? t('review.queue.syncing')
+                : t('review.group.autoSync')}
             </Button>
             {resumo ? (
               <span role="status" className="text-xs text-muted-foreground">
@@ -335,6 +371,7 @@ function SecaoRevisao({ grupo }: { grupo: GrupoRevisao }) {
 // ── Compact row + detail under demand ───────────────────────────────────────
 
 function ReviewRow({ card }: { card: EntityCard }) {
+  const t = useT()
   const qc = useQueryClient()
   const [falhouArte, setFalhouArte] = useState(false)
   const [expandido, setExpandido] = useState(false)
@@ -365,7 +402,7 @@ function ReviewRow({ card }: { card: EntityCard }) {
     mutationFn: () => {
       const dadosPrevia = preview.data
       if (!candidatoValido(dadosPrevia)) {
-        throw new Error('sem candidato para confirmar')
+        throw new Error('no candidate to confirm')
       }
       const { target } = dadosPrevia
       const body: ConfirmCandidateBody =
@@ -408,7 +445,7 @@ function ReviewRow({ card }: { card: EntityCard }) {
           ) : (
             <img
               src={src}
-              alt={`Pôster de ${card.title}`}
+              alt={t('review.row.posterAlt', { title: card.title })}
               loading="lazy"
               onError={() => setFalhouArte(true)}
               className="h-full w-full object-cover"
@@ -424,7 +461,7 @@ function ReviewRow({ card }: { card: EntityCard }) {
             {card.title}
           </Link>
           <span className="text-xs text-muted-foreground">
-            {rotuloTipo(card.type)} · {motivoRevisao(card)}
+            {rotuloTipo(card.type, t)} · {motivoRevisao(card, t)}
           </span>
         </div>
         <Button
@@ -439,7 +476,7 @@ function ReviewRow({ card }: { card: EntityCard }) {
           ) : (
             <ChevronRight className="size-4" aria-hidden />
           )}
-          {expandido ? 'Fechar' : 'Ver candidato'}
+          {expandido ? t('common.action.close') : t('review.row.showCandidate')}
         </Button>
       </div>
 
@@ -469,11 +506,11 @@ function ReviewRow({ card }: { card: EntityCard }) {
               )}
               {achouCandidato
                 ? acaoPendente
-                  ? 'Confirmando…'
-                  : 'Confirmar candidato'
+                  ? t('review.row.confirming')
+                  : t('review.row.confirmCandidate')
                 : acaoPendente
-                  ? 'Confirmando…'
-                  : 'Manter como está (sem metadados externos)'}
+                  ? t('review.row.confirming')
+                  : t('review.row.keepAsIs')}
             </Button>
             <Button
               size="sm"
@@ -482,11 +519,11 @@ function ReviewRow({ card }: { card: EntityCard }) {
               onClick={() => setCorrigindo((v) => !v)}
             >
               <PencilLine aria-hidden />
-              Corrigir
+              {t('review.row.correct')}
             </Button>
             <Button asChild size="sm" variant="ghost">
               <Link to="/entities/$id" params={{ id: card.id }}>
-                Ver detalhe
+                {t('review.row.viewDetail')}
               </Link>
             </Button>
             {mensagemErro ? (
@@ -501,8 +538,7 @@ function ReviewRow({ card }: { card: EntityCard }) {
 
           {avisoFusao ? (
             <p role="status" className="text-xs text-muted-foreground">
-              Duplicata mesclada automaticamente — o item já importado foi
-              combinado com este.
+              {t('review.row.mergeNotice')}
             </p>
           ) : null}
 
@@ -541,6 +577,7 @@ function PreviewBloco({
   isError: boolean
   data: MatchPreview | undefined
 }) {
+  const t = useT()
   const [falhouArte, setFalhouArte] = useState(false)
 
   if (isPending) {
@@ -550,7 +587,7 @@ function PreviewBloco({
         className="flex items-center gap-2 rounded-lg bg-muted/40 p-2 text-muted-foreground"
       >
         <LoaderCircle className="size-4 animate-spin" aria-hidden />
-        <span className="text-xs">Buscando candidato…</span>
+        <span className="text-xs">{t('review.preview.searching')}</span>
       </div>
     )
   }
@@ -558,7 +595,7 @@ function PreviewBloco({
   if (isError) {
     return (
       <p role="alert" className="text-xs font-medium text-destructive">
-        Não foi possível buscar um candidato — tente novamente mais tarde.
+        {t('review.preview.searchError')}
       </p>
     )
   }
@@ -566,8 +603,7 @@ function PreviewBloco({
   if (!data || data.found === false || !data.target) {
     return (
       <p className="text-xs text-muted-foreground">
-        nenhum candidato encontrado — nem no catálogo local, nem na fonte
-        externa
+        {t('review.preview.none')}
       </p>
     )
   }
@@ -591,7 +627,7 @@ function PreviewBloco({
         ) : (
           <img
             src={candidatoSrc}
-            alt={`Pôster de ${target.title}`}
+            alt={t('review.row.posterAlt', { title: target.title })}
             loading="lazy"
             onError={() => setFalhouArte(true)}
             className="h-full w-full object-cover"
@@ -610,17 +646,23 @@ function PreviewBloco({
           ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          <Badge variant="outline">score {data.score.toFixed(1)}</Badge>
-          <Badge variant="secondary">{rotuloMetodo(data.method)}</Badge>
+          <Badge variant="outline">
+            {t('review.preview.score', { score: data.score.toFixed(1) })}
+          </Badge>
+          <Badge variant="secondary">{rotuloMetodo(data.method, t)}</Badge>
           {data.meets_auto_threshold ? (
-            <Badge>match forte</Badge>
+            <Badge>{t('review.preview.strongMatch')}</Badge>
           ) : (
-            <Badge variant="outline">confira antes de confirmar</Badge>
+            <Badge variant="outline">
+              {t('review.preview.checkBeforeConfirming')}
+            </Badge>
           )}
         </div>
         {target.matched_title && target.matched_title !== target.title ? (
           <p className="line-clamp-1 text-xs text-muted-foreground">
-            via título alternativo: &quot;{target.matched_title}&quot;
+            {t('review.preview.alternateTitle', {
+              title: target.matched_title,
+            })}
           </p>
         ) : null}
       </div>
@@ -639,6 +681,7 @@ function CorrigirPainel({
   entityId: string
   onCorrigido: (duplicataMesclada: boolean) => void
 }) {
+  const t = useT()
   const qc = useQueryClient()
   const { lang } = useLanguage()
   const [termo, setTermo] = useState('')
@@ -672,8 +715,8 @@ function CorrigirPainel({
         />
         <Input
           type="search"
-          aria-label="Buscar o título correto"
-          placeholder="Buscar o título correto…"
+          aria-label={t('review.correction.searchLabel')}
+          placeholder={t('review.correction.searchPlaceholder')}
           value={termo}
           onChange={(e) => setTermo(e.target.value)}
           className="h-9 pl-8"
@@ -725,20 +768,21 @@ function ResultadosCorrecao({
   escolhendo: boolean
   onEscolher: (r: ExternalResult) => void
 }) {
+  const t = useT()
   if (query === '') {
     return (
       <p className="text-sm text-muted-foreground">
-        Digite o título correto para escolher a identidade certa.
+        {t('review.correction.hint')}
       </p>
     )
   }
   if (isPending) {
-    return <LoadingState label="Buscando…" />
+    return <LoadingState label={t('review.correction.searching')} />
   }
   if (isError) {
     return (
       <ErrorState
-        title="Não foi possível buscar"
+        title={t('review.correction.searchFailed')}
         message={error instanceof Error ? error.message : undefined}
       />
     )
@@ -746,15 +790,15 @@ function ResultadosCorrecao({
   if (!disponivel) {
     return (
       <ErrorState
-        title="Busca externa indisponível"
-        message="A fonte externa não respondeu ou não está configurada."
+        title={t('review.correction.unavailableTitle')}
+        message={t('review.correction.unavailableMessage')}
       />
     )
   }
   if (externos.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        Nenhum resultado externo para esta busca.
+        {t('review.correction.noResults')}
       </p>
     )
   }

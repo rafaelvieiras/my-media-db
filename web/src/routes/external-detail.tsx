@@ -8,12 +8,14 @@ import { ErrorState, LoadingState } from '@/components/query-states'
 import { ImportarButton, RichDetailView } from '@/components/rich-detail-view'
 import { deExternalDetail } from '@/lib/rich-detail'
 import { ExternalAlbumView } from '@/routes/external-album'
+import { useT } from '@/lib/i18n'
+import type { Translate } from '@/lib/i18n/types'
 
 // Route `/external/$source/$type/$id`: the external item as a whole BEFORE importing
 // It consumes the rich, persistent detail in the active language —
 // switching the language (top) re-fetches the translatable fields (the `lang` enters the queryKey).
 // It reuses the RichDetailView SHARED with the entity detail; what is specific here is
-// the Importar button and the recursive "Voltar" (similars navigate to this same route).
+// the Import button and the recursive "Back" (similars navigate to this same route).
 //
 // `type==='album'` is a TOTALLY different shape (tracks
 // of the release, not a single item) — it delegates to ExternalAlbumView instead of mounting the
@@ -24,16 +26,19 @@ import { ExternalAlbumView } from '@/routes/external-album'
 
 // propsDeErro chooses the title/message of the error state by HTTP status: 404
 // (absent in the source) × 502/503 (source unavailable) × the rest (generic).
-function propsDeErro(error: unknown): { title: string; message?: string } {
+function propsDeErro(
+  error: unknown,
+  t: Translate,
+): { title: string; message?: string } {
   const status = error instanceof ApiError ? error.status : 0
   const message = error instanceof Error ? error.message : undefined
   if (status === 404) {
-    return { title: 'Item não encontrado na fonte', message }
+    return { title: t('entity.external.notFound'), message }
   }
   if (status === 502 || status === 503) {
-    return { title: 'Fonte indisponível no momento', message }
+    return { title: t('entity.external.unavailable'), message }
   }
-  return { title: 'Não foi possível carregar o detalhe', message }
+  return { title: t('entity.external.error'), message }
 }
 
 export function ExternalDetailScreen() {
@@ -68,6 +73,7 @@ function ExternalItemView({
   id: string
 }) {
   const { lang } = useLanguage()
+  const t = useT()
   const router = useRouter()
   const { data, isPending, isError, error } = useQuery(
     externalDetailQueryOptions(source, type, id, lang),
@@ -76,11 +82,11 @@ function ExternalItemView({
   return (
     <main className="mx-auto max-w-4xl px-4 py-6">
       {isPending ? (
-        <LoadingState label="Carregando detalhe…" />
+        <LoadingState label={t('entity.external.loading')} />
       ) : isError ? (
         <>
           <VoltarButton onClick={() => router.history.back()} />
-          <ErrorState {...propsDeErro(error)} />
+          <ErrorState {...propsDeErro(error, t)} />
         </>
       ) : (
         <RichDetailView
@@ -104,6 +110,7 @@ function ExternalItemView({
 // VoltarButton goes back in the history — recursive navigation (similar → similar →
 // back) is normal route history.
 function VoltarButton({ onClick }: { onClick: () => void }) {
+  const t = useT()
   return (
     <button
       type="button"
@@ -111,7 +118,7 @@ function VoltarButton({ onClick }: { onClick: () => void }) {
       className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
     >
       <ArrowLeft className="size-4" aria-hidden />
-      Voltar
+      {t('common.action.back')}
     </button>
   )
 }

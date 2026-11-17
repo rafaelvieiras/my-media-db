@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { LanguageSelector } from '@/components/language-selector'
+import { I18nProvider } from '@/lib/i18n'
 import { LanguageProvider } from '@/lib/language-context'
 import type { LanguageSettings } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
@@ -19,10 +20,20 @@ function stubSettings(settings: LanguageSettings) {
 
 function renderSelector() {
   return renderWithClient(
-    <LanguageProvider>
-      <LanguageSelector />
-    </LanguageProvider>,
+    <I18nProvider>
+      <LanguageProvider>
+        <LanguageSelector />
+      </LanguageProvider>
+    </I18nProvider>,
   )
+}
+
+// Opens the control and returns its menu, so a test can query inside it.
+async function abrirMenu() {
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: 'Language' }))
+  const menu = await screen.findByRole('menu')
+  return { user, menu }
 }
 
 beforeEach(() => {
@@ -34,55 +45,52 @@ afterEach(() => {
 })
 
 describe('LanguageSelector', () => {
-  it('lista os permitidos e troca o idioma (persiste em localStorage)', async () => {
-    const fetchMock = stubSettings({
+  it('offers the three interface languages and switches the UI', async () => {
+    stubSettings({ primary: 'en', fallback: 'en', allowed: ['en'] })
+    renderSelector()
+
+    const { user, menu } = await abrirMenu()
+
+    // English is the default of a browser with no stored preference.
+    expect(
+      within(menu).getByRole('menuitemradio', { name: 'English' }),
+    ).toHaveAttribute('aria-checked', 'true')
+
+    await user.click(
+      within(menu).getByRole('menuitemradio', { name: 'Português (Brasil)' }),
+    )
+
+    expect(localStorage.getItem('mmdb.ui-lang')).toBe('pt-BR')
+    // The trigger itself follows the choice.
+    expect(
+      await screen.findByRole('button', { name: 'Idioma' }),
+    ).toBeInTheDocument()
+  })
+
+  it('lists the allowed metadata languages and switches the reading language', async () => {
+    stubSettings({
       primary: 'pt-BR',
       fallback: 'en',
       allowed: ['pt-BR', 'en'],
     })
     renderSelector()
 
-    const select =
-      await screen.findByLabelText<HTMLSelectElement>('Idioma de leitura')
-    // One option per allowed language, with a readable label.
-    const opcoes = within(select).getAllByRole('option')
-    expect(opcoes.map((o) => o.textContent)).toEqual([
-      'Português (BR)',
-      'Inglês',
-    ])
-    // Seeded on the primary one.
-    expect(select).toHaveValue('pt-BR')
+    const { user, menu } = await abrirMenu()
+    // "English" is both an interface language and a metadata language (the names
+    // are endonyms), so the metadata item is the LAST of the two.
+    const itens = await within(menu).findAllByRole('menuitemradio', {
+      name: 'English',
+    })
+    expect(itens).toHaveLength(2)
 
-    await userEvent.selectOptions(select, 'en')
+    await user.click(itens[1])
 
-    expect(select).toHaveValue('en')
     expect(localStorage.getItem('mmdb.lang')).toBe('en')
-    expect(fetchMock).toHaveBeenCalled()
+    // The interface language is a different setting and stays untouched.
+    expect(localStorage.getItem('mmdb.ui-lang')).toBeNull()
   })
 
-  it('retoma o idioma salvo (persistencia entre reloads) quando ainda permitido', async () => {
-    localStorage.setItem('mmdb.lang', 'en')
-    stubSettings({ primary: 'pt-BR', fallback: 'en', allowed: ['pt-BR', 'en'] })
-    renderSelector()
-
-    const select =
-      await screen.findByLabelText<HTMLSelectElement>('Idioma de leitura')
-    // The seed would have been pt-BR (primary), but the saved 'en' ∈ allowed wins.
-    expect(select).toHaveValue('en')
-  })
-
-  it('cai no principal quando o idioma salvo nao e mais permitido', async () => {
-    localStorage.setItem('mmdb.lang', 'fr')
-    stubSettings({ primary: 'pt-BR', fallback: 'en', allowed: ['pt-BR', 'en'] })
-    renderSelector()
-
-    const select =
-      await screen.findByLabelText<HTMLSelectElement>('Idioma de leitura')
-    // 'fr' left (or never was in) the allowed list → it falls back to the primary pt-BR.
-    expect(select).toHaveValue('pt-BR')
-  })
-
-  it('esconde-se quando ha um unico idioma permitido', async () => {
+  it('hides the metadata section when a single language is allowed', async () => {
     const fetchMock = stubSettings({
       primary: 'pt-BR',
       fallback: 'pt-BR',
@@ -91,6 +99,14 @@ describe('LanguageSelector', () => {
     renderSelector()
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
-    expect(screen.queryByLabelText('Idioma de leitura')).not.toBeInTheDocument()
+    const { menu } = await abrirMenu()
+
+    // The interface section is always there; the metadata one has nothing to offer.
+    expect(
+      within(menu).getByRole('menuitemradio', { name: 'English' }),
+    ).toBeInTheDocument()
+    expect(
+      within(menu).queryByText('Metadata language'),
+    ).not.toBeInTheDocument()
   })
 })

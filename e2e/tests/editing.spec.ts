@@ -11,7 +11,7 @@ test.beforeEach(async ({ request }) => {
   await resetBiblioteca(request)
 })
 
-test('editar override nao e destrutivo apos re-enriquecer', async ({
+test('editing the override is not destructive after re-enriching', async ({
   page,
   request,
 }) => {
@@ -24,25 +24,25 @@ test('editar override nao e destrutivo apos re-enriquecer', async ({
   await page.goto(`/entities/${id}`)
   await expect(page.getByRole('heading', { level: 1, name: 'Matrix' })).toBeVisible()
 
-  // "Editar" is now a LINK to the `/entities/$id/edit` route, no longer an inline
-  // editor, and it lives inside the "Gerenciar" dropdown. On the edit page, edit in
+  // "Edit" is now a LINK to the `/entities/$id/edit` route, no longer an inline
+  // editor, and it lives inside the "Manage" dropdown. On the edit page, edit in
   // pt-BR: new title, remove "Acao" and add "Favorito".
-  await page.getByRole('button', { name: 'Gerenciar' }).click()
-  await page.getByRole('menuitem', { name: 'Editar' }).click()
+  await page.getByRole('button', { name: 'Manage' }).click()
+  await page.getByRole('menuitem', { name: 'Edit' }).click()
   await expect(page).toHaveURL(new RegExp(`/entities/${id}/edit$`))
   await page.getByRole('textbox', { name: 'Título', exact: true }).fill('Matrix EDITADO')
-  await page.getByRole('button', { name: 'Remover tag Acao' }).click()
-  const campoTag = page.getByRole('textbox', { name: 'Adicionar tag' })
+  await page.getByRole('button', { name: 'Remove the tag Acao' }).click()
+  const campoTag = page.getByRole('textbox', { name: 'Add a tag' })
   await campoTag.fill('Favorito')
   await campoTag.press('Enter')
-  await page.getByRole('button', { name: 'Salvar alterações' }).click()
+  await page.getByRole('button', { name: 'Save changes' }).click()
 
   // Confirms that the override round-tripped (the save finished) before re-enriching.
   await expect(
     page.getByRole('heading', { level: 1, name: 'Matrix EDITADO' }),
   ).toBeVisible()
 
-  // There is no direct enrich button on the detail (only "Salvar e re-enriquecer", which
+  // There is no direct enrich button on the detail (only "Save and re-enrich", which
   // is coupled to the external IDs). Triggers the re-enrichment through the API and reloads.
   const enrich = await request.post(`/api/v1/entities/${id}/enrich`, { data: {} })
   expect(enrich.ok()).toBeTruthy()
@@ -59,7 +59,7 @@ test('editar override nao e destrutivo apos re-enriquecer', async ({
   await expect(page.getByText('Acao', { exact: true })).toHaveCount(0)
 })
 
-test('item manual: fixar external-ids e re-enriquecer puxa dados da fonte', async ({
+test('manual item: pin external-ids and re-enrich pulls data from the source', async ({
   page,
   request,
 }) => {
@@ -74,25 +74,25 @@ test('item manual: fixar external-ids e re-enriquecer puxa dados da fonte', asyn
     page.getByRole('heading', { level: 1, name: 'Meu Filme Local' }),
   ).toBeVisible()
 
-  // "Editar" is a LINK to the `/entities/$id/edit` route, now with a sidebar of
-  // sections: the external IDs editor lives in the "IDs de terceiros" subroute
-  // (`/entities/$id/edit/ids`). It lives inside the "Gerenciar" dropdown. It
+  // "Edit" is a LINK to the `/entities/$id/edit` route, now with a sidebar of
+  // sections: the external IDs editor lives in the "External IDs" subroute
+  // (`/entities/$id/edit/ids`). It lives inside the "Manage" dropdown. It
   // pins the source tmdb=603.
-  await page.getByRole('button', { name: 'Gerenciar' }).click()
-  await page.getByRole('menuitem', { name: 'Editar' }).click()
+  await page.getByRole('button', { name: 'Manage' }).click()
+  await page.getByRole('menuitem', { name: 'Edit' }).click()
   await expect(page).toHaveURL(new RegExp(`/entities/${id}/edit$`))
-  await page.getByRole('link', { name: 'IDs de terceiros' }).click()
+  await page.getByRole('link', { name: 'External IDs' }).click()
   await expect(page).toHaveURL(new RegExp(`/entities/${id}/edit/ids$`))
-  await page.getByRole('button', { name: 'Adicionar fonte' }).click()
-  await page.getByRole('textbox', { name: 'Fonte do id externo' }).fill('tmdb')
-  // The aria-label of the id becomes "Id na fonte tmdb" after the source is typed.
-  await page.getByRole('textbox', { name: /^Id na fonte/ }).fill('603')
-  await page.getByRole('button', { name: 'Salvar e re-enriquecer' }).click()
+  await page.getByRole('button', { name: 'Add source' }).click()
+  await page.getByRole('textbox', { name: 'External id source' }).fill('tmdb')
+  // The aria-label of the id becomes "Id in the source tmdb" after the source is typed.
+  await page.getByRole('textbox', { name: /^Id in the source/ }).fill('603')
+  await page.getByRole('button', { name: 'Save and re-enrich' }).click()
 
-  // Waits for the enrich to round-trip: goes back to "Informações básicas" and checks that
+  // Waits for the enrich to round-trip: goes back to "Basic information" and checks that
   // the form reflects the new title resolved from the source in the placeholder of the
   // Título field (proof that the data of source 603 was pulled).
-  await page.getByRole('link', { name: 'Informações básicas' }).click()
+  await page.getByRole('link', { name: 'Basic information' }).click()
   await expect(
     page.getByRole('textbox', { name: 'Título', exact: true }),
   ).toHaveAttribute('placeholder', 'Matrix')

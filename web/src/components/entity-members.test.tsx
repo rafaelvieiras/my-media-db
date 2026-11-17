@@ -5,7 +5,7 @@ import { CardNumerado, CardTemporada } from '@/components/entity-members'
 import { entityCardBase as card } from '@/test/detail-harness'
 import type { EntityCard } from '@/lib/api'
 
-// Tests the SEASON card: the completeness badge (completa / parcial)
+// Tests the SEASON card: the completeness badge (complete / partial)
 // comes from `ownership` and goes in the compact top-right corner; the empty season stays without
 // a badge and with the normal cover (the opacity indent was removed). CardTemporada
 // renders the PosterCard (which uses Link), so it mocks only the router Link as an <a>.
@@ -23,33 +23,37 @@ function season(owned: number, total: number) {
   })
 }
 
-describe('CardTemporada — selo de completude (0036/0038)', () => {
-  it('COMPLETA quando possui todos os episódios catalogados', () => {
+describe('CardTemporada — completeness badge (0036/0038)', () => {
+  it('COMPLETE when it owns every cataloged episode', () => {
     render(<CardTemporada card={season(10, 10)} />)
-    expect(screen.getByLabelText('completa')).toBeTruthy()
+    // The badge copy belongs to the card (`poster-card.tsx`, another domain): the
+    // regex tolerates both labels so this test does not depend on that extraction.
+    expect(screen.getByLabelText(/^(completa|complete)$/i)).toBeTruthy()
   })
 
-  it('PARCIAL mostra "X/Y" com a unidade no aria-label', () => {
+  it('PARTIAL shows "X/Y" with the unit in the aria-label', () => {
     render(<CardTemporada card={season(3, 10)} />)
     const badge = screen.getByText('3/10')
-    expect(badge.getAttribute('aria-label')).toBe('possui 3/10 episódios')
+    expect(badge.getAttribute('aria-label')).toMatch(
+      /3\/10 (episódios|episodes)/,
+    )
   })
 
-  it('VAZIA fica sem badge e com a capa normal (0038)', () => {
+  it('EMPTY stays without a badge and with the normal cover (0038)', () => {
     const { container } = render(<CardTemporada card={season(0, 10)} />)
     expect(screen.queryByText('0/10')).toBeNull()
-    expect(screen.queryByLabelText(/episódios/)).toBeNull()
+    expect(screen.queryByLabelText(/episódios|episodes/)).toBeNull()
     // The opacity indent was removed: the cover is always normal.
     expect(container.querySelector('.opacity-60')).toBeNull()
   })
 
-  it('SEM selo quando total é 0 (nada catalogado)', () => {
+  it('NO badge when the total is 0 (nothing cataloged)', () => {
     render(<CardTemporada card={season(0, 0)} />)
-    expect(screen.queryByLabelText(/episódios/)).toBeNull()
-    expect(screen.queryByLabelText('completa')).toBeNull()
+    expect(screen.queryByLabelText(/episódios|episodes/)).toBeNull()
+    expect(screen.queryByLabelText(/^(completa|complete)$/i)).toBeNull()
   })
 
-  it('SEM selo quando o card não traz ownership (fica sem realce)', () => {
+  it('NO badge when the card has no ownership (no highlight)', () => {
     const { container } = render(
       <CardTemporada card={card({ id: 'se1', type: 'season' })} />,
     )
@@ -63,18 +67,18 @@ function episodio(numbering: EntityCard['numbering']) {
   return card({ id: 'ep1', title: 'Piloto', type: 'episode', numbering })
 }
 
-describe('CardNumerado — numbering real do episódio (0039)', () => {
-  it('exibe o número REAL (E05), não a posição na lista', () => {
+describe('CardNumerado — real episode numbering (0039)', () => {
+  it('shows the REAL number (E05), not the position in the list', () => {
     render(<CardNumerado card={episodio({ season: 1, number: 5 })} />)
     expect(screen.getByText('E05')).toBeTruthy()
   })
 
-  it('zero-padding a 2 dígitos (E01)', () => {
+  it('zero-pads to 2 digits (E01)', () => {
     render(<CardNumerado card={episodio({ season: 1, number: 1 })} />)
     expect(screen.getByText('E01')).toBeTruthy()
   })
 
-  it('anexa o absoluto quando presente e distinto do número da ordem', () => {
+  it('appends the absolute when present and different from the order number', () => {
     render(
       <CardNumerado
         card={episodio({ season: 1, number: 5, absolute_number: 128 })}
@@ -83,7 +87,7 @@ describe('CardNumerado — numbering real do episódio (0039)', () => {
     expect(screen.getByText('E05 · #128')).toBeTruthy()
   })
 
-  it('NÃO anexa o absoluto quando é igual ao número da ordem', () => {
+  it('does NOT append the absolute when it equals the order number', () => {
     render(
       <CardNumerado
         card={episodio({ season: 1, number: 5, absolute_number: 5 })}
@@ -93,12 +97,12 @@ describe('CardNumerado — numbering real do episódio (0039)', () => {
     expect(screen.queryByText(/#/)).toBeNull()
   })
 
-  it('episódio draft (sem numbering) → rótulo neutro, sem número inventado', () => {
-    // The PosterCard also labels the type ("Episódio"), so it targets the numbering label:
+  it('draft episode (no numbering) → neutral label, no invented number', () => {
+    // The PosterCard also labels the type ("Episode"), so it targets the numbering label:
     // the first span of the wrapper. Without numbering it is the neutral label, without "E\d".
     const { container } = render(<CardNumerado card={episodio(null)} />)
     const label = container.querySelector('.flex.flex-col.gap-1 > span')
-    expect(label?.textContent).toBe('Episódio')
+    expect(label?.textContent).toBe('Episode')
     expect(screen.queryByText(/^E\d/)).toBeNull()
   })
 })
@@ -114,14 +118,14 @@ function episodioComStill(stillUrl: string | null) {
   })
 }
 
-describe('CardNumerado — still 16:9 do episódio (0042)', () => {
+describe('CardNumerado — 16:9 still of the episode (0042)', () => {
   const still = 'https://artworks.thetvdb.com/banners/episodes/72514/5.jpg'
 
-  it('com still: thumbnail 16:9 servido pelo image proxy', () => {
+  it('with a still: 16:9 thumbnail served by the image proxy', () => {
     const { container } = render(
       <CardNumerado card={episodioComStill(still)} />,
     )
-    const img = screen.getByAltText('Still de Piloto') as HTMLImageElement
+    const img = screen.getByAltText('Still of Piloto') as HTMLImageElement
     // It routes through the proxy route (GET /images?src=) with the encoded raw URL — not the
     // direct URL of the source CDN.
     expect(img.getAttribute('src')).toBe(
@@ -134,10 +138,10 @@ describe('CardNumerado — still 16:9 do episódio (0042)', () => {
     expect(screen.getByText('E05')).toBeTruthy()
   })
 
-  it('sem still: placeholder "Sem arte" no frame 16:9 (sem imagem)', () => {
+  it('without a still: "No artwork" placeholder in the 16:9 frame (no image)', () => {
     const { container } = render(<CardNumerado card={episodioComStill(null)} />)
     expect(screen.getByTestId('poster-placeholder')).toBeTruthy()
-    expect(screen.queryByAltText('Still de Piloto')).toBeNull()
+    expect(screen.queryByAltText('Still of Piloto')).toBeNull()
     expect(container.querySelector('.aspect-video')).toBeTruthy()
     expect(screen.getByText('E05')).toBeTruthy()
   })

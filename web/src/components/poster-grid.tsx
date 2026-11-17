@@ -7,6 +7,7 @@ import { entitiesQueryOptions } from '@/lib/queries'
 import type { EntityListParams } from '@/lib/api'
 import { PosterCard } from '@/components/poster-card'
 import { EmptyState, ErrorState, LoadingState } from '@/components/query-states'
+import { useT } from '@/lib/i18n'
 
 const POR_PAGINA = 24
 
@@ -39,6 +40,7 @@ function montarParams(
 // type selector (`MediaTypeFilter`) inside the grid anymore, the type already comes fixed from the
 // route. Ownership stays local (internal state of the screen).
 export function PosterGrid({ lang, type }: { lang?: string; type: string }) {
+  const t = useT()
   const [posse, setPosse] = useState<FiltroPosse>('all')
   const [pagina, setPagina] = useState(0)
 
@@ -58,36 +60,40 @@ export function PosterGrid({ lang, type }: { lang?: string; type: string }) {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
         <label className="flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground">Posse</span>
+          <span className="text-muted-foreground">
+            {t('media.grid.ownership')}
+          </span>
           <Select
-            aria-label="Filtrar por posse"
+            aria-label={t('media.grid.ownershipFilter')}
             value={posse}
             onChange={(e) =>
               reiniciarPagina(setPosse)(e.target.value as FiltroPosse)
             }
             className="w-40"
           >
-            <option value="all">Todos</option>
-            <option value="owned">Na biblioteca</option>
-            <option value="not">Fora da biblioteca</option>
+            <option value="all">{t('media.grid.ownershipAll')}</option>
+            <option value="owned">{t('media.grid.ownershipOwned')}</option>
+            <option value="not">{t('media.grid.ownershipNotOwned')}</option>
           </Select>
         </label>
       </div>
 
       {isPending ? (
-        <LoadingState label="Carregando catálogo…" />
+        <LoadingState label={t('media.grid.loading')} />
       ) : isError ? (
         <ErrorState
-          title="Não foi possível carregar o catálogo"
+          title={t('media.grid.loadError')}
           message={error instanceof Error ? error.message : undefined}
         />
       ) : data.items.length === 0 ? (
         <EmptyState
-          title="Nenhum item no catálogo"
-          description="Adicione um datasource e escaneie para popular a biblioteca."
+          title={t('media.grid.emptyTitle')}
+          description={t('media.grid.emptyDescription')}
           action={
             <Button asChild variant="outline" size="sm">
-              <Link to="/dashboard/library">Ir para Bibliotecas</Link>
+              <Link to="/dashboard/library">
+                {t('media.grid.goToLibraries')}
+              </Link>
             </Button>
           }
         />
@@ -128,11 +134,10 @@ function Paginacao({
   const fim = Math.min(offset + limit, total)
   const temAnterior = offset > 0
   const temProximo = fim < total
+  const t = useT()
   return (
     <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
-      <span>
-        {inicio}–{fim} de {total}
-      </span>
+      <span>{t('media.grid.range', { from: inicio, to: fim, total })}</span>
       <div className="flex gap-2">
         <Button
           variant="outline"
@@ -140,7 +145,7 @@ function Paginacao({
           disabled={!temAnterior}
           onClick={onPrev}
         >
-          Anterior
+          {t('common.action.previous')}
         </Button>
         <Button
           variant="outline"
@@ -148,7 +153,7 @@ function Paginacao({
           disabled={!temProximo}
           onClick={onNext}
         >
-          Próxima
+          {t('common.action.next')}
         </Button>
       </div>
     </div>

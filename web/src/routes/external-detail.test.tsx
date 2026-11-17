@@ -134,7 +134,7 @@ afterEach(() => {
 })
 
 describe('ExternalDetailScreen', () => {
-  it('exibe o conjunto rico do 0022 (pt-BR)', async () => {
+  it('shows the rich set of 0022 (content in pt-BR)', async () => {
     stubFetch()
     renderWithClient(<ExternalDetailScreen />)
 
@@ -155,7 +155,7 @@ describe('ExternalDetailScreen', () => {
     expect(screen.getByRole('link', { name: 'IMDb' })).toBeTruthy()
   })
 
-  it('reflete o idioma ativo nos campos traduzíveis', async () => {
+  it('reflects the active language in the translatable fields', async () => {
     estado.lang = 'en'
     const fetchMock = stubFetch()
     renderWithClient(<ExternalDetailScreen />)
@@ -170,7 +170,7 @@ describe('ExternalDetailScreen', () => {
     expect(String(chamada?.[0])).toContain('lang=en')
   })
 
-  it('trata campos ausentes e listas vazias sem quebrar', async () => {
+  it('handles missing fields and empty lists without breaking', async () => {
     const magro: ExternalDetail = {
       ...detalhe('pt-BR'),
       title: 'Curta',
@@ -198,22 +198,20 @@ describe('ExternalDetailScreen', () => {
     expect(await screen.findByRole('heading', { name: 'Curta' })).toBeTruthy()
     // A duration < 1h stays in minutes only; blocks without data do not render.
     expect(screen.getByText('45min')).toBeTruthy()
-    expect(screen.queryByText('Similares')).toBeNull()
-    expect(screen.queryByText('Coleção')).toBeNull()
-    expect(screen.queryByText('Vídeos')).toBeNull()
-    // Importar stays available even in the lean payload.
-    expect(screen.getByRole('button', { name: /Importar/ })).toBeTruthy()
+    expect(screen.queryByText('Similar')).toBeNull()
+    expect(screen.queryByText('Collection')).toBeNull()
+    expect(screen.queryByText('Videos')).toBeNull()
+    // Import stays available even in the lean payload.
+    expect(screen.getByRole('button', { name: /Import/ })).toBeTruthy()
   })
 
-  it('erro genérico (400) cai na mensagem padrão', async () => {
+  it('generic error (400) falls back to the default message', async () => {
     stubFetch(() => erroJson(400, 'bad_request', 'idioma fora dos permitidos'))
     renderWithClient(<ExternalDetailScreen />)
-    expect(
-      await screen.findByText('Não foi possível carregar o detalhe'),
-    ).toBeTruthy()
+    expect(await screen.findByText('Could not load the detail')).toBeTruthy()
   })
 
-  it('vídeo do YouTube toca embutido (nocookie) só após clicar no play', async () => {
+  it('YouTube video plays embedded (nocookie) only after clicking play', async () => {
     stubFetch()
     renderWithClient(<ExternalDetailScreen />)
     await screen.findByRole('heading', { name: 'Duna' })
@@ -221,7 +219,7 @@ describe('ExternalDetailScreen', () => {
     // Before the click: thumbnail with a play button, no iframe loaded.
     expect(document.querySelector('iframe')).toBeNull()
     const play = screen.getByRole('button', {
-      name: /Reproduzir Trailer oficial/,
+      name: /Play Trailer oficial/,
     })
 
     await userEvent.setup().click(play)
@@ -235,7 +233,7 @@ describe('ExternalDetailScreen', () => {
     expect(screen.getByText('Trailer oficial')).toBeTruthy()
   })
 
-  it('vídeo não-YouTube com url vira link externo (sem player)', async () => {
+  it('non-YouTube video with a url becomes an external link (no player)', async () => {
     stubFetch(() =>
       okJson({
         ...detalhe('pt-BR'),
@@ -256,10 +254,10 @@ describe('ExternalDetailScreen', () => {
 
     const link = screen.getByRole('link', { name: /Clipe no Vimeo/ })
     expect(link.getAttribute('href')).toBe('https://vimeo.com/v1')
-    expect(screen.queryByRole('button', { name: /Reproduzir/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Play / })).toBeNull()
   })
 
-  it('similar é navegável para o detalhe externo do alvo', async () => {
+  it('similar is navigable to the external detail of the target', async () => {
     stubFetch()
     renderWithClient(<ExternalDetailScreen />)
 
@@ -267,7 +265,7 @@ describe('ExternalDetailScreen', () => {
     expect(link.getAttribute('href')).toBe('/external/tmdb/movie/604')
   })
 
-  it('similar JÁ na biblioteca linka para o interno e mostra o selo', async () => {
+  it('similar ALREADY in the library links to the internal one and shows the badge', async () => {
     // Internal-first: the already imported part (internal_id) navigates to
     // /entities/{id} — not to the external detail — and gains the "Na biblioteca" badge.
     const comInterno = {
@@ -288,28 +286,26 @@ describe('ExternalDetailScreen', () => {
 
     const link = await screen.findByRole('link', { name: /Duna: Parte 2/ })
     expect(link.getAttribute('href')).toBe('/entities/ent-604')
-    expect(screen.getByText('Na biblioteca')).toBeTruthy()
+    expect(screen.getByText('In the library')).toBeTruthy()
   })
 
-  it('Voltar retorna no histórico', async () => {
+  it('Back returns in the history', async () => {
     stubFetch()
     renderWithClient(<ExternalDetailScreen />)
     await screen.findByRole('heading', { name: 'Duna' })
 
-    await userEvent
-      .setup()
-      .click(screen.getByRole('button', { name: /Voltar/ }))
+    await userEvent.setup().click(screen.getByRole('button', { name: /Back/ }))
     expect(spies.back).toHaveBeenCalledTimes(1)
   })
 
-  it('Importar cria a entity, invalida o grid e navega ao catálogo', async () => {
+  it('Import creates the entity, invalidates the grid and navigates to the catalog', async () => {
     stubFetch()
     const { invalidateSpy } = renderComEspioes(<ExternalDetailScreen />)
     await screen.findByRole('heading', { name: 'Duna' })
 
     await userEvent
       .setup()
-      .click(screen.getByRole('button', { name: /Importar/ }))
+      .click(screen.getByRole('button', { name: /Import/ }))
 
     await waitFor(() =>
       expect(spies.navigate).toHaveBeenCalledWith({
@@ -320,31 +316,27 @@ describe('ExternalDetailScreen', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['entities'] })
   })
 
-  it('404: item inexistente na fonte', async () => {
+  it('404: item missing from the source', async () => {
     stubFetch(() => erroJson(404, 'not_found', 'não existe na fonte'))
     renderWithClient(<ExternalDetailScreen />)
-    expect(await screen.findByText('Item não encontrado na fonte')).toBeTruthy()
+    expect(await screen.findByText('Item not found in the source')).toBeTruthy()
   })
 
-  it('502: fonte indisponível', async () => {
+  it('502: source unavailable', async () => {
     stubFetch(() => erroJson(502, 'upstream_error', 'a fonte falhou'))
     renderWithClient(<ExternalDetailScreen />)
-    expect(
-      await screen.findByText('Fonte indisponível no momento'),
-    ).toBeTruthy()
+    expect(await screen.findByText('Source unavailable right now')).toBeTruthy()
   })
 
-  it('503: provider desligado', async () => {
+  it('503: provider turned off', async () => {
     stubFetch(() => erroJson(503, 'unavailable', 'sem provider'))
     renderWithClient(<ExternalDetailScreen />)
-    expect(
-      await screen.findByText('Fonte indisponível no momento'),
-    ).toBeTruthy()
+    expect(await screen.findByText('Source unavailable right now')).toBeTruthy()
   })
 
   // type==='album': it delegates to ExternalAlbumView (tracks
   // of the release), never to the RichDetailView of a single item.
-  it('type=album delega à tela de faixas do álbum, não ao RichDetailView', async () => {
+  it('type=album delegates to the album tracks screen, not to the RichDetailView', async () => {
     spies.params = { source: 'musicbrainz', type: 'album', id: 'rg-1' }
     stubFetch(() =>
       okJson({
@@ -362,8 +354,8 @@ describe('ExternalDetailScreen', () => {
     expect(
       await screen.findByRole('heading', { name: 'Fake Album' }),
     ).toBeTruthy()
-    expect(screen.getByText('Faixas do álbum')).toBeTruthy()
+    expect(screen.getByText('Album tracks')).toBeTruthy()
     // It never renders the fields exclusive to the rich detail of a single item.
-    expect(screen.queryByRole('button', { name: /Importar/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Import/ })).toBeNull()
   })
 })

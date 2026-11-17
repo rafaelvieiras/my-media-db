@@ -67,7 +67,7 @@ afterEach(() => {
 })
 
 describe('PersonDetailScreen', () => {
-  it('renderiza o nome e a filmografia, com o papel de cada obra', async () => {
+  it('renders the name and the filmography, with the role of each work', async () => {
     stubPerson(() => okJson(pessoa({ filmography: [creditoBB()] })))
     renderWithClient(<PersonDetailScreen />)
 
@@ -82,7 +82,7 @@ describe('PersonDetailScreen', () => {
     ).toHaveAttribute('href', '/entities/e1')
   })
 
-  it('renderiza as duas seções quando ambos os arrays têm itens', async () => {
+  it('renders both sections when both arrays have items', async () => {
     stubPerson(() =>
       okJson(
         pessoa({
@@ -105,10 +105,10 @@ describe('PersonDetailScreen', () => {
     renderWithClient(<PersonDetailScreen />)
 
     expect(
-      await screen.findByRole('heading', { name: 'Na sua biblioteca' }),
+      await screen.findByRole('heading', { name: 'In your library' }),
     ).toBeTruthy()
     expect(
-      screen.getByRole('heading', { name: 'Ainda não importados' }),
+      screen.getByRole('heading', { name: 'Not imported yet' }),
     ).toBeTruthy()
 
     // An imported card navigates to the INTERNAL detail of the entity.
@@ -118,28 +118,28 @@ describe('PersonDetailScreen', () => {
 
     // A non-imported card navigates to the EXTERNAL detail (same route as search/similars).
     const linkExterno = screen.getByRole('link', {
-      name: /Filme Ainda Não Importado \(ainda não importado\)/,
+      name: /Filme Ainda Não Importado \(not imported yet\)/,
     })
     expect(linkExterno).toHaveAttribute('href', '/external/tmdb/movie/604')
     expect(screen.getByText('Diretor')).toBeTruthy()
-    expect(screen.getByText('Não importado')).toBeTruthy()
+    expect(screen.getByText('Not imported')).toBeTruthy()
   })
 
-  it('filmography_external vazio ou ausente não mostra a seção externa', async () => {
+  it('empty or absent filmography_external does not show the external section', async () => {
     stubPerson(() =>
       okJson(pessoa({ filmography: [creditoBB({ poster_url: null })] })),
     )
     renderWithClient(<PersonDetailScreen />)
 
     expect(
-      await screen.findByRole('heading', { name: 'Na sua biblioteca' }),
+      await screen.findByRole('heading', { name: 'In your library' }),
     ).toBeTruthy()
     expect(
-      screen.queryByRole('heading', { name: 'Ainda não importados' }),
+      screen.queryByRole('heading', { name: 'Not imported yet' }),
     ).toBeNull()
   })
 
-  it('filmography vazia mas filmography_external cheia mostra só a seção externa, sem a mensagem de vazio global', async () => {
+  it('empty filmography but full filmography_external shows only the external section, without the global empty message', async () => {
     stubPerson(() =>
       okJson(
         pessoa({
@@ -162,17 +162,15 @@ describe('PersonDetailScreen', () => {
     renderWithClient(<PersonDetailScreen />)
 
     expect(
-      await screen.findByRole('heading', { name: 'Ainda não importados' }),
+      await screen.findByRole('heading', { name: 'Not imported yet' }),
     ).toBeTruthy()
     expect(
-      screen.queryByRole('heading', { name: 'Na sua biblioteca' }),
+      screen.queryByRole('heading', { name: 'In your library' }),
     ).toBeNull()
-    expect(
-      screen.queryByText('Nenhuma obra na sua biblioteca ainda.'),
-    ).toBeNull()
+    expect(screen.queryByText('No works in your library yet.')).toBeNull()
   })
 
-  it('mostra o link externo para o TMDB quando a fonte é tmdb', async () => {
+  it('shows the external link to TMDB when the source is tmdb', async () => {
     stubPerson(() => okJson(pessoa()))
     renderWithClient(<PersonDetailScreen />)
     const link = await screen.findByRole('link', { name: 'TMDB' })
@@ -182,25 +180,23 @@ describe('PersonDetailScreen', () => {
     )
   })
 
-  it('filmografia vazia mostra a mensagem de biblioteca vazia', async () => {
+  it('empty filmography shows the empty library message', async () => {
     stubPerson(() => okJson(pessoa()))
     renderWithClient(<PersonDetailScreen />)
     expect(
-      await screen.findByText('Nenhuma obra na sua biblioteca ainda.'),
+      await screen.findByText('No works in your library yet.'),
     ).toBeTruthy()
   })
 
-  it('pessoa inexistente (404) mostra "Pessoa não encontrada"', async () => {
+  it('missing person (404) shows "Person not found"', async () => {
     stubPerson(() => erroJson(404, 'not_found', 'pessoa nao encontrada'))
     renderWithClient(<PersonDetailScreen />)
-    expect(await screen.findByText('Pessoa não encontrada')).toBeTruthy()
+    expect(await screen.findByText('Person not found')).toBeTruthy()
   })
 
-  it('erro genérico mostra mensagem amigável', async () => {
+  it('generic error shows a friendly message', async () => {
     stubPerson(() => erroJson(502, 'upstream_error', 'fonte indisponivel'))
     renderWithClient(<PersonDetailScreen />)
-    expect(
-      await screen.findByText('Não foi possível carregar a pessoa'),
-    ).toBeTruthy()
+    expect(await screen.findByText('Could not load the person')).toBeTruthy()
   })
 })

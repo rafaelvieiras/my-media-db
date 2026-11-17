@@ -1,16 +1,16 @@
 import { expect, test } from '../fixtures'
 import { resetBiblioteca } from '../lib/reset'
 
-// Block B: LANGUAGE journeys. The "Idioma de leitura" selector of the
-// header re-resolves the title/tags of the displayed item (reading, client-side), while
-// /settings exposes the catalog config (primary/fallback/allowed). Each test
-// starts with the library cleared (reset through the API) and does not change the global config.
+// Block B: LANGUAGE journeys. The "Metadata language" section of the header
+// language control re-resolves the title/tags of the displayed item (reading,
+// client-side), while /settings exposes the catalog config (primary/fallback/allowed).
+// Each test starts with the library cleared (reset through the API) and does not change the global config.
 
 test.beforeEach(async ({ request }) => {
   await resetBiblioteca(request)
 })
 
-test('trocar o idioma de leitura re-resolve o titulo exibido', async ({ page, request }) => {
+test('switching the reading language re-resolves the displayed title', async ({ page, request }) => {
   // Seeds Matrix (tmdb 603) and opens the internal detail.
   const res = await request.post('/api/v1/import', {
     data: { source: 'tmdb', source_id: '603', type: 'movie' },
@@ -19,59 +19,67 @@ test('trocar o idioma de leitura re-resolve o titulo exibido', async ({ page, re
   const { id } = await res.json()
   await page.goto(`/entities/${id}`)
 
-  const idioma = page.getByLabel('Idioma de leitura')
+  // The reading language lives in the header language control, under the
+  // "Metadata language" section (the interface one is a separate section of the
+  // same menu). The language names are endonyms.
+  const abrirIdiomas = async (idioma: string) => {
+    await page.getByRole('button', { name: 'Language' }).click()
+    // .last(): the interface section lists the same endonyms first; the
+    // metadata one is rendered after it.
+    await page.getByRole('menuitemradio', { name: idioma }).last().click()
+  }
 
   // pt-BR (default): title and tags resolved in Portuguese.
   await expect(page.getByRole('heading', { level: 1, name: 'Matrix' })).toBeVisible()
   await expect(page.getByText('Ficcao cientifica')).toBeVisible()
 
   // English: re-resolves to the English title/tag.
-  await idioma.selectOption('en')
+  await abrirIdiomas('English')
   await expect(page.getByRole('heading', { level: 1, name: 'The Matrix' })).toBeVisible()
   await expect(page.getByText('Science Fiction')).toBeVisible()
 
   // Back to pt-BR: title/tag go back to Portuguese.
-  await idioma.selectOption('pt-BR')
+  await abrirIdiomas('Português (Brasil)')
   await expect(page.getByRole('heading', { level: 1, name: 'Matrix' })).toBeVisible()
   await expect(page.getByText('Ficcao cientifica')).toBeVisible()
 })
 
-test('pagina de configuracoes de idioma', async ({ page }) => {
-  // Configurações lives in the sidebar of the administrative area,
+test('language settings page', async ({ page }) => {
+  // Settings lives in the sidebar of the administrative area,
   // no longer in the "/" header -- the real route is /dashboard/settings.
   await page.goto('/dashboard')
-  await page.getByRole('link', { name: 'Configurações' }).click()
+  await page.getByRole('link', { name: 'Settings' }).click()
   await expect(page).toHaveURL(/\/dashboard\/settings$/)
 
-  await expect(page.getByRole('heading', { level: 1, name: 'Configurações' })).toBeVisible()
+  await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
 
   // Scope: the languages form (the page also has the cataloging completeness form,
-  // which has its own "Salvar" button).
-  const formIdiomas = page.locator('form').filter({ hasText: 'Idioma principal' })
+  // which has its own "Save" button).
+  const formIdiomas = page.locator('form').filter({ hasText: 'Primary language' })
 
   // The controls reflect the current catalog config: pt-BR primary, en fallback.
-  await expect(page.getByLabel('Idioma principal')).toHaveValue('pt-BR')
-  await expect(page.getByLabel('Idioma de fallback')).toHaveValue('en')
+  await expect(page.getByLabel('Primary language')).toHaveValue('pt-BR')
+  await expect(page.getByLabel('Fallback language')).toHaveValue('en')
 
   // Allowed languages: pt-BR and en checked; a non-allowed one (es) unchecked.
-  await expect(page.getByRole('checkbox', { name: 'Português (BR) pt-BR' })).toBeChecked()
-  await expect(page.getByRole('checkbox', { name: 'Inglês en' })).toBeChecked()
-  await expect(page.getByRole('checkbox', { name: 'Espanhol es' })).not.toBeChecked()
+  await expect(page.getByRole('checkbox', { name: 'Português (Brasil) pt-BR' })).toBeChecked()
+  await expect(page.getByRole('checkbox', { name: 'English en' })).toBeChecked()
+  await expect(page.getByRole('checkbox', { name: 'Español es' })).not.toBeChecked()
 
-  await expect(formIdiomas.getByRole('button', { name: 'Salvar' })).toBeVisible()
+  await expect(formIdiomas.getByRole('button', { name: 'Save' })).toBeVisible()
 })
 
-test('pagina de configuracoes de enriquecimento retroativo (throttle global)', async ({
+test('retroactive enrichment settings page (global throttle)', async ({
   page,
   request,
 }) => {
-  // "Enriquecimento retroativo" section: GLOBAL throttle that a library without its own
-  // override uses. Same page as the languages, separate form (its own "Salvar" button).
+  // "Retroactive enrichment" section: GLOBAL throttle that a library without its own
+  // override uses. Same page as the languages, separate form (its own "Save" button).
   await page.goto('/dashboard/settings')
-  await expect(page.getByRole('heading', { level: 1, name: 'Configurações' })).toBeVisible()
+  await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
 
-  const formRetroativo = page.locator('form').filter({ hasText: 'Repetir tentativa após (dias)' })
-  const input = formRetroativo.getByLabel('Repetir tentativa após (dias)')
+  const formRetroativo = page.locator('form').filter({ hasText: 'Retry after (days)' })
+  const input = formRetroativo.getByLabel('Retry after (days)')
 
   // Global default: 15 days.
   await expect(input).toHaveValue('15')
@@ -79,16 +87,16 @@ test('pagina de configuracoes de enriquecimento retroativo (throttle global)', a
   // Client-side validation (mirrors the backend, [1, 365]): a value outside the
   // range shows the inline message and does NOT trigger the PUT.
   await input.fill('400')
-  await formRetroativo.getByRole('button', { name: 'Salvar' }).click()
+  await formRetroativo.getByRole('button', { name: 'Save' }).click()
   await expect(
-    formRetroativo.getByText('Informe um número inteiro entre 1 e 365 dias.'),
+    formRetroativo.getByText('Enter a whole number between 1 and 365 days.'),
   ).toBeVisible()
   const resNaoDisparado = await request.get('/api/v1/settings/enrichment-retroativo')
   expect(await resNaoDisparado.json()).toEqual({ retry_days: 15 })
 
   await input.fill('20')
-  await formRetroativo.getByRole('button', { name: 'Salvar' }).click()
-  await expect(formRetroativo.getByText('Configurações salvas.')).toBeVisible()
+  await formRetroativo.getByRole('button', { name: 'Save' }).click()
+  await expect(formRetroativo.getByText('Settings saved.')).toBeVisible()
 
   // It really persisted: the API reflects the new value.
   const res = await request.get('/api/v1/settings/enrichment-retroativo')
@@ -98,11 +106,11 @@ test('pagina de configuracoes de enriquecimento retroativo (throttle global)', a
   // shares the database with the other journeys of the file -- the same spirit
   // as the reading language above, which goes back to pt-BR at the end.
   await input.fill('15')
-  await formRetroativo.getByRole('button', { name: 'Salvar' }).click()
-  await expect(formRetroativo.getByText('Configurações salvas.')).toBeVisible()
+  await formRetroativo.getByRole('button', { name: 'Save' }).click()
+  await expect(formRetroativo.getByText('Settings saved.')).toBeVisible()
 })
 
-test('card yt-dlp mostra status e permite configurar path customizado', async ({
+test('yt-dlp card shows the status and allows configuring a custom path', async ({
   page,
 }) => {
   // The real yt-dlp (internal/ytdlp) downloads the binary from the internet (GitHub
@@ -132,19 +140,19 @@ test('card yt-dlp mostra status e permite configurar path customizado', async ({
   await expect(
     page.getByRole('heading', { level: 2, name: 'yt-dlp' }),
   ).toBeVisible()
-  // With no custom path (initial mock), the badge shows "indisponível" (exact
-  // match: the detail below the badge also contains the substring).
+  // With no custom path (initial mock), the badge shows "unavailable" (exact
+  // match: the detail below the badge also mentions it).
   await expect(
-    secaoYtdlp.getByText('indisponível', { exact: true }),
+    secaoYtdlp.getByText('unavailable', { exact: true }),
   ).toBeVisible()
 
-  const input = page.getByLabel('Path customizado do binário yt-dlp')
+  const input = page.getByLabel('yt-dlp custom binary path')
   await input.fill('/usr/local/bin/yt-dlp')
-  await secaoYtdlp.getByRole('button', { name: 'Salvar' }).click()
+  await secaoYtdlp.getByRole('button', { name: 'Save' }).click()
 
-  await expect(secaoYtdlp.getByText('Configurações salvas.')).toBeVisible()
-  // Custom path saved: the badge reflects "disponível (path customizado)".
+  await expect(secaoYtdlp.getByText('Settings saved.')).toBeVisible()
+  // Custom path saved: the badge reflects "available (custom path)".
   await expect(
-    secaoYtdlp.getByText('disponível (path customizado)'),
+    secaoYtdlp.getByText('available (custom path)'),
   ).toBeVisible()
 })

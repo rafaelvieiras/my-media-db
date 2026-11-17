@@ -130,7 +130,7 @@ async function buscar(result: SearchResult) {
   const fetchMock = fetchRouter(result)
   vi.stubGlobal('fetch', fetchMock)
   renderWithClient(<SearchPanel />)
-  await user.type(screen.getByLabelText('Buscar título'), 'matrix')
+  await user.type(screen.getByLabelText('Search title'), 'matrix')
   return { user, fetchMock }
 }
 
@@ -140,7 +140,7 @@ afterEach(() => {
 })
 
 describe('SearchPanel', () => {
-  it('mostra o estado inicial de instrução e não busca com input vazio', () => {
+  it('shows the initial instruction state and does not search with an empty input', () => {
     const fetchMock = fetchRouter({
       query: '',
       local: [],
@@ -151,7 +151,7 @@ describe('SearchPanel', () => {
     renderWithClient(<SearchPanel />)
 
     expect(
-      screen.getByText('Busque no seu catálogo e em fontes externas'),
+      screen.getByText('Search your catalog and external sources'),
     ).toBeInTheDocument()
     // With an empty input the search (`/search`) does not fire — but the MediaTypeFilter
     // fetches the top-level types (`/entities/types`) by itself, on
@@ -163,7 +163,7 @@ describe('SearchPanel', () => {
     ).toBe(false)
   })
 
-  it('dispara a busca após o debounce e agrupa os locais por tipo real (0113)', async () => {
+  it('fires the search after the debounce and groups the local ones by real type (0113)', async () => {
     const { fetchMock } = await buscar({
       query: 'matrix',
       local: [localCard],
@@ -174,13 +174,13 @@ describe('SearchPanel', () => {
     await waitFor(() =>
       expect(screen.getByText('Matrix Local')).toBeInTheDocument(),
     )
-    // The fixed "Filmes e séries" bucket no longer exists: a `movie` card
-    // becomes the "Filmes" section. `getByRole('heading', ...)` (not `getByText`)
-    // because "Filmes" now is ALSO an `<option>` of the dynamic MediaTypeFilter
+    // The fixed "Movies and series" bucket no longer exists: a `movie` card
+    // becomes the "Movies" section. `getByRole('heading', ...)` (not `getByText`)
+    // because "Movies" now is ALSO an `<option>` of the dynamic MediaTypeFilter
     // — the text alone is no longer unique on the screen.
-    expect(screen.getByRole('heading', { name: 'Filmes' })).toBeInTheDocument()
-    expect(screen.queryByText('Filmes e séries')).toBeNull()
-    expect(screen.getByText('Resultados externos')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Movies' })).toBeInTheDocument()
+    expect(screen.queryByText('Movies and series')).toBeNull()
+    expect(screen.getByText('External results')).toBeInTheDocument()
     expect(screen.getByText('The Matrix')).toBeInTheDocument()
     // It only called /search and /entities/types (with the debounced term), not per
     // character.
@@ -193,7 +193,7 @@ describe('SearchPanel', () => {
     ).toBe(true)
   })
 
-  it('agrupa um resultado de tipo não-filme/série (artista) na própria seção, sem balde "Filmes e séries" (0113)', async () => {
+  it('groups a non-movie/series result (artist) in its own section, with no "Movies and series" bucket (0113)', async () => {
     await buscar({
       query: 'artista',
       local: [localCard, artistaCard],
@@ -204,18 +204,16 @@ describe('SearchPanel', () => {
     await waitFor(() =>
       expect(screen.getByText('Artista Local')).toBeInTheDocument(),
     )
-    // `getByRole('heading', ...)`, not `getByText`: "Filmes"/"Artistas" are also
+    // `getByRole('heading', ...)`, not `getByText`: "Movies"/"Artists" are also
     // `<option>` of the dynamic MediaTypeFilter, so the text alone
     // is no longer unique on the screen.
-    expect(screen.getByRole('heading', { name: 'Filmes' })).toBeInTheDocument()
-    expect(
-      screen.getByRole('heading', { name: 'Artistas' }),
-    ).toBeInTheDocument()
-    expect(screen.queryByText('Filmes e séries')).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Movies' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Artists' })).toBeInTheDocument()
+    expect(screen.queryByText('Movies and series')).toBeNull()
     expect(screen.getByText('Matrix Local')).toBeInTheDocument()
   })
 
-  it('mantém sub-nós ocultos por padrão, mesmo vindo no payload (0033)', async () => {
+  it('keeps the sub-nodes hidden by default, even when they come in the payload (0033)', async () => {
     await buscar({
       query: 'simpsons',
       local: [localCard, seasonCard, episodeCard],
@@ -226,8 +224,8 @@ describe('SearchPanel', () => {
       expect(screen.getByText('Matrix Local')).toBeInTheDocument(),
     )
     // Without a toggle on: neither the section nor the season/episode cards.
-    expect(screen.queryByRole('heading', { name: 'Temporadas' })).toBeNull()
-    expect(screen.queryByRole('heading', { name: 'Episódios' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Seasons' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Episodes' })).toBeNull()
     expect(screen.queryByText('Temporada 1 Local')).toBeNull()
     expect(screen.queryByText('Episodio 1 Local')).toBeNull()
   })
@@ -238,13 +236,13 @@ describe('SearchPanel', () => {
   // duplicate the same test body (measured by jscpd).
   const casosSubNo = [
     {
-      toggle: 'Temporadas',
+      toggle: 'Seasons',
       visivel: 'Temporada 1 Local',
       oculto: 'Episodio 1 Local',
       include: 'include=season',
     },
     {
-      toggle: 'Episódios',
+      toggle: 'Episodes',
       visivel: 'Episodio 1 Local',
       oculto: 'Temporada 1 Local',
       include: 'include=episode',
@@ -252,7 +250,7 @@ describe('SearchPanel', () => {
   ] as const
 
   it.each(casosSubNo)(
-    'liga "$toggle": abre a seção com o card e envia $include',
+    'turns "$toggle" on: it opens the section with the card and sends $include',
     async ({ toggle, visivel, oculto, include }) => {
       const { user, fetchMock } = await buscar({
         query: 'simpsons',
@@ -283,9 +281,9 @@ describe('SearchPanel', () => {
     },
   )
 
-  it('resultado externo já na biblioteca vira "Na biblioteca" sem Importar', async () => {
+  it('an external result already in the library becomes "In the library" without Import', async () => {
     // Internal-first: when the external item already is an entity (internal_id), the card
-    // drops the Importar and shows the badge — it avoids reimporting what is already in the catalog.
+    // drops the Import and shows the badge — it avoids reimporting what is already in the catalog.
     // The internal_id goes defensively (cast) because the generated type only gains it after the
     // backend regeneration (done in parallel); the runtime carries the field.
     const externalSalvo = {
@@ -302,11 +300,11 @@ describe('SearchPanel', () => {
     await waitFor(() =>
       expect(screen.getByText('The Matrix')).toBeInTheDocument(),
     )
-    expect(screen.getByText('Na biblioteca')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Importar/ })).toBeNull()
+    expect(screen.getByText('In the library')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Import/ })).toBeNull()
   })
 
-  it('avisa quando a busca externa está indisponível (não é zero resultados)', async () => {
+  it('warns when the external search is unavailable (it is not zero results)', async () => {
     await buscar({
       query: 'matrix',
       local: [],
@@ -316,15 +314,15 @@ describe('SearchPanel', () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText('Busca externa indisponível'),
+        screen.getByText('External search unavailable'),
       ).toBeInTheDocument(),
     )
     expect(
-      screen.queryByText('Nenhum resultado externo para importar.'),
+      screen.queryByText('No external result to import.'),
     ).not.toBeInTheDocument()
   })
 
-  it('importa um resultado externo, invalida o catálogo e navega ao detalhe', async () => {
+  it('imports an external result, invalidates the catalog and navigates to the detail', async () => {
     const { user, fetchMock } = await buscar({
       query: 'matrix',
       local: [],
@@ -335,7 +333,7 @@ describe('SearchPanel', () => {
       expect(screen.getByText('The Matrix')).toBeInTheDocument(),
     )
 
-    await user.click(screen.getByRole('button', { name: /Importar/ }))
+    await user.click(screen.getByRole('button', { name: /Import/ }))
 
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({

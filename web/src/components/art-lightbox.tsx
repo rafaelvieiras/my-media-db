@@ -19,7 +19,9 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { rotuloIdioma } from '@/lib/languages'
-import { infoKind, rotuloKind } from '@/lib/artwork'
+import { infoKind } from '@/lib/artwork'
+import { useT } from '@/lib/i18n'
+import type { Translate } from '@/lib/i18n/types'
 import type { ArtworkItem } from '@/lib/api'
 
 // ArtLightbox: near-full overlay to see ONE artwork at high resolution, with prev/next
@@ -53,14 +55,22 @@ export interface AcoesLightbox {
   // como principal" with an explanatory tooltip (journey §2 step 7). It does not affect
   // "Baixar pro cache"/"Remover" (they do not touch the real folder).
   podeSalvarNaPasta: boolean
-  // Error message of an action (pt-BR from the envelope), shown in the footer.
+  // Error message of an action (message from the API envelope), shown in the footer.
   erro: string | null
 }
 
-// TOOLTIP_SEM_PASTA explains why the materialize buttons are disabled
+// Catalog key of the tooltip that explains why the materialize buttons are disabled
 // when the entity has no present media_file (catalog only).
-const TOOLTIP_SEM_PASTA =
-  'Este item não tem um arquivo na biblioteca — sem pasta de destino para salvar.'
+const CHAVE_SEM_PASTA = 'media.lightbox.noFolderTooltip'
+
+// Kind label through the catalog: an unknown kind echoes its raw name (it never turns
+// into a blank), the same fallback `lib/artwork.ts` keeps for the screens that were not
+// extracted yet.
+function rotuloArte(kind: string, t: Translate): string {
+  const chave = `media.artworkKind.${kind}`
+  const rotulo = t(chave)
+  return rotulo === chave ? kind : rotulo
+}
 
 // Selectors of the focusable elements for the "focus trap" (Tab trap) of the dialog.
 const FOCAVEIS =
@@ -83,6 +93,7 @@ export function ArtLightbox({
   acoes: AcoesLightbox
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const t = useT()
   // Zoom: `false` = fit the screen (contain); `true` = 100% (natural resolution,
   // with scroll in the frame). It resets when the artwork changes.
   const [zoom, setZoom] = useState(false)
@@ -152,7 +163,12 @@ export function ArtLightbox({
   }
 
   const info = infoKind(kind)
-  const legenda = `${rotuloKind(kind)} ${index + 1} de ${total}`
+  const rotulo = rotuloArte(kind, t)
+  const legenda = t('media.lightbox.caption', {
+    kind: rotulo,
+    n: index + 1,
+    total,
+  })
 
   return (
     // Its own TooltipProvider (it does not depend on the ancestor): the lightbox is mounted in
@@ -184,18 +200,24 @@ export function ArtLightbox({
               type="button"
               variant="outline"
               size="sm"
-              aria-label={zoom ? 'Ajustar à tela' : 'Ampliar para 100%'}
+              aria-label={
+                zoom
+                  ? t('media.lightbox.fitToScreen')
+                  : t('media.lightbox.zoomToFull')
+              }
               aria-pressed={zoom}
               onClick={() => setZoom((z) => !z)}
             >
               {zoom ? <Minimize2 aria-hidden /> : <Maximize2 aria-hidden />}
-              {zoom ? 'Ajustar' : '100%'}
+              {zoom
+                ? t('media.lightbox.fitShort')
+                : t('media.lightbox.zoomShort')}
             </Button>
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              aria-label="Fechar"
+              aria-label={t('common.action.close')}
               onClick={onClose}
             >
               <X aria-hidden />
@@ -210,7 +232,7 @@ export function ArtLightbox({
               type="button"
               variant="outline"
               size="icon"
-              aria-label="Arte anterior"
+              aria-label={t('media.lightbox.previousArtwork')}
               className="absolute left-3 z-10"
               onClick={(e) => {
                 e.stopPropagation()
@@ -230,7 +252,7 @@ export function ArtLightbox({
             <img
               key={item.url}
               src={item.url}
-              alt={`${rotuloKind(kind)} — arte ${index + 1}`}
+              alt={t('media.lightbox.imageAlt', { kind: rotulo, n: index + 1 })}
               className={
                 zoom ? 'max-w-none' : 'max-h-full max-w-full object-contain'
               }
@@ -242,7 +264,7 @@ export function ArtLightbox({
               type="button"
               variant="outline"
               size="icon"
-              aria-label="Próxima arte"
+              aria-label={t('media.lightbox.nextArtwork')}
               className="absolute right-3 z-10"
               onClick={(e) => {
                 e.stopPropagation()
@@ -260,17 +282,19 @@ export function ArtLightbox({
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex flex-wrap items-center gap-1.5">
-            <Badge variant="outline">{rotuloKind(kind)}</Badge>
+            <Badge variant="outline">{rotulo}</Badge>
             {item.is_principal ? (
-              <Badge variant="secondary">principal</Badge>
+              <Badge variant="secondary">{t('media.lightbox.principal')}</Badge>
             ) : null}
             {item.is_local_in_library ? (
-              <Badge variant="outline">salvo na pasta</Badge>
+              <Badge variant="outline">
+                {t('media.lightbox.savedInFolder')}
+              </Badge>
             ) : null}
             {item.lang ? (
               <Badge variant="secondary">{rotuloIdioma(item.lang)}</Badge>
             ) : (
-              <Badge variant="outline">sem texto</Badge>
+              <Badge variant="outline">{t('media.lightbox.textless')}</Badge>
             )}
             {item.likes ? (
               <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
@@ -283,7 +307,9 @@ export function ArtLightbox({
               <Badge variant="outline">{item.disc_type}</Badge>
             ) : null}
             {item.season ? (
-              <Badge variant="outline">Temporada {item.season}</Badge>
+              <Badge variant="outline">
+                {t('media.lightbox.seasonNumber', { n: item.season })}
+              </Badge>
             ) : null}
           </div>
 
@@ -298,11 +324,11 @@ export function ArtLightbox({
                     onClick={() => acoes.onPreferir(item)}
                   >
                     <Star aria-hidden />
-                    Definir como principal
+                    {t('media.lightbox.setPrincipal')}
                   </Button>
                 </TooltipTrigger>
                 {acoes.podeSalvarNaPasta ? null : (
-                  <TooltipContent>{TOOLTIP_SEM_PASTA}</TooltipContent>
+                  <TooltipContent>{t(CHAVE_SEM_PASTA)}</TooltipContent>
                 )}
               </Tooltip>
             ) : null}
@@ -317,11 +343,11 @@ export function ArtLightbox({
                     onClick={() => acoes.onMaterializar(item)}
                   >
                     <Save aria-hidden />
-                    Salvar na pasta
+                    {t('media.lightbox.saveToFolder')}
                   </Button>
                 </TooltipTrigger>
                 {acoes.podeSalvarNaPasta ? null : (
-                  <TooltipContent>{TOOLTIP_SEM_PASTA}</TooltipContent>
+                  <TooltipContent>{t(CHAVE_SEM_PASTA)}</TooltipContent>
                 )}
               </Tooltip>
             ) : null}
@@ -334,7 +360,7 @@ export function ArtLightbox({
                 onClick={() => acoes.onBaixar(item)}
               >
                 <Download aria-hidden />
-                Baixar pro cache
+                {t('media.lightbox.downloadToCache')}
               </Button>
             ) : null}
             {item.source === 'user' && item.asset_id ? (
@@ -342,12 +368,12 @@ export function ArtLightbox({
                 type="button"
                 variant="ghost"
                 size="sm"
-                aria-label="Remover arte"
+                aria-label={t('media.lightbox.removeArtwork')}
                 disabled={acoes.ocupado}
                 onClick={() => acoes.onRemover(item)}
               >
                 <Trash2 aria-hidden />
-                Remover
+                {t('common.action.remove')}
               </Button>
             ) : null}
           </div>

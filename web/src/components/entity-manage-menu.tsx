@@ -56,13 +56,14 @@ import {
   type MaterializeMissingMediaResult,
   type RefreshFilesResult,
 } from '@/lib/api'
-import { rotuloKind } from '@/lib/artwork'
 import {
   precisaAtencaoCatalogacao,
   type CatalogCompleteness,
 } from '@/lib/catalog-completeness-badges'
 import { ehDraft } from '@/lib/entity-badges'
 import { KIND_ASSISTIR } from '@/lib/historico'
+import { useT } from '@/lib/i18n'
+import type { Translate } from '@/lib/i18n/types'
 
 // EntityManageMenu packs the
 // actions of the item into a SINGLE "Gerenciar" dropdown — Editar (always) + "Baixar
@@ -78,46 +79,56 @@ import { KIND_ASSISTIR } from '@/lib/historico'
 // "flagged" only links to the already existing Review queue (the same decision as
 // before).
 
-// montarListaBaixados builds the PT-BR sentence "Pôster e fanart baixados." from
-// the downloaded kinds (label via `rotuloKind`, the same source of truth as the
-// gallery/lightbox), with a comma between the items and "e" before the
-// last one (simple PT-BR concatenation; there is no generic helper like that in the
-// project yet).
-function montarListaBaixados(kinds: string[]): string {
-  const rotulos = kinds.map((kind) => rotuloKind(kind).toLowerCase())
+// rotuloKind translates the label of an artwork kind (the human name used in the
+// result sentence). The kind itself is data (from the provider): a kind outside the
+// catalog echoes raw, the same idiom as `rotuloArte` in rich-detail-view.tsx.
+function rotuloKind(kind: string, t: Translate): string {
+  const chave = `entity.artwork.${kind}`
+  const rotulo = t(chave)
+  return rotulo === chave ? kind : rotulo
+}
+
+// montarListaBaixados builds the sentence "<kinds> downloaded." from the downloaded
+// kinds (label via `rotuloKind`, the same source of truth as the
+// gallery/lightbox), with a comma between the items and the conjunction of the
+// locale before the last one.
+function montarListaBaixados(kinds: string[], t: Translate): string {
+  const rotulos = kinds.map((kind) => rotuloKind(kind, t).toLowerCase())
+  const separador = t('entity.edit.manage.listAnd')
   const lista =
     rotulos.length <= 1
       ? (rotulos[0] ?? '')
-      : `${rotulos.slice(0, -1).join(', ')} e ${rotulos[rotulos.length - 1]}`
-  return `${lista.charAt(0).toUpperCase()}${lista.slice(1)} baixados.`
+      : `${rotulos.slice(0, -1).join(', ')} ${separador} ${rotulos[rotulos.length - 1]}`
+  return t('entity.edit.manage.downloaded', {
+    list: `${lista.charAt(0).toUpperCase()}${lista.slice(1)}`,
+  })
 }
 
 // mensagemEnriquecimento resolves the outcome of POST .../enrich-missing (§4):
 // applied (with the method) × flagged (link to /review) × nothing found
 // (neutral) — none of the three is an error; a network error/500 is handled separately.
-function mensagemEnriquecimento(resultado: EnrichMissingResult) {
+function mensagemEnriquecimento(resultado: EnrichMissingResult, t: Translate) {
   if (resultado.outcome === 'applied') {
     return (
       <span role="status" className="text-sm text-muted-foreground">
-        Aplicado —{' '}
         {resultado.method === 'local'
-          ? 'ligado a um item já catalogado'
-          : 'enriquecido via provider'}
-        .
+          ? t('entity.edit.manage.appliedLocal')
+          : t('entity.edit.manage.appliedExternal')}
       </span>
     )
   }
   if (resultado.outcome === 'flagged') {
     return (
       <span role="status" className="text-sm text-muted-foreground">
-        Não encontramos uma correspondência confiável — o item foi enviado para
-        a fila de <Link to="/dashboard/review">Revisão</Link>.
+        {t('entity.edit.manage.flaggedBefore')}{' '}
+        <Link to="/dashboard/review">{t('nav.dashboard.review')}</Link>
+        {t('entity.edit.manage.flaggedAfter')}
       </span>
     )
   }
   return (
     <span role="status" className="text-sm text-muted-foreground">
-      Nenhuma correspondência encontrada desta vez.
+      {t('entity.edit.manage.noneFound')}
     </span>
   )
 }
@@ -126,14 +137,25 @@ function mensagemEnriquecimento(resultado: EnrichMissingResult) {
 // a loose, informative format (the contract itself is not strict) — files
 // rechecked, local assets updated and local playback fields
 // filled in from the .nfo, when there is one.
-function mensagemVerificarArquivos(resultado: RefreshFilesResult) {
-  const partes = [`${resultado.files_rechecked} arquivo(s) reconferido(s)`]
+function mensagemVerificarArquivos(
+  resultado: RefreshFilesResult,
+  t: Translate,
+) {
+  const partes = [
+    t('entity.edit.manage.filesRechecked', {
+      n: resultado.files_rechecked,
+    }),
+  ]
   if (resultado.assets_found > 0) {
-    partes.push(`${resultado.assets_found} asset(s) local(is) atualizado(s)`)
+    partes.push(
+      t('entity.edit.manage.assetsFound', { n: resultado.assets_found }),
+    )
   }
   if (resultado.playback_fields_filled.length > 0) {
     partes.push(
-      `campos de reprodução preenchidos: ${resultado.playback_fields_filled.join(', ')}`,
+      t('entity.edit.manage.playbackFields', {
+        fields: resultado.playback_fields_filled.join(', '),
+      }),
     )
   }
   return (
@@ -144,27 +166,32 @@ function mensagemVerificarArquivos(resultado: RefreshFilesResult) {
 }
 
 // mensagemArtesFaltantes resolves the outcome of POST .../materialize-missing-media:
-// it reuses `montarListaBaixados` (the same PT-BR sentence as the gallery/lightbox) for
+// it reuses `montarListaBaixados` (the same sentence as the gallery/lightbox) for
 // the downloaded kinds, plus the .nfo when written in this call.
-function mensagemArtesFaltantes(resultado: MaterializeMissingMediaResult) {
+function mensagemArtesFaltantes(
+  resultado: MaterializeMissingMediaResult,
+  t: Translate,
+) {
   if (resultado.artes_baixadas.length > 0) {
     return (
       <span role="status" className="text-sm text-muted-foreground">
-        {montarListaBaixados(resultado.artes_baixadas)}
-        {resultado.nfo_gravado ? ' O .nfo também foi gravado.' : ''}
+        {montarListaBaixados(resultado.artes_baixadas, t)}
+        {resultado.nfo_gravado
+          ? ` ${t('entity.edit.manage.nfoAlsoWritten')}`
+          : ''}
       </span>
     )
   }
   if (resultado.nfo_gravado) {
     return (
       <span role="status" className="text-sm text-muted-foreground">
-        Nenhuma arte nova baixada — o .nfo foi gravado.
+        {t('entity.edit.manage.noNewArtworkButNfo')}
       </span>
     )
   }
   return (
     <span role="status" className="text-sm text-muted-foreground">
-      Nenhuma arte nova para materializar.
+      {t('entity.edit.manage.noNewArtwork')}
     </span>
   )
 }
@@ -172,18 +199,18 @@ function mensagemArtesFaltantes(resultado: MaterializeMissingMediaResult) {
 // mensagemArte resolves the outcome of POST .../download-missing-artwork (§4):
 // it downloaded at least one kind × no option available — idempotent (nothing
 // missing also falls into "no option", a silent no-op does not change the UI).
-function mensagemArte(resultado: DownloadMissingArtworkResult) {
+function mensagemArte(resultado: DownloadMissingArtworkResult, t: Translate) {
   if (resultado.downloaded.length > 0) {
     return (
       <span role="status" className="text-sm text-muted-foreground">
-        {montarListaBaixados(resultado.downloaded)}
+        {montarListaBaixados(resultado.downloaded, t)}
       </span>
     )
   }
   if (resultado.unavailable.length > 0) {
     return (
       <span role="status" className="text-sm text-muted-foreground">
-        Nenhuma arte disponível nos provedores para o que falta.
+        {t('entity.edit.manage.noArtworkAvailable')}
       </span>
     )
   }
@@ -194,10 +221,14 @@ function mensagemArte(resultado: DownloadMissingArtworkResult) {
 // a loose, informative format (the contract is not strict) — how many tracks
 // had their tag rewritten successfully, plus the failures when an album cascade
 // has PARTIAL success (one failing track does not stop the others).
-function mensagemGravarTag(resultado: AudioTagsWriteResult) {
-  const partes = [`${resultado.faixas_regravadas} faixa(s) regravada(s)`]
+function mensagemGravarTag(resultado: AudioTagsWriteResult, t: Translate) {
+  const partes = [
+    t('entity.edit.manage.tracksRewritten', { n: resultado.faixas_regravadas }),
+  ]
   if (resultado.falhas.length > 0) {
-    partes.push(`${resultado.falhas.length} com erro`)
+    partes.push(
+      t('entity.edit.manage.withErrors', { n: resultado.falhas.length }),
+    )
   }
   return (
     <span role="status" className="text-sm text-muted-foreground">
@@ -209,26 +240,24 @@ function mensagemGravarTag(resultado: AudioTagsWriteResult) {
 // mensagemReconciliar resolves the outcome of POST .../force-reconcile:
 // it re-linked against the parent × it did not re-link this time (no candidate, or the type is not
 // applicable) — neither of the two is an error; a network error/500 is handled separately.
-function mensagemReconciliar(resultado: ForceReconcileResult) {
+function mensagemReconciliar(resultado: ForceReconcileResult, t: Translate) {
   if (resultado.linked) {
     return (
       <span role="status" className="text-sm text-muted-foreground">
-        Religado com sucesso — item saiu do rascunho.
+        {t('entity.edit.manage.reconciled')}
       </span>
     )
   }
   return (
     <span role="status" className="text-sm text-muted-foreground">
-      Não foi possível religar desta vez — o item continua em rascunho.
+      {t('entity.edit.manage.reconcileFailed')}
     </span>
   )
 }
 
-// TOOLTIP_SEM_PASTA explains why "Salvar informações (NFO)" is disabled
-// when the entity has no present media_file — the same condition used by the
-// art gallery for "salvar na pasta"/"definir como principal".
-const TOOLTIP_SEM_PASTA =
-  'Este item não tem um arquivo na biblioteca — sem pasta de destino para gravar o .nfo.'
+// The tooltip of "Save information (NFO)" explains why it is disabled when the
+// entity has no present media_file — the same condition used by the art gallery for
+// "save to the folder"/"set as main".
 
 export function EntityManageMenu({
   id,
@@ -255,6 +284,7 @@ export function EntityManageMenu({
 }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const t = useT()
   // State of the confirmation dialog of "Excluir coleção": a dropdown item
   // closes the menu when selected (Radix, correct for accessibility) — the
   // 2-click confirmation that existed INLINE inside the same area no longer fits
@@ -393,31 +423,31 @@ export function EntityManageMenu({
     enriquecer.error instanceof ApiError
       ? enriquecer.error.message
       : enriquecer.isError
-        ? 'Não foi possível buscar informações externas.'
+        ? t('entity.edit.manage.errors.enrich')
         : null
   const erroArte =
     baixarArte.error instanceof ApiError
       ? baixarArte.error.message
       : baixarArte.isError
-        ? 'Não foi possível baixar a arte faltante.'
+        ? t('entity.edit.manage.errors.downloadArtwork')
         : null
   const erroReconciliar =
     forcarReconciliar.error instanceof ApiError
       ? forcarReconciliar.error.message
       : forcarReconciliar.isError
-        ? 'Não foi possível forçar a reconciliação.'
+        ? t('entity.edit.manage.errors.forceReconcile')
         : null
   const erroNfo =
     salvarNfo.error instanceof ApiError
       ? salvarNfo.error.message
       : salvarNfo.isError
-        ? 'Não foi possível gravar o .nfo.'
+        ? t('entity.edit.manage.errors.saveNfo')
         : null
   const erroGravarTag =
     gravarTag.error instanceof ApiError
       ? gravarTag.error.message
       : gravarTag.isError
-        ? 'Não foi possível gravar os metadados no arquivo.'
+        ? t('entity.edit.manage.errors.writeTags')
         : null
   // Same error logic as the original `ExcluirColecao` (without a generic fallback
   // for a non-ApiError error) — migrated as is.
@@ -427,19 +457,19 @@ export function EntityManageMenu({
     verificarArquivos.error instanceof ApiError
       ? verificarArquivos.error.message
       : verificarArquivos.isError
-        ? 'Não foi possível reconferir os arquivos.'
+        ? t('entity.edit.manage.errors.refreshFiles')
         : null
   const erroBaixarMetadados =
     baixarMetadados.error instanceof ApiError
       ? baixarMetadados.error.message
       : baixarMetadados.isError
-        ? 'Não foi possível baixar os metadados.'
+        ? t('entity.edit.manage.errors.downloadMetadata')
         : null
   const erroBaixarArtesFaltantes =
     baixarArtesFaltantes.error instanceof ApiError
       ? baixarArtesFaltantes.error.message
       : baixarArtesFaltantes.isError
-        ? 'Não foi possível baixar as artes faltantes.'
+        ? t('entity.edit.manage.errors.downloadAllArtwork')
         : null
   const erroAssistido =
     marcarAssistido.error instanceof ApiError
@@ -447,7 +477,7 @@ export function EntityManageMenu({
       : desmarcarAssistido.error instanceof ApiError
         ? desmarcarAssistido.error.message
         : marcarAssistido.isError || desmarcarAssistido.isError
-          ? 'Não foi possível atualizar o histórico.'
+          ? t('entity.edit.manage.errors.history')
           : null
   const atualizandoAssistido =
     marcarAssistido.isPending || desmarcarAssistido.isPending
@@ -458,7 +488,7 @@ export function EntityManageMenu({
         <DropdownMenuTrigger asChild>
           <Button variant="secondary" size="sm">
             <Settings aria-hidden />
-            Gerenciar
+            {t('entity.edit.manage.trigger')}
             <ChevronDown aria-hidden />
           </Button>
         </DropdownMenuTrigger>
@@ -466,7 +496,7 @@ export function EntityManageMenu({
           <DropdownMenuItem asChild>
             <Link to="/entities/$id/edit" params={{ id }}>
               <Pencil aria-hidden />
-              Editar
+              {t('common.action.edit')}
             </Link>
           </DropdownMenuItem>
           {mostrarInformacoes ? (
@@ -476,8 +506,8 @@ export function EntityManageMenu({
             >
               <Sparkles aria-hidden />
               {enriquecer.isPending
-                ? 'Buscando…'
-                : 'Baixar informações faltando'}
+                ? t('entity.edit.manage.searching')
+                : t('entity.edit.manage.enrichMissing')}
             </DropdownMenuItem>
           ) : null}
           {mostrarArte ? (
@@ -486,7 +516,9 @@ export function EntityManageMenu({
               onSelect={() => baixarArte.mutate()}
             >
               <ImageDown aria-hidden />
-              {baixarArte.isPending ? 'Baixando…' : 'Baixar arte faltando'}
+              {baixarArte.isPending
+                ? t('entity.edit.manage.downloading')
+                : t('entity.edit.manage.downloadMissingArtwork')}
             </DropdownMenuItem>
           ) : null}
           {mostrarReconciliar ? (
@@ -496,22 +528,24 @@ export function EntityManageMenu({
             >
               <Link2 aria-hidden />
               {forcarReconciliar.isPending
-                ? 'Reconciliando…'
-                : 'Forçar reconciliação'}
+                ? t('entity.edit.manage.reconciling')
+                : t('entity.edit.manage.forceReconcile')}
             </DropdownMenuItem>
           ) : null}
           <DropdownMenuItem
             disabled={salvarNfo.isPending || !owned}
-            title={owned ? undefined : TOOLTIP_SEM_PASTA}
+            title={owned ? undefined : t('entity.edit.manage.noFolderTooltip')}
             onSelect={() => salvarNfo.mutate()}
           >
             <FileText aria-hidden />
-            {salvarNfo.isPending ? 'Gravando…' : 'Salvar informações (NFO)'}
+            {salvarNfo.isPending
+              ? t('entity.edit.manage.writing')
+              : t('entity.edit.manage.saveNfo')}
           </DropdownMenuItem>
           {mostrarGravarTag ? (
             <DropdownMenuItem onSelect={() => setAlertaGravarTagAberto(true)}>
               <Tag aria-hidden />
-              Gravar metadados no arquivo
+              {t('entity.edit.manage.writeTags')}
             </DropdownMenuItem>
           ) : null}
           {/* 3 ALWAYS VISIBLE actions — they do not depend on
@@ -526,7 +560,9 @@ export function EntityManageMenu({
             onSelect={() => marcarAssistido.mutate()}
           >
             <Eye aria-hidden />
-            {marcarAssistido.isPending ? 'Marcando…' : 'Marcar como assistido'}
+            {marcarAssistido.isPending
+              ? t('entity.edit.manage.marking')
+              : t('entity.edit.manage.markWatched')}
           </DropdownMenuItem>
           <DropdownMenuItem
             disabled={atualizandoAssistido}
@@ -534,8 +570,8 @@ export function EntityManageMenu({
           >
             <EyeOff aria-hidden />
             {desmarcarAssistido.isPending
-              ? 'Desmarcando…'
-              : 'Marcar como não assistido'}
+              ? t('entity.edit.manage.unmarking')
+              : t('entity.edit.manage.markNotWatched')}
           </DropdownMenuItem>
           <DropdownMenuItem
             disabled={verificarArquivos.isPending}
@@ -543,15 +579,17 @@ export function EntityManageMenu({
           >
             <RefreshCw aria-hidden />
             {verificarArquivos.isPending
-              ? 'Verificando…'
-              : 'Verificar Atualizações de Arquivos'}
+              ? t('entity.edit.manage.checking')
+              : t('entity.edit.manage.refreshFiles')}
           </DropdownMenuItem>
           <DropdownMenuItem
             disabled={baixarMetadados.isPending}
             onSelect={() => baixarMetadados.mutate()}
           >
             <CloudDownload aria-hidden />
-            {baixarMetadados.isPending ? 'Baixando…' : 'Baixar Metadados'}
+            {baixarMetadados.isPending
+              ? t('entity.edit.manage.downloading')
+              : t('entity.edit.manage.downloadMetadata')}
           </DropdownMenuItem>
           <DropdownMenuItem
             disabled={baixarArtesFaltantes.isPending}
@@ -559,8 +597,8 @@ export function EntityManageMenu({
           >
             <Images aria-hidden />
             {baixarArtesFaltantes.isPending
-              ? 'Baixando…'
-              : 'Baixar Artes Faltantes'}
+              ? t('entity.edit.manage.downloading')
+              : t('entity.edit.manage.downloadAllMissingArtwork')}
           </DropdownMenuItem>
           {isCollection ? (
             <>
@@ -570,7 +608,7 @@ export function EntityManageMenu({
                 onSelect={() => setAlertaAberto(true)}
               >
                 <Trash2 aria-hidden />
-                Excluir coleção
+                {t('entity.edit.manage.deleteCollection')}
               </DropdownMenuItem>
             </>
           ) : null}
@@ -586,40 +624,40 @@ export function EntityManageMenu({
           result/error (the same text as the item, only always visible). */}
       {enriquecer.isPending ? (
         <span role="status" className="text-sm text-muted-foreground">
-          Buscando…
+          {t('entity.edit.manage.searching')}
         </span>
       ) : erroEnriquecer ? (
         <span role="alert" className="text-sm font-medium text-destructive">
           {erroEnriquecer}
         </span>
       ) : enriquecer.isSuccess ? (
-        mensagemEnriquecimento(enriquecer.data)
+        mensagemEnriquecimento(enriquecer.data, t)
       ) : null}
       {baixarArte.isPending ? (
         <span role="status" className="text-sm text-muted-foreground">
-          Baixando…
+          {t('entity.edit.manage.downloading')}
         </span>
       ) : erroArte ? (
         <span role="alert" className="text-sm font-medium text-destructive">
           {erroArte}
         </span>
       ) : baixarArte.isSuccess ? (
-        mensagemArte(baixarArte.data)
+        mensagemArte(baixarArte.data, t)
       ) : null}
       {forcarReconciliar.isPending ? (
         <span role="status" className="text-sm text-muted-foreground">
-          Reconciliando…
+          {t('entity.edit.manage.reconciling')}
         </span>
       ) : erroReconciliar ? (
         <span role="alert" className="text-sm font-medium text-destructive">
           {erroReconciliar}
         </span>
       ) : forcarReconciliar.isSuccess ? (
-        mensagemReconciliar(forcarReconciliar.data)
+        mensagemReconciliar(forcarReconciliar.data, t)
       ) : null}
       {salvarNfo.isPending ? (
         <span role="status" className="text-sm text-muted-foreground">
-          Gravando…
+          {t('entity.edit.manage.writing')}
         </span>
       ) : erroNfo ? (
         <span role="alert" className="text-sm font-medium text-destructive">
@@ -627,23 +665,25 @@ export function EntityManageMenu({
         </span>
       ) : salvarNfo.isSuccess ? (
         <span role="status" className="text-sm text-muted-foreground">
-          .nfo gravado em {salvarNfo.data.nfo_path}
+          {t('entity.edit.manage.nfoWrittenAt', {
+            path: salvarNfo.data.nfo_path,
+          })}
         </span>
       ) : null}
       {gravarTag.isPending ? (
         <span role="status" className="text-sm text-muted-foreground">
-          Gravando…
+          {t('entity.edit.manage.writing')}
         </span>
       ) : gravarTag.isSuccess ? (
-        mensagemGravarTag(gravarTag.data)
+        mensagemGravarTag(gravarTag.data, t)
       ) : null}
       {marcarAssistido.isPending ? (
         <span role="status" className="text-sm text-muted-foreground">
-          Marcando…
+          {t('entity.edit.manage.marking')}
         </span>
       ) : desmarcarAssistido.isPending ? (
         <span role="status" className="text-sm text-muted-foreground">
-          Desmarcando…
+          {t('entity.edit.manage.unmarking')}
         </span>
       ) : erroAssistido ? (
         <span role="alert" className="text-sm font-medium text-destructive">
@@ -651,27 +691,27 @@ export function EntityManageMenu({
         </span>
       ) : marcarAssistido.isSuccess ? (
         <span role="status" className="text-sm text-muted-foreground">
-          Marcado como assistido.
+          {t('entity.edit.manage.markedWatched')}
         </span>
       ) : desmarcarAssistido.isSuccess ? (
         <span role="status" className="text-sm text-muted-foreground">
-          Marcado como não assistido.
+          {t('entity.edit.manage.markedNotWatched')}
         </span>
       ) : null}
       {verificarArquivos.isPending ? (
         <span role="status" className="text-sm text-muted-foreground">
-          Verificando…
+          {t('entity.edit.manage.checking')}
         </span>
       ) : erroVerificarArquivos ? (
         <span role="alert" className="text-sm font-medium text-destructive">
           {erroVerificarArquivos}
         </span>
       ) : verificarArquivos.isSuccess ? (
-        mensagemVerificarArquivos(verificarArquivos.data)
+        mensagemVerificarArquivos(verificarArquivos.data, t)
       ) : null}
       {baixarMetadados.isPending ? (
         <span role="status" className="text-sm text-muted-foreground">
-          Baixando…
+          {t('entity.edit.manage.downloading')}
         </span>
       ) : erroBaixarMetadados ? (
         <span role="alert" className="text-sm font-medium text-destructive">
@@ -679,29 +719,30 @@ export function EntityManageMenu({
         </span>
       ) : baixarMetadados.isSuccess ? (
         <span role="status" className="text-sm text-muted-foreground">
-          Metadados atualizados.
+          {t('entity.edit.manage.metadataUpdated')}
         </span>
       ) : null}
       {baixarArtesFaltantes.isPending ? (
         <span role="status" className="text-sm text-muted-foreground">
-          Baixando…
+          {t('entity.edit.manage.downloading')}
         </span>
       ) : erroBaixarArtesFaltantes ? (
         <span role="alert" className="text-sm font-medium text-destructive">
           {erroBaixarArtesFaltantes}
         </span>
       ) : baixarArtesFaltantes.isSuccess ? (
-        mensagemArtesFaltantes(baixarArtesFaltantes.data)
+        mensagemArtesFaltantes(baixarArtesFaltantes.data, t)
       ) : null}
 
       {isCollection ? (
         <AlertDialog open={alertaAberto} onOpenChange={setAlertaAberto}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Excluir coleção?</AlertDialogTitle>
+              <AlertDialogTitle>
+                {t('entity.edit.manage.deleteCollectionTitle')}
+              </AlertDialogTitle>
               <AlertDialogDescription>
-                Os filmes MEMBROS não são apagados — só a coleção em si (e suas
-                relações com os membros) é removida.
+                {t('entity.edit.manage.deleteCollectionDescription')}
               </AlertDialogDescription>
             </AlertDialogHeader>
             {erroExcluir ? (
@@ -714,7 +755,7 @@ export function EntityManageMenu({
             ) : null}
             <AlertDialogFooter>
               <AlertDialogCancel disabled={excluir.isPending}>
-                Cancelar
+                {t('common.action.cancel')}
               </AlertDialogCancel>
               <AlertDialogAction
                 disabled={excluir.isPending}
@@ -727,7 +768,9 @@ export function EntityManageMenu({
                   excluir.mutate()
                 }}
               >
-                {excluir.isPending ? 'Excluindo…' : 'Excluir coleção'}
+                {excluir.isPending
+                  ? t('entity.edit.manage.deleting')
+                  : t('entity.edit.manage.deleteCollection')}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -741,14 +784,13 @@ export function EntityManageMenu({
         >
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Gravar metadados no arquivo?</AlertDialogTitle>
+              <AlertDialogTitle>
+                {t('entity.edit.manage.writeTagsTitle')}
+              </AlertDialogTitle>
               <AlertDialogDescription>
-                Esta ação SOBRESCREVE a tag original (ID3v2/Vorbis comment)
-                do(s) arquivo(s) de áudio{' '}
-                {type === 'album' ? 'do álbum' : 'da faixa'} com o metadado
-                atualmente resolvido — inclusive a capa embutida. É, na prática,
-                irreversível: o valor anterior da tag não é preservado em lugar
-                nenhum.
+                {type === 'album'
+                  ? t('entity.edit.manage.writeTagsAlbumDescription')
+                  : t('entity.edit.manage.writeTagsTrackDescription')}
               </AlertDialogDescription>
             </AlertDialogHeader>
             {erroGravarTag ? (
@@ -761,7 +803,7 @@ export function EntityManageMenu({
             ) : null}
             <AlertDialogFooter>
               <AlertDialogCancel disabled={gravarTag.isPending}>
-                Cancelar
+                {t('common.action.cancel')}
               </AlertDialogCancel>
               <AlertDialogAction
                 disabled={gravarTag.isPending}
@@ -773,7 +815,9 @@ export function EntityManageMenu({
                   gravarTag.mutate()
                 }}
               >
-                {gravarTag.isPending ? 'Gravando…' : 'Gravar metadados'}
+                {gravarTag.isPending
+                  ? t('entity.edit.manage.writing')
+                  : t('entity.edit.manage.writeTagsAction')}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

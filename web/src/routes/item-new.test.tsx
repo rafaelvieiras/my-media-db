@@ -28,16 +28,16 @@ afterEach(() => {
 })
 
 describe('ItemNewScreen', () => {
-  it('cria o item (type+título) e navega para /entities/{id}', async () => {
+  it('creates the item (type + title) and navigates to /entities/{id}', async () => {
     const m = fetchRouter(() =>
       okJson({ id: 'mv-3', type: 'tv', title: 'Severance' }),
     )
     renderWithClient(<ItemNewScreen />)
     const user = userEvent.setup()
 
-    await user.selectOptions(await screen.findByLabelText('Tipo do item'), 'tv')
+    await user.selectOptions(await screen.findByLabelText('Item type'), 'tv')
     await user.type(screen.getByLabelText('Título'), 'Severance')
-    await user.click(screen.getByRole('button', { name: 'Criar item' }))
+    await user.click(screen.getByRole('button', { name: 'Create item' }))
 
     await vi.waitFor(() =>
       expect(spies.navigate).toHaveBeenCalledWith({
@@ -50,32 +50,32 @@ describe('ItemNewScreen', () => {
     expect(corpo.title).toBe('Severance')
   })
 
-  it('mostra o cross-link para a Busca antes do formulário (0077)', async () => {
+  it('shows the cross-link to the Search before the form (0077)', async () => {
     fetchRouter(() => okJson({}))
     renderWithClient(<ItemNewScreen />)
 
     expect(
-      screen.getByText(/Procurando um título existente\?/),
+      screen.getByText(/Looking for a title that already exists\?/),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('link', { name: 'Use a Busca' }),
+      screen.getByRole('link', { name: 'Use the Search' }),
     ).toBeInTheDocument()
   })
 
-  it('não submete com título vazio (botão desabilitado)', async () => {
+  it('does not submit with an empty title (button disabled)', async () => {
     fetchRouter(() => okJson({}))
     renderWithClient(<ItemNewScreen />)
-    const botao = await screen.findByRole('button', { name: 'Criar item' })
+    const botao = await screen.findByRole('button', { name: 'Create item' })
     expect(botao).toBeDisabled()
   })
 
-  it('mostra o erro 422 inline e não navega', async () => {
+  it('shows the 422 error inline and does not navigate', async () => {
     fetchRouter(() => erroJson(422, 'invalid_body', 'titulo obrigatorio'))
     renderWithClient(<ItemNewScreen />)
     const user = userEvent.setup()
 
     await user.type(await screen.findByLabelText('Título'), 'x')
-    await user.click(screen.getByRole('button', { name: 'Criar item' }))
+    await user.click(screen.getByRole('button', { name: 'Create item' }))
 
     expect(await screen.findByText('titulo obrigatorio')).toBeInTheDocument()
     expect(spies.navigate).not.toHaveBeenCalled()

@@ -4,6 +4,7 @@
 // in a single place. The REVIEW badge only SIGNALS low confidence (ADR-0008);
 // confirming/correcting the match is a Phase 3 flow.
 import type { components } from '@/lib/api-types'
+import type { Translate } from '@/lib/i18n/types'
 
 export type EntityCard = components['schemas']['EntityCard']
 
@@ -68,14 +69,14 @@ export function temCompletude(type: string): boolean {
 // counts SEASONS (shallow ownership), the `season` card counts EPISODES. It is what
 // changes the badge label between the home (series) and the member list (season).
 // Any other type has no completeness badge — it falls back to the neutral plural "itens".
-export function unidadeCompletude(type: string): string {
+export function unidadeCompletude(type: string, t: Translate): string {
   if (type === 'tv') {
-    return 'temporadas'
+    return t('common.completenessSeasons')
   }
   if (type === 'season') {
-    return 'episódios'
+    return t('common.completenessEpisodes')
   }
-  return 'itens'
+  return t('common.completenessItems')
 }
 
 // pt-BR label of the cataloging status of the item. The backend only uses two values
@@ -83,11 +84,11 @@ export function unidadeCompletude(type: string): string {
 // internal/server/completeness.go); `draft` already has special handling
 // (`ehDraft` → "não identificado"), this function covers the rest. An unknown
 // value echoes raw (it never breaks the UI).
-export function rotuloStatus(status: string): string {
-  const mapa: Record<string, string> = {
-    cataloged: 'catalogado',
+export function rotuloStatus(status: string, t: Translate): string {
+  if (status === 'cataloged') {
+    return t('common.statusCataloged')
   }
-  return mapa[status] ?? status
+  return status
 }
 
 // pt-BR label of the media type for display. It covers the canonical types: the
@@ -95,18 +96,10 @@ export function rotuloStatus(status: string): string {
 // and those of the music vertical (artista/álbum/faixa — names in
 // Portuguese in the schema, not `artist`/`album`/`track`). An unknown type echoes
 // raw (it never breaks the UI).
-export function rotuloTipo(type: string): string {
-  const mapa: Record<string, string> = {
-    movie: 'Filme',
-    tv: 'Série',
-    collection: 'Coleção',
-    season: 'Temporada',
-    episode: 'Episódio',
-    album: 'Álbum',
-    artista: 'Artista',
-    faixa: 'Faixa',
-  }
-  return mapa[type] ?? type
+export function rotuloTipo(type: string, t: Translate): string {
+  const chave = `common.entityType.${type}`
+  const rotulo = t(chave)
+  return rotulo === chave ? type : rotulo
 }
 
 // Cover frame (Tailwind class `aspect-*`) according to the type of the card:
@@ -131,16 +124,8 @@ export function aspectPorTipo(type: string): string {
 // in `rotuloTipo`). Same source of types as `rotuloTipo` (central, no separate
 // duplicate map); a type without a registered plural falls back to the singular (it never
 // breaks the UI).
-export function rotuloTipoPlural(type: string): string {
-  const mapa: Record<string, string> = {
-    movie: 'Filmes',
-    tv: 'Séries',
-    collection: 'Coleções',
-    season: 'Temporadas',
-    episode: 'Episódios',
-    album: 'Álbuns',
-    artista: 'Artistas',
-    faixa: 'Faixas',
-  }
-  return mapa[type] ?? rotuloTipo(type)
+export function rotuloTipoPlural(type: string, t: Translate): string {
+  const chave = `common.entityTypePlural.${type}`
+  const rotulo = t(chave)
+  return rotulo === chave ? rotuloTipo(type, t) : rotulo
 }

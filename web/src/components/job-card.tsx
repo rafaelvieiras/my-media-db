@@ -14,12 +14,16 @@ import { Input } from '@/components/ui/input'
 import { LoadingState, ErrorState } from '@/components/query-states'
 import { jobExecutionsQueryOptions } from '@/lib/queries'
 import { ApiError, patchJob, runJob, type JobDefinition } from '@/lib/api'
+import { useLocale, useT } from '@/lib/i18n'
 
-// formatarCarimbo returns a short stamp (date+time) in the local format, or
+// formatarCarimbo returns a short stamp (date+time) in the interface locale, or
 // an em dash for null/absent. Without a date lib — only `Intl` via `toLocaleString`
 // (no precedent for date formatting in this project yet, so it stays local
 // and simple).
-function formatarCarimbo(iso: string | null | undefined): string {
+function formatarCarimbo(
+  iso: string | null | undefined,
+  locale: string,
+): string {
   if (!iso) {
     return '—'
   }
@@ -27,7 +31,7 @@ function formatarCarimbo(iso: string | null | undefined): string {
   if (Number.isNaN(d.getTime())) {
     return iso
   }
-  return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+  return d.toLocaleString(locale, { dateStyle: 'short', timeStyle: 'short' })
 }
 
 function invalidarJobs(qc: ReturnType<typeof useQueryClient>) {
@@ -40,6 +44,8 @@ function invalidarJobs(qc: ReturnType<typeof useQueryClient>) {
 // The history (`JobHistoryList`) stays expandable inside the card itself, so
 // it does not require a route of its own per job.
 export function JobCard({ job }: { job: JobDefinition }) {
+  const t = useT()
+  const locale = useLocale()
   const qc = useQueryClient()
   const [cron, setCron] = useState(job.schedule_cron ?? '')
   const [historicoAberto, setHistoricoAberto] = useState(false)
@@ -79,11 +85,11 @@ export function JobCard({ job }: { job: JobDefinition }) {
           {job.running ? (
             <Badge variant="secondary" className="gap-1">
               <LoaderCircle className="size-3 animate-spin" aria-hidden />
-              Rodando…
+              {t('jobs.card.runningBadge')}
             </Badge>
           ) : (
             <Badge variant={job.enabled ? 'default' : 'outline'}>
-              {job.enabled ? 'Habilitado' : 'Desabilitado'}
+              {job.enabled ? t('jobs.card.enabled') : t('jobs.card.disabled')}
             </Badge>
           )}
         </div>
@@ -95,13 +101,13 @@ export function JobCard({ job }: { job: JobDefinition }) {
             type="checkbox"
             role="switch"
             aria-checked={job.enabled}
-            aria-label={`Agendamento automático de ${job.nome}`}
+            aria-label={t('jobs.card.autoScheduleToggle', { name: job.nome })}
             className="size-4 accent-primary"
             checked={job.enabled}
             disabled={toggleEnabled.isPending}
             onChange={() => toggleEnabled.mutate(!job.enabled)}
           />
-          <span>Agendamento automático</span>
+          <span>{t('jobs.card.autoSchedule')}</span>
         </label>
 
         <form
@@ -112,12 +118,12 @@ export function JobCard({ job }: { job: JobDefinition }) {
           }}
         >
           <label className="flex items-center gap-1.5 text-sm">
-            <span className="text-muted-foreground">Cron</span>
+            <span className="text-muted-foreground">{t('jobs.card.cron')}</span>
             <Input
               value={cron}
               onChange={(e) => setCron(e.target.value)}
-              placeholder="0 3 * * * (vazio = só manual)"
-              aria-label={`Agendamento cron de ${job.nome}`}
+              placeholder={t('jobs.card.cronPlaceholder')}
+              aria-label={t('jobs.card.cronSchedule', { name: job.nome })}
               className="w-56"
             />
           </label>
@@ -127,7 +133,9 @@ export function JobCard({ job }: { job: JobDefinition }) {
             size="sm"
             disabled={salvarCron.isPending}
           >
-            {salvarCron.isPending ? 'Salvando…' : 'Salvar agendamento'}
+            {salvarCron.isPending
+              ? t('common.action.saving')
+              : t('jobs.card.saveSchedule')}
           </Button>
         </form>
 
@@ -142,7 +150,9 @@ export function JobCard({ job }: { job: JobDefinition }) {
           ) : (
             <Play aria-hidden />
           )}
-          {job.running || executar.isPending ? 'Executando…' : 'Executar agora'}
+          {job.running || executar.isPending
+            ? t('jobs.card.starting')
+            : t('jobs.card.runNow')}
         </Button>
       </div>
 
@@ -160,7 +170,9 @@ export function JobCard({ job }: { job: JobDefinition }) {
       <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
         <span className="flex items-center gap-1.5">
           <Clock className="size-3.5" aria-hidden />
-          Próxima execução: {formatarCarimbo(job.next_run_at)}
+          {t('jobs.card.nextRun', {
+            when: formatarCarimbo(job.next_run_at, locale),
+          })}
         </span>
         <span className="flex items-center gap-1.5">
           {job.last_status === 'success' ? (
@@ -168,8 +180,14 @@ export function JobCard({ job }: { job: JobDefinition }) {
           ) : job.last_status === 'error' ? (
             <CircleX className="size-3.5 text-destructive" aria-hidden />
           ) : null}
-          Última execução: {formatarCarimbo(job.last_run_at)}
-          {job.last_message ? ` — ${job.last_message}` : ''}
+          {job.last_message
+            ? t('jobs.card.lastRunWithMessage', {
+                when: formatarCarimbo(job.last_run_at, locale),
+                message: job.last_message,
+              })
+            : t('jobs.card.lastRun', {
+                when: formatarCarimbo(job.last_run_at, locale),
+              })}
         </span>
       </div>
 
@@ -181,7 +199,9 @@ export function JobCard({ job }: { job: JobDefinition }) {
           onClick={() => setHistoricoAberto((v) => !v)}
         >
           <History aria-hidden />
-          {historicoAberto ? 'Ocultar histórico' : 'Ver histórico'}
+          {historicoAberto
+            ? t('jobs.card.hideHistory')
+            : t('jobs.card.showHistory')}
         </Button>
       </div>
 
@@ -195,26 +215,26 @@ export function JobCard({ job }: { job: JobDefinition }) {
 // Simple by design: no incremental pagination in this foundation (the backend already
 // prunes to 100/job; the UI shows the `limit` most recent ones).
 function JobHistoryList({ jobId }: { jobId: string }) {
+  const t = useT()
+  const locale = useLocale()
   const { data, isPending, isError, error } = useQuery(
     jobExecutionsQueryOptions(jobId, { limit: 20 }),
   )
 
   if (isPending) {
-    return <LoadingState label="Carregando histórico…" />
+    return <LoadingState label={t('jobs.history.loading')} />
   }
   if (isError) {
     return (
       <ErrorState
-        title="Não foi possível carregar o histórico"
+        title={t('jobs.history.loadError')}
         message={error instanceof Error ? error.message : undefined}
       />
     )
   }
   if (data.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">
-        Nenhuma execução registrada ainda.
-      </p>
+      <p className="text-sm text-muted-foreground">{t('jobs.history.empty')}</p>
     )
   }
 
@@ -223,10 +243,12 @@ function JobHistoryList({ jobId }: { jobId: string }) {
       {data.map((exec) => (
         <li key={exec.id} className="flex flex-wrap items-center gap-2 text-sm">
           <span className="text-muted-foreground">
-            {formatarCarimbo(exec.started_at)}
+            {formatarCarimbo(exec.started_at, locale)}
           </span>
           <Badge variant="outline">
-            {exec.trigger === 'schedule' ? 'Agendado' : 'Manual'}
+            {exec.trigger === 'schedule'
+              ? t('jobs.history.trigger.schedule')
+              : t('jobs.history.trigger.manual')}
           </Badge>
           <Badge
             variant={
@@ -238,10 +260,10 @@ function JobHistoryList({ jobId }: { jobId: string }) {
             }
           >
             {exec.status === 'running'
-              ? 'Rodando'
+              ? t('jobs.history.status.running')
               : exec.status === 'success'
-                ? 'Sucesso'
-                : 'Erro'}
+                ? t('jobs.history.status.success')
+                : t('jobs.history.status.error')}
           </Badge>
           {exec.message ? (
             <span className="text-muted-foreground">{exec.message}</span>

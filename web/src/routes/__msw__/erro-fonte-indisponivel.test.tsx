@@ -8,8 +8,8 @@ import { renderRota } from '@/test/route-tree-harness'
 // Phase 3 (MSW + jsdom) — journey #17 of the checklist §7.1: the
 // external source fails (502) when re-enriching — the UI shows the error INLINE, without
 // crashing and without losing navigation (the edit screen stays mounted and usable).
-describe('erro: fonte indisponível ao re-enriquecer (Fase 3)', () => {
-  it('mostra mensagem de erro inline em vez de quebrar a tela', async () => {
+describe('error: source unavailable while re-enriching (Phase 3)', () => {
+  it('shows an inline error message instead of breaking the screen', async () => {
     const id = '9'
 
     entidades.set(
@@ -42,13 +42,13 @@ describe('erro: fonte indisponível ao re-enriquecer (Fase 3)', () => {
       ),
     )
 
-    // "IDs de terceiros" subroute: it is where "Salvar e
-    // re-enriquecer" now lives, isolated from the "Informações básicas" section.
+    // "External IDs" subroute: it is where "Save and
+    // re-enrich" now lives, isolated from the "Basic information" section.
     await renderRota(`/entities/${id}/edit/ids`)
 
-    await screen.findByText('Salvar e re-enriquecer')
+    await screen.findByText('Save and re-enrich')
 
-    fireEvent.click(screen.getByText('Salvar e re-enriquecer'))
+    fireEvent.click(screen.getByText('Save and re-enrich'))
 
     // Inline error, not a lost navigation: the edit screen stays mounted.
     await waitFor(() => {
@@ -56,7 +56,7 @@ describe('erro: fonte indisponível ao re-enriquecer (Fase 3)', () => {
         screen.getByText('A fonte externa não respondeu. Tente novamente.'),
       ).toBeInTheDocument()
     })
-    expect(screen.getByText('Salvar e re-enriquecer')).toBeInTheDocument()
-    expect(screen.getByLabelText('Fonte do id externo')).toBeInTheDocument()
+    expect(screen.getByText('Save and re-enrich')).toBeInTheDocument()
+    expect(screen.getByLabelText('External id source')).toBeInTheDocument()
   })
 })

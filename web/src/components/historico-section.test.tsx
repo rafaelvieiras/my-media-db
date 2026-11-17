@@ -10,7 +10,7 @@ import { renderWithClient } from '@/test/render'
 import { stubRota, stubRotas } from '@/test/stub-fetch'
 
 // Tests the consumption history (it gives a face to ADR-0022):
-// the "Assistido" badge (`EstadoAssistidoBadge`) and the "Histórico" section
+// the "Watched" badge (`EstadoAssistidoBadge`) and the "History" section
 // (`HistoricoSection`) — loading/error/empty (same pattern as `SimilaresRail`:
 // empty disappears entirely) and the action of deleting an event (two-step
 // confirmation, same pattern as `MembroEditavel`/collection-members.tsx).
@@ -48,7 +48,7 @@ afterEach(() => {
 })
 
 describe('EstadoAssistidoBadge', () => {
-  it('mostra "Assistido" com a data quando o evento assistir mais recente é completed', async () => {
+  it('shows "Watched" with the date when the most recent watching event is completed', async () => {
     stubRota(
       (p) => p === '/api/v1/entities/e1/historico/estado',
       () =>
@@ -67,10 +67,10 @@ describe('EstadoAssistidoBadge', () => {
         }) as Response,
     )
     renderWithClient(<EstadoAssistidoBadge entityId="e1" />)
-    expect(await screen.findByText(/Assistido em/)).toBeInTheDocument()
+    expect(await screen.findByText(/Watched on/)).toBeInTheDocument()
   })
 
-  it('sem estado (nunca assistido), não mostra nada', async () => {
+  it('with no state (never watched), shows nothing', async () => {
     stubRota(
       (p) => p === '/api/v1/entities/e1/historico/estado',
       () =>
@@ -83,12 +83,12 @@ describe('EstadoAssistidoBadge', () => {
     const { container } = renderWithClient(
       <EstadoAssistidoBadge entityId="e1" />,
     )
-    await waitFor(() => expect(container).not.toHaveTextContent('Assistido'))
+    await waitFor(() => expect(container).not.toHaveTextContent('Watched'))
   })
 })
 
 describe('HistoricoSection', () => {
-  it('mostra carregando e depois a timeline com status/data/origem', async () => {
+  it('shows loading and then the timeline with status/date/origin', async () => {
     stubRota(
       (p, m) => p === '/api/v1/entities/e1/historico' && m === 'GET',
       () =>
@@ -101,15 +101,13 @@ describe('HistoricoSection', () => {
         ]),
     )
     renderWithClient(<HistoricoSection entityId="e1" />)
-    expect(screen.getByText('Carregando histórico…')).toBeInTheDocument()
+    expect(screen.getByText('Loading history…')).toBeInTheDocument()
 
-    await waitFor(() =>
-      expect(screen.getByText('Assistiu')).toBeInTheDocument(),
-    )
+    await waitFor(() => expect(screen.getByText('Watched')).toBeInTheDocument())
     expect(screen.getByText(/Jellyfin/)).toBeInTheDocument()
   })
 
-  it('mostra erro quando a busca falha', async () => {
+  it('shows an error when the fetch fails', async () => {
     stubRota(
       (p) => p === '/api/v1/entities/e1/historico',
       () => erroResponse(404, 'not_found', 'não achou'),
@@ -117,25 +115,25 @@ describe('HistoricoSection', () => {
     renderWithClient(<HistoricoSection entityId="e1" />)
     await waitFor(() =>
       expect(
-        screen.getByText('Não foi possível carregar o histórico'),
+        screen.getByText('Could not load the history'),
       ).toBeInTheDocument(),
     )
   })
 
-  it('some por inteiro (sem heading) quando não há nenhum evento', async () => {
+  it('disappears entirely (no heading) when there is no event', async () => {
     stubRota(
       (p) => p === '/api/v1/entities/e1/historico',
       () => eventosResponse([]),
     )
     const { container } = renderWithClient(<HistoricoSection entityId="e1" />)
     await waitFor(() =>
-      expect(screen.queryByText('Carregando histórico…')).toBeNull(),
+      expect(screen.queryByText('Loading history…')).toBeNull(),
     )
-    expect(screen.queryByRole('heading', { name: 'Histórico' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'History' })).toBeNull()
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('apaga um evento após confirmação em 2 etapas', async () => {
+  it('deletes an event after a two-step confirmation', async () => {
     const user = userEvent.setup()
     const fetchMock = stubRotas([
       [
@@ -149,11 +147,11 @@ describe('HistoricoSection', () => {
     ])
 
     renderWithClient(<HistoricoSection entityId="e1" />)
-    await screen.findByText('Assistiu')
+    await screen.findByText('Watched')
 
-    // 1st step: clicking the icon opens "Apagar?"/"Cancelar" — it does not delete yet.
-    await user.click(screen.getByRole('button', { name: 'Apagar evento' }))
-    const confirmar = screen.getByRole('button', { name: 'Apagar?' })
+    // 1st step: clicking the icon opens "Delete?"/"Cancel" — it does not delete yet.
+    await user.click(screen.getByRole('button', { name: 'Delete event' }))
+    const confirmar = screen.getByRole('button', { name: 'Delete?' })
     expect(
       fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE'),
     ).toBe(false)
@@ -171,19 +169,19 @@ describe('HistoricoSection', () => {
     )
   })
 
-  it('"Cancelar" na confirmação não apaga o evento', async () => {
+  it('"Cancel" in the confirmation does not delete the event', async () => {
     const user = userEvent.setup()
     stubRota(
       (p, m) => p === '/api/v1/entities/e1/historico' && m === 'GET',
       () => eventosResponse([eventoFixture({ id: 'ev1' })]),
     )
     renderWithClient(<HistoricoSection entityId="e1" />)
-    await screen.findByText('Assistiu')
+    await screen.findByText('Watched')
 
-    await user.click(screen.getByRole('button', { name: 'Apagar evento' }))
-    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+    await user.click(screen.getByRole('button', { name: 'Delete event' }))
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(
-      screen.getByRole('button', { name: 'Apagar evento' }),
+      screen.getByRole('button', { name: 'Delete event' }),
     ).toBeInTheDocument()
   })
 })

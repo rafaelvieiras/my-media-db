@@ -38,6 +38,7 @@ import {
 import { Migalhas } from '@/components/migalhas'
 import { RichDetailView } from '@/components/rich-detail-view'
 import { deResolvedEntity } from '@/lib/rich-detail'
+import { useT } from '@/lib/i18n'
 
 // Route `/entities/$id`: the detail of the IMPORTED entity. It uses the SAME RichDetailView as
 // the external detail (hero, tagline, metadata, genres, keywords, videos, collection,
@@ -62,7 +63,7 @@ function idiomaFallback(
   return null
 }
 
-// SeloFallback shows "em {idioma}" when the field fell back to another language.
+// SeloFallback shows "in {language}" when the field fell back to another language.
 function SeloFallback({
   resolved,
   campo,
@@ -72,62 +73,71 @@ function SeloFallback({
   campo: string
   lang: string
 }) {
+  const t = useT()
   const efetivo = idiomaFallback(resolved, campo, lang)
   return efetivo ? (
     <Badge variant="secondary" className="w-fit">
-      em {rotuloIdioma(efetivo)}
+      {t('entity.detail.fallbackLanguage', { language: rotuloIdioma(efetivo) })}
     </Badge>
   ) : null
 }
 
 // SeloEditado marks an override of the owner IN THE CURRENT LANGUAGE for the field (read from the raw blob).
 function SeloEditado({ ativo }: { ativo: boolean }) {
-  return ativo ? <Badge variant="default">editado</Badge> : null
+  const t = useT()
+  return ativo ? (
+    <Badge variant="default">{t('entity.detail.edited')}</Badge>
+  ) : null
 }
 
-// SeloPosse shows the AGGREGATED ownership of a season/series: "possui 12/13
-// episódios". Discreet (secondary). Null when there is no aggregation (the API only sends
+// SeloPosse shows the AGGREGATED ownership of a season/series: "has 12/13 episodes". Discreet
+// (secondary). Null when there is no aggregation (the API only sends
 // `ownership` for tv/season; movie/episode/collection use the simple ownership).
 function SeloPosse({
   ownership,
 }: {
   ownership: { owned_count: number; total_count: number } | null
 }) {
+  const t = useT()
   if (!ownership) {
     return null
   }
   return (
     <Badge variant="secondary" className="w-fit">
-      possui {ownership.owned_count}/{ownership.total_count} episódios
+      {t('entity.detail.ownsEpisodes', {
+        owned: ownership.owned_count,
+        total: ownership.total_count,
+      })}
     </Badge>
   )
 }
 
 // ItemFaltandoComAcao renders ONE item of `missing`. `media_file` (media file) is
-// the only one that the generic button "Baixar informações faltando"
+// the only one that the generic button "Download missing information"
 // (re-enrichment via provider) provably does NOT solve — it is only solved
-// by linking a datasource/running a scan in Bibliotecas, a different screen —
+// by linking a datasource/running a scan in Libraries, a different screen —
 // so it gains a link next to the label. The other keys (field/
 // artwork) stay text only, since the generic button already solves them.
 function ItemFaltandoComAcao({ chave }: { chave: string }) {
+  const t = useT()
   if (chave === 'media_file') {
     return (
       <li>
-        <span>{rotuloItemFaltando(chave)}</span>
+        <span>{rotuloItemFaltando(chave, t)}</span>
         {' — '}
         <Link
           to="/dashboard/library"
           className="underline underline-offset-2 hover:text-foreground"
         >
-          ver Bibliotecas
+          {t('entity.action.seeLibraries')}
         </Link>
       </li>
     )
   }
-  return <li>{rotuloItemFaltando(chave)}</li>
+  return <li>{rotuloItemFaltando(chave, t)}</li>
 }
 
-// SecaoCompletudeIncompleta lists, in PT-BR, what is still missing for the item
+// SecaoCompletudeIncompleta lists, in the interface language, what is still missing for the item
 // to meet the CATALOGING completeness ruler — DIFFERENT from ownership
 // (`SeloPosse` above). It stays near the top/metadata (not hidden at
 // the bottom of the page), always visible (without depending on hover — useful on touch/mobile,
@@ -135,17 +145,18 @@ function ItemFaltandoComAcao({ chave }: { chave: string }) {
 // ruler (or a type without a ruler, or a draft) shows nothing — no positive confirmation,
 // the same principle of "signal only what needs attention".
 function SecaoCompletudeIncompleta({ cc }: { cc: CatalogCompleteness }) {
+  const t = useT()
   if (!precisaAtencaoCatalogacao(cc)) {
     return null
   }
   return (
     <section
-      aria-label="Catalogação incompleta"
+      aria-label={t('entity.detail.incomplete')}
       className="flex flex-col gap-2 rounded-xl bg-amber-500/10 p-4 ring-1 ring-amber-500/30"
     >
       <h2 className="flex items-center gap-1.5 text-sm font-semibold text-amber-600 dark:text-amber-400">
         <TriangleAlert className="size-4" aria-hidden />
-        Catalogação incompleta
+        {t('entity.detail.incomplete')}
       </h2>
       <ul className="list-inside list-disc text-sm text-muted-foreground">
         {cc?.missing.map((chave) => (
@@ -171,6 +182,7 @@ function SecaoSerie({
   ordering: string | undefined
 }) {
   const navigate = useNavigate()
+  const t = useT()
   const def = orderings?.default
   const mostrarSeletor = (orderings?.available.length ?? 0) > 1
   // "Alternative" order = chosen and != default. Only it fires the grouped view; the
@@ -202,16 +214,17 @@ function SecaoSerie({
   return (
     <MembrosSomenteLeitura
       id={id}
-      titulo="Temporadas"
-      carregando="Carregando temporadas…"
-      erro="Não foi possível carregar as temporadas"
-      vazio="Esta série ainda não tem temporadas."
+      titulo={t('entity.detail.seasons')}
+      carregando={t('entity.detail.seasonsLoading')}
+      erro={t('entity.detail.seasonsError')}
+      vazio={t('entity.detail.seasonsEmpty')}
       acao={seletor}
     />
   )
 }
 
 export function EntityDetailScreen() {
+  const t = useT()
   const { id } = useParams({ from: '/entities/$id' })
   const { ordering } = useSearch({ from: '/entities/$id' })
   const { lang } = useLanguage()
@@ -233,7 +246,7 @@ export function EntityDetailScreen() {
     return (
       <main className="mx-auto max-w-4xl px-4 py-6">
         {voltar}
-        <LoadingState label="Carregando item…" />
+        <LoadingState label={t('entity.detail.loading')} />
       </main>
     )
   }
@@ -242,7 +255,7 @@ export function EntityDetailScreen() {
       <main className="mx-auto max-w-4xl px-4 py-6">
         {voltar}
         <ErrorState
-          title="Não foi possível carregar o item"
+          title={t('entity.detail.error')}
           message={error instanceof Error ? error.message : undefined}
         />
       </main>
@@ -283,9 +296,11 @@ export function EntityDetailScreen() {
         titleBadges={
           <>
             {ehDraft(data.status) ? (
-              <Badge variant="secondary">não identificado</Badge>
+              <Badge variant="secondary">
+                {t('entity.detail.unidentified')}
+              </Badge>
             ) : (
-              <Badge variant="outline">{rotuloStatus(data.status)}</Badge>
+              <Badge variant="outline">{rotuloStatus(data.status, t)}</Badge>
             )}
             <SeloEditado
               ativo={temOverrideEditado(blob, 'title', lang, fields)}
@@ -351,10 +366,10 @@ export function EntityDetailScreen() {
         {data.type === 'season' ? (
           <MembrosSomenteLeitura
             id={id}
-            titulo="Episódios"
-            carregando="Carregando episódios…"
-            erro="Não foi possível carregar os episódios"
-            vazio="Esta temporada ainda não tem episódios."
+            titulo={t('entity.detail.episodes')}
+            carregando={t('entity.detail.episodesLoading')}
+            erro={t('entity.detail.episodesError')}
+            vazio={t('entity.detail.episodesEmpty')}
             numerar
           />
         ) : null}
@@ -380,7 +395,9 @@ export function EntityDetailScreen() {
             series and season group children (without a folder of their own) — no section. */}
         {data.type === 'movie' || data.type === 'episode' ? (
           <section className="flex flex-col gap-3">
-            <h2 className="font-heading text-lg font-medium">Arquivos</h2>
+            <h2 className="font-heading text-lg font-medium">
+              {t('entity.detail.files')}
+            </h2>
             <MediaInfoTable entityId={id} />
           </section>
         ) : null}

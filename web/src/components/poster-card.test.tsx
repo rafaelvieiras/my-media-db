@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { PosterCard } from '@/components/poster-card'
 import type { EntityCard } from '@/lib/api'
+import { I18nProvider } from '@/lib/i18n'
 import { entityCardBase } from '@/test/detail-harness'
 
 // card: same defaults as entityCardBase, it only swaps id/title to the values that
@@ -31,38 +32,42 @@ vi.mock('@tanstack/react-router', () => ({
   ),
 }))
 
+afterEach(() => {
+  localStorage.clear()
+})
+
 describe('PosterCard', () => {
-  it('mostra título, tipo e badge de posse', () => {
+  it('shows the title, the type and the ownership badge', () => {
     render(<PosterCard card={card({ owned: true })} />)
     expect(screen.getByText('Matrix')).toBeInTheDocument()
-    expect(screen.getByText('Filme')).toBeInTheDocument()
-    expect(screen.getByText('na biblioteca')).toBeInTheDocument()
+    expect(screen.getByText('Movie')).toBeInTheDocument()
+    expect(screen.getByText('in library')).toBeInTheDocument()
   })
 
-  it('filme owned mostra "na biblioteca" no topo-direito (0038)', () => {
+  it('an owned movie shows "in library" in the top-right corner (0038)', () => {
     const { container } = render(<PosterCard card={card({ owned: true })} />)
     const overlayDireito = container.querySelector('.right-1\\.5')
     expect(overlayDireito).toBeTruthy()
-    expect(overlayDireito?.textContent).toContain('na biblioteca')
+    expect(overlayDireito?.textContent).toContain('in library')
   })
 
-  it('sem posse não mostra o badge de biblioteca', () => {
+  it('without ownership it does not show the library badge', () => {
     render(<PosterCard card={card({ owned: false })} />)
-    expect(screen.queryByText('na biblioteca')).not.toBeInTheDocument()
+    expect(screen.queryByText('in library')).not.toBeInTheDocument()
   })
 
-  it('nenhum card fica apagado (sem opacity-60, 0038)', () => {
+  it('no card is dimmed (no opacity-60, 0038)', () => {
     const { container } = render(<PosterCard card={card({ owned: false })} />)
     expect(container.querySelector('.opacity-60')).toBeNull()
   })
 
-  it('cai no placeholder quando não há arte', () => {
+  it('falls back to the placeholder when there is no artwork', () => {
     render(<PosterCard card={card({ poster_url: null })} />)
     expect(screen.getByTestId('poster-placeholder')).toBeInTheDocument()
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
   })
 
-  it('renderiza a imagem quando há pôster', () => {
+  it('renders the image when there is a poster', () => {
     render(
       <PosterCard
         card={card({ poster_url: '/api/v1/entities/x/assets/poster' })}
@@ -70,10 +75,10 @@ describe('PosterCard', () => {
     )
     const img = screen.getByRole('img')
     expect(img).toHaveAttribute('src', '/api/v1/entities/x/assets/poster')
-    expect(img).toHaveAttribute('alt', 'Pôster de Matrix')
+    expect(img).toHaveAttribute('alt', 'Poster for Matrix')
   })
 
-  it('cai no placeholder se a imagem falhar ao carregar', () => {
+  it('falls back to the placeholder when the image fails to load', () => {
     render(
       <PosterCard
         card={card({ poster_url: '/api/v1/entities/x/assets/poster' })}
@@ -83,32 +88,51 @@ describe('PosterCard', () => {
     expect(screen.getByTestId('poster-placeholder')).toBeInTheDocument()
   })
 
-  it('mostra badge de revisão em baixa confiança e ele linka para /dashboard/review', () => {
+  it('shows the review badge on low confidence and it links to /dashboard/review', () => {
     const { container } = render(
       <PosterCard card={card({ match_confidence: 40 })} />,
     )
-    const badge = screen.getByText('revisar')
+    const badge = screen.getByText('review')
     expect(badge).toBeInTheDocument()
     expect(badge.closest('a')).toHaveAttribute('href', '/dashboard/review')
     // The review (attention) one stays in the top-LEFT, not in the ownership one.
     const overlayEsquerdo = container.querySelector('.left-1\\.5')
-    expect(overlayEsquerdo?.textContent).toContain('revisar')
+    expect(overlayEsquerdo?.textContent).toContain('review')
   })
 
-  it('mostra badge de não identificado para draft e ele linka para /dashboard/review', () => {
+  it('shows the not-identified badge for a draft and it links to /dashboard/review', () => {
     render(<PosterCard card={card({ status: 'draft' })} />)
-    const badge = screen.getByText('não identificado')
+    const badge = screen.getByText('not identified')
     expect(badge).toBeInTheDocument()
     expect(badge.closest('a')).toHaveAttribute('href', '/dashboard/review')
-    expect(screen.queryByText('revisar')).not.toBeInTheDocument()
+    expect(screen.queryByText('review')).not.toBeInTheDocument()
+  })
+
+  // One rendering test in a non-default locale: the default is English (ADR-0032), and
+  // the pt-BR catalog is the one the provider picks up from localStorage.
+  it('renders the pt-BR copy when the interface language is pt-BR', () => {
+    localStorage.setItem('mmdb.ui-lang', 'pt-BR')
+    render(
+      <I18nProvider>
+        <PosterCard
+          card={card({
+            owned: true,
+            poster_url: '/api/v1/entities/x/assets/poster',
+          })}
+        />
+      </I18nProvider>,
+    )
+    expect(screen.getByText('Filme')).toBeInTheDocument()
+    expect(screen.getByText('na biblioteca')).toBeInTheDocument()
+    expect(screen.getByRole('img')).toHaveAttribute('alt', 'Pôster de Matrix')
   })
 })
 
 // Completeness badge per type: the SERIES card counts SEASONS, the
 // SEASON one counts EPISODES. The same state logic (completa/parcial/vazia) of the
 // ownership badge, only with the unit swapped by the type. Movie/collection never have a badge.
-describe('PosterCard — selo de completude por tipo (0037/0038)', () => {
-  it('SÉRIE parcial mostra "X/Y" compacto no topo-direito, unidade no aria-label', () => {
+describe('PosterCard — completeness badge per type (0037/0038)', () => {
+  it('a PARTIAL series shows the compact "X/Y" in the top-right, unit in the aria-label', () => {
     const { container } = render(
       <PosterCard
         card={card({
@@ -120,16 +144,16 @@ describe('PosterCard — selo de completude por tipo (0037/0038)', () => {
     const badge = screen.getByText('3/38')
     expect(badge).toBeInTheDocument()
     // The full unit stays accessible in the aria-label/title, not in the visible text.
-    expect(badge).toHaveAttribute('aria-label', 'possui 3/38 temporadas')
-    expect(screen.queryByText('possui 3/38 temporadas')).not.toBeInTheDocument()
+    expect(badge).toHaveAttribute('aria-label', 'has 3/38 seasons')
+    expect(screen.queryByText('has 3/38 seasons')).not.toBeInTheDocument()
     // The ownership badge goes in the top-RIGHT overlay.
     const overlayDireito = container.querySelector('.right-1\\.5')
     expect(overlayDireito?.textContent).toContain('3/38')
-    // A series with content does not show "na biblioteca" (no redundancy).
-    expect(screen.queryByText('na biblioteca')).not.toBeInTheDocument()
+    // A series with content does not show "in library" (no redundancy).
+    expect(screen.queryByText('in library')).not.toBeInTheDocument()
   })
 
-  it('SÉRIE completa mostra o selo "completa" (✓ com aria-label) no topo-direito', () => {
+  it('a COMPLETE series shows the "complete" badge (✓ with aria-label) in the top-right', () => {
     const { container } = render(
       <PosterCard
         card={card({
@@ -138,14 +162,14 @@ describe('PosterCard — selo de completude por tipo (0037/0038)', () => {
         })}
       />,
     )
-    const badge = screen.getByLabelText('completa')
+    const badge = screen.getByLabelText('complete')
     expect(badge).toBeInTheDocument()
     const overlayDireito = container.querySelector('.right-1\\.5')
     expect(overlayDireito?.contains(badge)).toBe(true)
-    expect(screen.queryByText('na biblioteca')).not.toBeInTheDocument()
+    expect(screen.queryByText('in library')).not.toBeInTheDocument()
   })
 
-  it('SÉRIE vazia não mostra badge nem apaga a capa (0038)', () => {
+  it('an EMPTY series shows no badge and does not dim the cover (0038)', () => {
     const { container } = render(
       <PosterCard
         card={card({
@@ -155,13 +179,13 @@ describe('PosterCard — selo de completude por tipo (0037/0038)', () => {
       />,
     )
     expect(screen.queryByText('0/38')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText(/temporadas/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/seasons/)).not.toBeInTheDocument()
     expect(container.querySelector('.opacity-60')).toBeNull()
-    // No ownership badge (not even "na biblioteca").
-    expect(screen.queryByText('na biblioteca')).not.toBeInTheDocument()
+    // No ownership badge (not even "in library").
+    expect(screen.queryByText('in library')).not.toBeInTheDocument()
   })
 
-  it('TEMPORADA parcial mostra "X/Y" com unidade "episódios" no aria-label (0036 intacto)', () => {
+  it('a PARTIAL season shows "X/Y" with the unit "episodes" in the aria-label (0036 intact)', () => {
     render(
       <PosterCard
         card={card({
@@ -171,10 +195,10 @@ describe('PosterCard — selo de completude por tipo (0037/0038)', () => {
       />,
     )
     const badge = screen.getByText('3/10')
-    expect(badge).toHaveAttribute('aria-label', 'possui 3/10 episódios')
+    expect(badge).toHaveAttribute('aria-label', 'has 3/10 episodes')
   })
 
-  it('FILME não tem selo mesmo com ownership presente', () => {
+  it('a MOVIE has no badge even with ownership present', () => {
     render(
       <PosterCard
         card={card({
@@ -183,22 +207,22 @@ describe('PosterCard — selo de completude por tipo (0037/0038)', () => {
         })}
       />,
     )
-    // movie does not count a unit: no "temporadas"/"episódios" and no "completa".
-    expect(screen.queryByText(/temporadas|episódios/)).not.toBeInTheDocument()
-    expect(screen.queryByText('completa')).not.toBeInTheDocument()
+    // movie does not count a unit: no "seasons"/"episodes" and no "complete".
+    expect(screen.queryByText(/seasons|episodes/)).not.toBeInTheDocument()
+    expect(screen.queryByText('complete')).not.toBeInTheDocument()
   })
 
-  it('sem ownership não mostra selo (movie/episode/collection)', () => {
+  it('without ownership it shows no badge (movie/episode/collection)', () => {
     render(<PosterCard card={card({ type: 'tv' })} />)
-    expect(screen.queryByText(/temporadas/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/seasons/)).not.toBeInTheDocument()
   })
 })
 
 // CATALOGING completeness indicator — DIFFERENT from the ownership badge
 // (covered above). Icon-only in the top-LEFT, next to the review
 // badge. It only appears when `catalog_completeness.complete === false`.
-describe('PosterCard — indicador de completude de catalogação (0058)', () => {
-  it('mostra o ícone de alerta quando incompleto, com title/aria-label da lista', () => {
+describe('PosterCard — cataloging completeness indicator (0058)', () => {
+  it('shows the alert icon when incomplete, with title/aria-label of the list', () => {
     const { container } = render(
       <PosterCard
         card={card({
@@ -209,7 +233,7 @@ describe('PosterCard — indicador de completude de catalogação (0058)', () =>
         })}
       />,
     )
-    const rotulo = 'Catalogação incompleta: elenco, arte fanart'
+    const rotulo = 'Incomplete cataloging: cast, fanart artwork'
     const badge = screen.getByLabelText(rotulo)
     expect(badge).toBeInTheDocument()
     expect(badge).toHaveAttribute('title', rotulo)
@@ -218,7 +242,7 @@ describe('PosterCard — indicador de completude de catalogação (0058)', () =>
     expect(overlayEsquerdo?.contains(badge)).toBe(true)
   })
 
-  it('não mostra o ícone quando completo', () => {
+  it('does not show the icon when complete', () => {
     render(
       <PosterCard
         card={card({
@@ -227,14 +251,14 @@ describe('PosterCard — indicador de completude de catalogação (0058)', () =>
       />,
     )
     expect(
-      screen.queryByLabelText(/Catalogação incompleta/),
+      screen.queryByLabelText(/Incomplete cataloging/),
     ).not.toBeInTheDocument()
   })
 
-  it('não mostra o ícone quando null (draft/ainda não avaliado pelo job)', () => {
+  it('does not show the icon when null (draft/not evaluated by the job yet)', () => {
     render(<PosterCard card={card({ catalog_completeness: null })} />)
     expect(
-      screen.queryByLabelText(/Catalogação incompleta/),
+      screen.queryByLabelText(/Incomplete cataloging/),
     ).not.toBeInTheDocument()
   })
 })

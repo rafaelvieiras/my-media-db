@@ -6,6 +6,7 @@ import {
   LoadingState,
 } from '@/components/query-states'
 import { catalogCompletenessSettingsQueryOptions } from '@/lib/queries'
+import { useT } from '@/lib/i18n'
 import {
   putCatalogCompletenessSettings,
   type CatalogCompletenessSettings,
@@ -18,24 +19,21 @@ import {
 // (`web/src/lib/entity-badges.ts`) — this file reuses nothing from
 // there (nor `EstadoCompletude`/`temCompletude`/`unidadeCompletude`).
 //
-// Only `movie`/`tv` have a UI in this round (see §4/§7) — the labels are
-// fixed in pt-BR, without dynamic type discovery.
-const TIPOS_UI: Array<{ tipo: 'movie' | 'tv'; rotulo: string }> = [
-  { tipo: 'movie', rotulo: 'Filme' },
-  { tipo: 'tv', rotulo: 'Série' },
-]
+// Only `movie`/`tv` have a UI in this round (see §4/§7) — the labels come from the
+// catalog (`review.completeness.*`), without dynamic type discovery.
+const TIPOS_UI: Array<'movie' | 'tv'> = ['movie', 'tv']
 
 // Artwork kinds offered on this screen (§6): `still`/`characterart`
 // stay out on purpose (still is for episodes; characterart was not requested).
-const KINDS_ARTE_UI: Array<{ kind: string; rotulo: string }> = [
-  { kind: 'poster', rotulo: 'Poster' },
-  { kind: 'fanart', rotulo: 'Fanart' },
-  { kind: 'logo', rotulo: 'Logo' },
-  { kind: 'clearart', rotulo: 'Clearart' },
-  { kind: 'banner', rotulo: 'Banner' },
-  { kind: 'thumb', rotulo: 'Thumb' },
-  { kind: 'disc', rotulo: 'Capa de disco' },
-]
+const KINDS_ARTE_UI = [
+  'poster',
+  'fanart',
+  'logo',
+  'clearart',
+  'banner',
+  'thumb',
+  'disc',
+] as const
 
 const CONFIG_VAZIA: TypeCompletenessConfig = {
   description: false,
@@ -48,6 +46,7 @@ const CONFIG_VAZIA: TypeCompletenessConfig = {
 }
 
 export function CatalogCompletenessForm() {
+  const t = useT()
   const { data, isPending, isError, error } = useQuery(
     catalogCompletenessSettingsQueryOptions,
   )
@@ -55,10 +54,10 @@ export function CatalogCompletenessForm() {
   return (
     <div>
       {isPending ? (
-        <LoadingState label="Carregando completude de catalogação…" />
+        <LoadingState label={t('review.completeness.loading')} />
       ) : isError ? (
         <ErrorState
-          title="Não foi possível carregar a completude de catalogação"
+          title={t('review.completeness.loadError')}
           message={error instanceof Error ? error.message : undefined}
         />
       ) : (
@@ -76,6 +75,7 @@ function CompletenessSettingsForm({
 }: {
   inicial: CatalogCompletenessSettings
 }) {
+  const t = useT()
   const queryClient = useQueryClient()
   const [config, setConfig] = useState<CatalogCompletenessSettings>(() => ({
     ...inicial,
@@ -128,32 +128,40 @@ function CompletenessSettingsForm({
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-6">
-      {TIPOS_UI.map(({ tipo, rotulo }) => {
+      {TIPOS_UI.map((tipo) => {
         const cfg = config[tipo] ?? CONFIG_VAZIA
         return (
           <div key={tipo} className="flex flex-col gap-3">
-            <h2 className="text-sm font-semibold">{rotulo}</h2>
+            <h2 className="text-sm font-semibold">
+              {t(
+                tipo === 'movie'
+                  ? 'common.entityType.movie'
+                  : 'common.entityType.tv',
+              )}
+            </h2>
 
             <fieldset className="flex flex-col gap-2">
-              <legend className="text-sm font-medium">Informações</legend>
+              <legend className="text-sm font-medium">
+                {t('review.completeness.information')}
+              </legend>
               <div className="flex flex-col gap-1.5">
                 <CampoCheckbox
-                  label="Sinopse"
+                  label={t('review.completeness.field.description')}
                   checked={cfg.description}
                   onChange={() => alternarCampo(tipo, 'description')}
                 />
                 <CampoCheckbox
-                  label="Duração"
+                  label={t('review.completeness.field.runtime')}
                   checked={cfg.runtime}
                   onChange={() => alternarCampo(tipo, 'runtime')}
                 />
                 <CampoCheckbox
-                  label="Classificação indicativa"
+                  label={t('review.completeness.field.certification')}
                   checked={cfg.certification}
                   onChange={() => alternarCampo(tipo, 'certification')}
                 />
                 <CampoCheckbox
-                  label="Palavras-chave"
+                  label={t('review.completeness.field.keywords')}
                   checked={cfg.keywords}
                   onChange={() => alternarCampo(tipo, 'keywords')}
                 />
@@ -161,15 +169,17 @@ function CompletenessSettingsForm({
             </fieldset>
 
             <fieldset className="flex flex-col gap-2">
-              <legend className="text-sm font-medium">Elenco + arquivo</legend>
+              <legend className="text-sm font-medium">
+                {t('review.completeness.castAndFile')}
+              </legend>
               <div className="flex flex-col gap-1.5">
                 <CampoCheckbox
-                  label="Elenco"
+                  label={t('review.completeness.field.cast')}
                   checked={cfg.cast}
                   onChange={() => alternarCampo(tipo, 'cast')}
                 />
                 <CampoCheckbox
-                  label="Arquivo de mídia"
+                  label={t('review.completeness.field.media_file')}
                   checked={cfg.media_file}
                   onChange={() => alternarCampo(tipo, 'media_file')}
                 />
@@ -177,12 +187,14 @@ function CompletenessSettingsForm({
             </fieldset>
 
             <fieldset className="flex flex-col gap-2">
-              <legend className="text-sm font-medium">Artes</legend>
+              <legend className="text-sm font-medium">
+                {t('review.completeness.artwork')}
+              </legend>
               <div className="flex flex-col gap-1.5">
-                {KINDS_ARTE_UI.map(({ kind, rotulo: rotuloKind }) => (
+                {KINDS_ARTE_UI.map((kind) => (
                   <CampoCheckbox
                     key={kind}
-                    label={rotuloKind}
+                    label={t(`review.completeness.artworkKind.${kind}`)}
                     checked={cfg.artwork.includes(kind)}
                     onChange={() => alternarArtwork(tipo, kind)}
                   />

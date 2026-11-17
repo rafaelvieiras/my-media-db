@@ -6,7 +6,7 @@ import { renderWithClient } from '@/test/render'
 import { erroJson, okJson } from '@/test/detail-harness'
 
 // Route `/dashboard/integrations`: lists the cards with the
-// `configurada` badge reflecting EXACTLY what the API returned (no logic
+// `configured` badge reflecting EXACTLY what the API returned (no logic
 // of its own in the front, acceptance criterion §5).
 vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/link-mock')).LinkMock,
@@ -38,7 +38,7 @@ afterEach(() => {
 })
 
 describe('IntegrationsListScreen', () => {
-  it('mostra o heading e o card do TMDB com badge "Não configurada"', async () => {
+  it('shows the heading and the TMDB card with the "Not configured" badge', async () => {
     vi.stubGlobal(
       'fetch',
       fetchRouter(() => okJson({ integrations: [integracao()] })),
@@ -46,17 +46,17 @@ describe('IntegrationsListScreen', () => {
     renderWithClient(<IntegrationsListScreen />)
 
     expect(
-      screen.getByRole('heading', { level: 1, name: 'Integrações' }),
+      screen.getByRole('heading', { level: 1, name: 'Integrations' }),
     ).toBeInTheDocument()
     expect(await screen.findByText('TMDB')).toBeInTheDocument()
     expect(screen.getByText('The Movie Database.')).toBeInTheDocument()
-    expect(screen.getByText('Não configurada')).toBeInTheDocument()
+    expect(screen.getByText('Not configured')).toBeInTheDocument()
 
     const link = screen.getByRole('link', { name: /TMDB/ })
     expect(link).toHaveAttribute('href', '/dashboard/integrations/tmdb')
   })
 
-  it('badge "Configurada" quando a API devolve configurada:true', async () => {
+  it('shows the "Configured" badge when the API returns configurada:true', async () => {
     vi.stubGlobal(
       'fetch',
       fetchRouter(() =>
@@ -65,11 +65,11 @@ describe('IntegrationsListScreen', () => {
     )
     renderWithClient(<IntegrationsListScreen />)
 
-    expect(await screen.findByText('Configurada')).toBeInTheDocument()
-    expect(screen.queryByText('Não configurada')).not.toBeInTheDocument()
+    expect(await screen.findByText('Configured')).toBeInTheDocument()
+    expect(screen.queryByText('Not configured')).not.toBeInTheDocument()
   })
 
-  it('estado vazio: "Nenhuma integração registrada" quando a lista vem vazia', async () => {
+  it('empty state: "No integration registered" when the list comes back empty', async () => {
     vi.stubGlobal(
       'fetch',
       fetchRouter(() => okJson({ integrations: [] })),
@@ -77,11 +77,11 @@ describe('IntegrationsListScreen', () => {
     renderWithClient(<IntegrationsListScreen />)
 
     expect(
-      await screen.findByText('Nenhuma integração registrada'),
+      await screen.findByText('No integration registered'),
     ).toBeInTheDocument()
   })
 
-  it('estado de erro mostra a mensagem pt-BR do envelope', async () => {
+  it('error state shows the message of the envelope', async () => {
     vi.stubGlobal(
       'fetch',
       fetchRouter(() => erroJson(500, 'erro_interno', 'falhou de verdade')),
@@ -89,18 +89,18 @@ describe('IntegrationsListScreen', () => {
     renderWithClient(<IntegrationsListScreen />)
 
     expect(
-      await screen.findByText('Não foi possível carregar as integrações'),
+      await screen.findByText('Could not load the integrations'),
     ).toBeInTheDocument()
     expect(screen.getByText('falhou de verdade')).toBeInTheDocument()
   })
 
-  it('estado de carregando mostra o LoadingState antes da resposta', () => {
+  it('loading state shows the LoadingState before the response', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() => new Promise(() => {})),
     )
     renderWithClient(<IntegrationsListScreen />)
 
-    expect(screen.getByText('Carregando integrações…')).toBeInTheDocument()
+    expect(screen.getByText('Loading integrations…')).toBeInTheDocument()
   })
 })

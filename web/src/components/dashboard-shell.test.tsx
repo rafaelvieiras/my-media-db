@@ -60,22 +60,22 @@ async function montarEmRota(pathInicial: string) {
 }
 
 const ROTULOS = [
-  'Bibliotecas',
-  'Revisão',
-  'Órfãs',
+  'Libraries',
+  'Review',
+  'Orphans',
   'Jobs',
-  'Configurações',
-  'Integrações',
+  'Settings',
+  'Integrations',
   'Webhook',
-  'Eventos sem item',
-  'Saúde',
+  'Events without item',
+  'Health',
 ]
 
 describe('DashboardShell', () => {
   it('mostra as 8 seções na sidebar e renderiza o conteúdo da rota ativa', async () => {
     await montarEmRota('/dashboard/review')
 
-    const nav = screen.getByRole('navigation', { name: 'Administração' })
+    const nav = screen.getByRole('navigation', { name: 'Administration' })
     for (const rotulo of ROTULOS) {
       expect(
         within(nav).getByRole('link', { name: rotulo }),
@@ -87,13 +87,13 @@ describe('DashboardShell', () => {
   it('destaca a seção ativa com aria-current', async () => {
     await montarEmRota('/dashboard/orphans')
 
-    const nav = screen.getByRole('navigation', { name: 'Administração' })
-    expect(within(nav).getByRole('link', { name: 'Órfãs' })).toHaveAttribute(
+    const nav = screen.getByRole('navigation', { name: 'Administration' })
+    expect(within(nav).getByRole('link', { name: 'Orphans' })).toHaveAttribute(
       'aria-current',
       'page',
     )
     expect(
-      within(nav).getByRole('link', { name: 'Bibliotecas' }),
+      within(nav).getByRole('link', { name: 'Libraries' }),
     ).not.toHaveAttribute('aria-current')
   })
 
@@ -102,14 +102,14 @@ describe('DashboardShell', () => {
     await montarEmRota('/dashboard/library')
 
     const botaoMenu = screen.getByRole('button', {
-      name: 'Abrir menu de administração',
+      name: 'Open the administration menu',
     })
     expect(botaoMenu.className).toContain('md:hidden')
 
     expect(screen.queryByRole('dialog')).toBeNull()
 
     await user.click(botaoMenu)
-    const painel = await screen.findByRole('dialog', { name: 'Administração' })
+    const painel = await screen.findByRole('dialog', { name: 'Administration' })
     for (const rotulo of ROTULOS) {
       expect(
         within(painel).getByRole('link', { name: rotulo }),
@@ -122,13 +122,15 @@ describe('DashboardShell', () => {
     await montarEmRota('/dashboard/library')
 
     await user.click(
-      screen.getByRole('button', { name: 'Abrir menu de administração' }),
+      screen.getByRole('button', { name: 'Open the administration menu' }),
     )
-    const painel = await screen.findByRole('dialog', { name: 'Administração' })
+    const painel = await screen.findByRole('dialog', { name: 'Administration' })
     await user.click(within(painel).getByRole('link', { name: 'Jobs' }))
 
     await waitFor(() => {
-      expect(screen.queryByRole('dialog', { name: 'Administração' })).toBeNull()
+      expect(
+        screen.queryByRole('dialog', { name: 'Administration' }),
+      ).toBeNull()
     })
     expect(screen.getByText('conteúdo de jobs')).toBeInTheDocument()
   })

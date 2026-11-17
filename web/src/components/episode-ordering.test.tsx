@@ -25,7 +25,7 @@ vi.mock('@/lib/language-context', () => ({
 }))
 
 describe('SeletorOrdenacao', () => {
-  it('lista as opções com rótulos amigáveis e emite a ordem CRUA ao trocar', () => {
+  it('lists the options with friendly labels and emits the RAW order on change', () => {
     const onChange = vi.fn()
     renderWithClient(
       <SeletorOrdenacao
@@ -35,12 +35,12 @@ describe('SeletorOrdenacao', () => {
       />,
     )
     const select = screen.getByLabelText(
-      'Ordem de exibição dos episódios',
+      'Episode display order',
     ) as HTMLSelectElement
     // Friendly labels: the known orders mapped and the rest capitalized.
-    expect(screen.getByRole('option', { name: 'Oficial' })).toBeTruthy()
+    expect(screen.getByRole('option', { name: 'Official' })).toBeTruthy()
     expect(screen.getByRole('option', { name: 'DVD' })).toBeTruthy()
-    expect(screen.getByRole('option', { name: 'Absoluto' })).toBeTruthy()
+    expect(screen.getByRole('option', { name: 'Absolute' })).toBeTruthy()
     expect(screen.getByRole('option', { name: 'Regional' })).toBeTruthy()
     // Switching emits the RAW value (dvd), not the label.
     fireEvent.change(select, { target: { value: 'dvd' } })
@@ -56,8 +56,8 @@ const groupsDvd: EpisodeGroups = {
   ],
 }
 
-describe('EpisodiosAgrupados — view agrupada', () => {
-  it('renderiza as seções (cabeçalhos não-navegáveis) e os cards numerados', async () => {
+describe('EpisodiosAgrupados — grouped view', () => {
+  it('renders the sections (non-navigable headers) and the numbered cards', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) => {
@@ -79,7 +79,7 @@ describe('EpisodiosAgrupados — view agrupada', () => {
     vi.restoreAllMocks()
   })
 
-  it('mostra o vazio quando a série não tem episódios na ordem', async () => {
+  it('shows the empty state when the series has no episodes in the order', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => okJson({ ordering: 'dvd', groups: [] })),
@@ -89,7 +89,7 @@ describe('EpisodiosAgrupados — view agrupada', () => {
     )
     await waitFor(() =>
       expect(
-        screen.getByText('Esta série ainda não tem episódios nesta ordem.'),
+        screen.getByText('This series has no episodes in this order yet.'),
       ).toBeTruthy(),
     )
     vi.restoreAllMocks()

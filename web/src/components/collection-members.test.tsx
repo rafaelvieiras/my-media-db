@@ -32,7 +32,7 @@ afterEach(() => {
 })
 
 describe('CollectionMembers', () => {
-  it('renderiza os membros como cards internos (→ /entities/{id})', async () => {
+  it('renders the members as internal cards (→ /entities/{id})', async () => {
     stubMembros(() =>
       okJson([
         card({ id: 'e1', title: 'Duna' }),
@@ -48,23 +48,23 @@ describe('CollectionMembers', () => {
     expect(hrefs).toContain('/entities/e2')
   })
 
-  it('coleção sem itens mostra o aviso', async () => {
+  it('a collection without items shows the notice', async () => {
     stubMembros(() => okJson([]))
     renderWithClient(<CollectionMembers id="col-1" />)
     expect(
-      await screen.findByText('Esta coleção ainda não tem itens.'),
+      await screen.findByText('This collection has no items yet.'),
     ).toBeTruthy()
   })
 
-  it('erro ao carregar membros mostra o estado de erro', async () => {
+  it('an error while loading the members shows the error state', async () => {
     stubMembros(() => erroJson(500, 'internal', 'boom'))
     renderWithClient(<CollectionMembers id="col-1" />)
     expect(
-      await screen.findByText('Não foi possível carregar os itens da coleção'),
+      await screen.findByText('Could not load the collection items'),
     ).toBeTruthy()
   })
 
-  it('passa o idioma ativo na busca dos membros (re-busca ao trocar)', async () => {
+  it('passes the active language into the members query (refetch on change)', async () => {
     estado.lang = 'en'
     const m = stubMembros(() => okJson([card()]))
     renderWithClient(<CollectionMembers id="col-1" />)
@@ -74,12 +74,14 @@ describe('CollectionMembers', () => {
     expect(String(chamada?.[0])).toContain('lang=en')
   })
 
-  it('sem editable NÃO mostra o botão de adicionar nem o de remover', async () => {
+  it('without editable it shows neither the add nor the remove control', async () => {
     stubMembros(() => okJson([card({ id: 'e1', title: 'Duna' })]))
     renderWithClient(<CollectionMembers id="col-1" />)
     await screen.findByText('Duna')
-    expect(screen.queryByText('Adicionar item')).toBeNull()
-    expect(screen.queryByLabelText('Remover Duna da coleção')).toBeNull()
+    expect(screen.queryByText('Add item')).toBeNull()
+    expect(
+      screen.queryByLabelText('Remove Duna from the collection'),
+    ).toBeNull()
   })
 })
 
@@ -115,8 +117,8 @@ function stubEditavel(rotas: {
   return m
 }
 
-describe('CollectionMembers editável (0025 Fase B)', () => {
-  it('remove um membro em duas etapas e a lista reflete', async () => {
+describe('CollectionMembers editable (0025 Phase B)', () => {
+  it('removes a member in two steps and the list reflects it', async () => {
     stubEditavel({
       membros: () =>
         okJson([
@@ -129,15 +131,15 @@ describe('CollectionMembers editável (0025 Fase B)', () => {
     await screen.findByText('Matrix')
 
     // Step 1: it clicks the trash → "Remover?" appears.
-    fireEvent.click(screen.getByLabelText('Remover Matrix da coleção'))
+    fireEvent.click(screen.getByLabelText('Remove Matrix from the collection'))
     // Step 2: it confirms.
-    fireEvent.click(screen.getByText('Remover?'))
+    fireEvent.click(screen.getByText('Remove?'))
 
     await vi.waitFor(() => expect(screen.queryByText('Matrix')).toBeNull())
     expect(screen.getByText('Matrix Reloaded')).toBeTruthy()
   })
 
-  it('adiciona um item pelo picker e a lista reflete', async () => {
+  it('adds an item through the picker and the list reflects it', async () => {
     stubEditavel({
       membros: () => okJson([card({ id: 'e1', title: 'Matrix' })]),
       busca: () =>
@@ -155,8 +157,8 @@ describe('CollectionMembers editável (0025 Fase B)', () => {
     renderWithClient(<CollectionMembers id="col-1" editable />)
     await screen.findByText('Matrix')
 
-    fireEvent.click(screen.getByText('Adicionar item'))
-    fireEvent.change(screen.getByLabelText('Buscar item para adicionar'), {
+    fireEvent.click(screen.getByText('Add item'))
+    fireEvent.change(screen.getByLabelText('Search for an item to add'), {
       target: { value: 'matrix' },
     })
     fireEvent.click(await screen.findByText('Matrix Resurrections'))

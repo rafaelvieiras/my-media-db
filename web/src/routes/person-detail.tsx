@@ -17,12 +17,14 @@ import {
   VoltarBiblioteca,
 } from '@/components/query-states'
 import { Badge } from '@/components/ui/badge'
+import { useT } from '@/lib/i18n'
+import type { Translate } from '@/lib/i18n/types'
 
 // Route `/person/$personId`: MINIMAL person page (phase D,
 // internal-first). Header with photo + name (+ external link to TMDB when the source is
-// `tmdb`) and TWO filmography sections: "Na sua biblioteca" (phase C, field
+// `tmdb`) and TWO filmography sections: "In your library" (phase C, field
 // `filmography`) — works ALREADY imported, each card navigates to the INTERNAL detail of the entity —
-// and "Ainda não importados" (phase D, field `filmography_external`) — works that the
+// and "Not imported yet" (phase D, field `filmography_external`) — works that the
 // provider brought but are not in the catalog yet, each card navigates to the EXTERNAL detail
 // (`/external/$source/$type/$id`, the same destination used by the search/similars) to
 // see/import. Read-only in this phase — the person is not cataloged as an entity of its own,
@@ -32,13 +34,16 @@ const TMDB_PESSOA = 'https://www.themoviedb.org/person/'
 
 // propsDeErro chooses title/message by HTTP status: 404 (person absent from the
 // catalog) × the rest (generic).
-function propsDeErro(error: unknown): { title: string; message?: string } {
+function propsDeErro(
+  error: unknown,
+  t: Translate,
+): { title: string; message?: string } {
   const status = error instanceof ApiError ? error.status : 0
   const message = error instanceof Error ? error.message : undefined
   if (status === 404) {
-    return { title: 'Pessoa não encontrada', message }
+    return { title: t('entity.person.notFound'), message }
   }
-  return { title: 'Não foi possível carregar a pessoa', message }
+  return { title: t('entity.person.error'), message }
 }
 
 // papelDoCredito chooses the text of the role shown on the card: the CHARACTER when the
@@ -77,18 +82,19 @@ function CorpoCard({
   papel: string | null
   selo?: ReactNode
 }) {
+  const t = useT()
   return (
     <>
       <PosterImg
         src={poster}
-        alt={`Pôster de ${title}`}
+        alt={t('entity.alt.poster', { title })}
         className="transition group-hover:ring-2 group-hover:ring-foreground/30"
       />
       <span className="line-clamp-2 text-xs font-medium group-hover:text-foreground">
         {title}
       </span>
       <span className="line-clamp-1 text-xs text-muted-foreground">
-        {[year, rotuloTipo(type)].filter(Boolean).join(' · ')}
+        {[year, rotuloTipo(type, t)].filter(Boolean).join(' · ')}
       </span>
       {papel ? (
         <span className="line-clamp-2 text-xs text-muted-foreground">
@@ -122,13 +128,14 @@ function FilmografiaCard({ credito }: { credito: PersonCredit }) {
 
 // FilmografiaExternaCard is the card of a work NOT imported YET: it navigates to the
 // EXTERNAL detail (`/external/$source/$type/$id` — the same route that the search and the similars use)
-// and gains the "Não importado" badge. `poster_url` already comes PROXIED from the backend (unlike
+// and gains the "Not imported" badge. `poster_url` already comes PROXIED from the backend (unlike
 // the internal poster, which is a local route — hence it does not go through `posterSrc`).
 function FilmografiaExternaCard({
   credito,
 }: {
   credito: PersonExternalCredit
 }) {
+  const t = useT()
   return (
     <Link
       to="/external/$source/$type/$id"
@@ -137,7 +144,7 @@ function FilmografiaExternaCard({
         type: credito.type,
         id: credito.source_id,
       }}
-      aria-label={`Ver ${credito.title} (ainda não importado)`}
+      aria-label={t('entity.person.viewExternal', { title: credito.title })}
       className="group flex flex-col gap-1"
     >
       <CorpoCard
@@ -148,7 +155,7 @@ function FilmografiaExternaCard({
         papel={papelDoCredito(credito)}
         selo={
           <Badge variant="secondary" className="w-fit">
-            Não importado
+            {t('entity.person.notImportedBadge')}
           </Badge>
         }
       />
@@ -157,6 +164,7 @@ function FilmografiaExternaCard({
 }
 
 export function PersonDetailScreen() {
+  const t = useT()
   const { personId } = useParams({ from: '/person/$personId' })
   const { data, isPending, isError, error } = useQuery(
     personQueryOptions(personId),
@@ -168,7 +176,7 @@ export function PersonDetailScreen() {
     return (
       <main className="mx-auto max-w-4xl px-4 py-6">
         {voltar}
-        <LoadingState label="Carregando pessoa…" />
+        <LoadingState label={t('entity.person.loading')} />
       </main>
     )
   }
@@ -176,7 +184,7 @@ export function PersonDetailScreen() {
     return (
       <main className="mx-auto max-w-4xl px-4 py-6">
         {voltar}
-        <ErrorState {...propsDeErro(error)} />
+        <ErrorState {...propsDeErro(error, t)} />
       </main>
     )
   }
@@ -193,7 +201,7 @@ export function PersonDetailScreen() {
         <div className="flex flex-wrap items-center gap-4">
           <PosterImg
             src={data.profile_url ?? null}
-            alt={`Foto de ${data.name}`}
+            alt={t('entity.alt.personPhoto', { name: data.name })}
             className="w-28 shrink-0"
           />
           <div className="flex flex-col gap-1">
@@ -215,7 +223,7 @@ export function PersonDetailScreen() {
         {temNaBiblioteca ? (
           <section className="flex flex-col gap-3">
             <h2 className="font-heading text-lg font-medium">
-              Na sua biblioteca
+              {t('entity.person.inLibrary')}
             </h2>
             <ul className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
               {data.filmography.map((credito) => (
@@ -230,7 +238,7 @@ export function PersonDetailScreen() {
         {temNaoImportados ? (
           <section className="flex flex-col gap-3">
             <h2 className="font-heading text-lg font-medium">
-              Ainda não importados
+              {t('entity.person.notImported')}
             </h2>
             <ul className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
               {externas.map((credito) => (
@@ -246,7 +254,7 @@ export function PersonDetailScreen() {
 
         {!temNaBiblioteca && !temNaoImportados ? (
           <p className="text-sm text-muted-foreground">
-            Nenhuma obra na sua biblioteca ainda.
+            {t('entity.person.empty')}
           </p>
         ) : null}
       </div>

@@ -27,19 +27,19 @@ afterEach(() => {
 })
 
 describe('LibraryBrowseScreen', () => {
-  it('resolve "movies" para o tipo "movie" e renderiza o grid com o título "Filmes"', async () => {
+  it('resolves "movies" to the "movie" type and renders the grid with the "Movies" heading', async () => {
     spies.params = { entitySlug: 'movies' }
     const fetchMock = vi.fn().mockResolvedValue(page([]))
     vi.stubGlobal('fetch', fetchMock)
 
     renderWithClient(<LibraryBrowseScreen />)
 
-    expect(screen.getByRole('heading', { name: 'Filmes' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Movies' })).toBeInTheDocument()
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
     expect(urlEnviada(fetchMock).searchParams.get('type')).toBe('movie')
   })
 
-  it('resolve "artists" para o tipo "artista"', async () => {
+  it('resolves "artists" to the "artista" type', async () => {
     spies.params = { entitySlug: 'artists' }
     const fetchMock = vi.fn().mockResolvedValue(page([]))
     vi.stubGlobal('fetch', fetchMock)
@@ -50,16 +50,14 @@ describe('LibraryBrowseScreen', () => {
     expect(urlEnviada(fetchMock).searchParams.get('type')).toBe('artista')
   })
 
-  it('slug desconhecido cai em estado vazio coerente, sem crash nem fetch', () => {
+  it('falls back to a coherent empty state on an unknown slug, without crash or fetch', () => {
     spies.params = { entitySlug: 'nao-existe' }
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
 
     renderWithClient(<LibraryBrowseScreen />)
 
-    expect(
-      screen.getByText('Tipo de biblioteca não encontrado'),
-    ).toBeInTheDocument()
+    expect(screen.getByText('Library type not found')).toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })

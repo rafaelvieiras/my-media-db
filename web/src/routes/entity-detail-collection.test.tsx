@@ -3,6 +3,7 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { EntityDetailScreen } from '@/routes/entity-detail'
 import { LanguageProvider } from '@/lib/language-context'
+import { I18nProvider } from '@/lib/i18n'
 import type { ResolvedEntity } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 import {
@@ -13,8 +14,8 @@ import {
   settingsPadrao,
 } from '@/test/entity-fixtures'
 
-// Covers the entity screen when it is a COLLECTION: the "Excluir coleção" action —
-// a DESTRUCTIVE item inside the "Gerenciar" dropdown, which opens a
+// Covers the entity screen when it is a COLLECTION: the "Delete collection" action —
+// a DESTRUCTIVE item inside the "Manage" dropdown, which opens a
 // confirmation AlertDialog instead of mutating directly (purge → back to the
 // library) — and the absence of the Files section. `useNavigate` is a spy (the
 // deletion navigates to "/"). `Link` uses the shared mock (jscpd — the
@@ -75,19 +76,21 @@ function renderColecao(onDelete: () => void, over = {}) {
   })
   vi.stubGlobal('fetch', fetchRouter(entity, onDelete))
   return renderWithClient(
-    <LanguageProvider>
-      <EntityDetailScreen />
-    </LanguageProvider>,
+    <I18nProvider>
+      <LanguageProvider>
+        <EntityDetailScreen />
+      </LanguageProvider>
+    </I18nProvider>,
   )
 }
 
-// abrirMenuEItemExcluir opens the "Gerenciar" dropdown and clicks the
-// destructive item "Excluir coleção" — which opens the confirmation AlertDialog
+// abrirMenuEItemExcluir opens the "Manage" dropdown and clicks the
+// destructive item "Delete collection" — which opens the confirmation AlertDialog
 // (it does NOT purge directly).
 async function abrirMenuEItemExcluir(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(await screen.findByRole('button', { name: /Gerenciar/ }))
-  await user.click(screen.getByRole('menuitem', { name: 'Excluir coleção' }))
-  await screen.findByRole('alertdialog', { name: 'Excluir coleção?' })
+  await user.click(await screen.findByRole('button', { name: /Manage/ }))
+  await user.click(screen.getByRole('menuitem', { name: 'Delete collection' }))
+  await screen.findByRole('alertdialog', { name: 'Delete the collection?' })
 }
 
 beforeEach(() => {
@@ -99,15 +102,15 @@ afterEach(() => {
   spies.navigate.mockReset()
 })
 
-describe('EntityDetailScreen — coleção (0026/0086)', () => {
-  it('exclui a coleção via AlertDialog, purga e volta à biblioteca', async () => {
+describe('EntityDetailScreen — collection (0026/0086)', () => {
+  it('deletes the collection via AlertDialog, purges and goes back to the library', async () => {
     const onDelete = vi.fn()
     renderColecao(onDelete)
     const user = userEvent.setup()
 
     await abrirMenuEItemExcluir(user)
     // Confirms in the AlertDialog: only the action button triggers the purge.
-    await user.click(screen.getByRole('button', { name: 'Excluir coleção' }))
+    await user.click(screen.getByRole('button', { name: 'Delete collection' }))
 
     await waitFor(() => expect(onDelete).toHaveBeenCalledTimes(1))
     await waitFor(() =>
@@ -115,13 +118,13 @@ describe('EntityDetailScreen — coleção (0026/0086)', () => {
     )
   })
 
-  it('cancelar a exclusão fecha o diálogo sem purgar', async () => {
+  it('cancelling the deletion closes the dialog without purging', async () => {
     const onDelete = vi.fn()
     renderColecao(onDelete)
     const user = userEvent.setup()
 
     await abrirMenuEItemExcluir(user)
-    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
 
     await waitFor(() => {
       expect(screen.queryByRole('alertdialog')).toBeNull()
@@ -130,9 +133,9 @@ describe('EntityDetailScreen — coleção (0026/0086)', () => {
     expect(spies.navigate).not.toHaveBeenCalled()
   })
 
-  it('coleção não mostra a seção de Arquivos', async () => {
+  it('collection does not show the Files section', async () => {
     renderColecao(() => {})
-    await screen.findByRole('button', { name: /Gerenciar/ })
-    expect(screen.queryByRole('heading', { name: 'Arquivos' })).toBeNull()
+    await screen.findByRole('button', { name: /Manage/ })
+    expect(screen.queryByRole('heading', { name: 'Files' })).toBeNull()
   })
 })

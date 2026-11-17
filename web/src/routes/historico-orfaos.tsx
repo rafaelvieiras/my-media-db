@@ -5,6 +5,9 @@ import { Button } from '@/components/ui/button'
 import { EmptyState, ErrorState, LoadingState } from '@/components/query-states'
 import { historicoOrfaosQueryOptions } from '@/lib/queries'
 import type { HistoricoEventoOrfao } from '@/lib/api'
+import { useLocale, useT } from '@/lib/i18n'
+import type { Translate } from '@/lib/i18n/types'
+import { ScreenHeader } from '@/components/screen-header'
 import {
   formatarCarimboHistorico,
   rotuloOrigemHistorico,
@@ -22,6 +25,7 @@ import {
 const LIMITE_PAGINA = 20
 
 export function HistoricoOrfaosScreen() {
+  const t = useT()
   const [offset, setOffset] = useState(0)
   const { data, isPending, isError, error } = useQuery(
     historicoOrfaosQueryOptions({ limit: LIMITE_PAGINA, offset }),
@@ -34,29 +38,22 @@ export function HistoricoOrfaosScreen() {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-6">
-      <div className="mb-4 flex flex-col gap-1">
-        <h1 className="font-heading text-xl font-semibold">
-          Eventos sem item relacionado
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Eventos de reprodução reportados por um webhook que não bateram com
-          nenhum item catalogado. Quando você importar ou corrigir a identidade
-          (IDs externos) do item correspondente, o evento é vinculado
-          automaticamente — não é preciso fazer nada aqui.
-        </p>
-      </div>
+      <ScreenHeader
+        title={t('review.orphanEvents.title')}
+        subtitle={t('review.orphanEvents.subtitle')}
+      />
 
       {isPending ? (
-        <LoadingState label="Carregando eventos…" />
+        <LoadingState label={t('review.orphanEvents.loading')} />
       ) : isError ? (
         <ErrorState
-          title="Não foi possível carregar os eventos sem item relacionado"
+          title={t('review.orphanEvents.loadError')}
           message={error instanceof Error ? error.message : undefined}
         />
       ) : itens.length === 0 ? (
         <EmptyState
-          title="Nenhum evento sem item relacionado"
-          description="Todo evento de reprodução recebido até agora casou com algum item catalogado."
+          title={t('review.orphanEvents.emptyTitle')}
+          description={t('review.orphanEvents.emptyDescription')}
         />
       ) : (
         <div className="flex flex-col gap-3">
@@ -74,10 +71,14 @@ export function HistoricoOrfaosScreen() {
               disabled={!temAnterior}
               onClick={() => setOffset((o) => Math.max(0, o - LIMITE_PAGINA))}
             >
-              Anterior
+              {t('common.action.previous')}
             </Button>
             <span className="text-xs text-muted-foreground">
-              {offset + 1}–{offset + itens.length} de {total}
+              {t('review.orphanEvents.range', {
+                from: offset + 1,
+                to: offset + itens.length,
+                total,
+              })}
             </span>
             <Button
               type="button"
@@ -86,7 +87,7 @@ export function HistoricoOrfaosScreen() {
               disabled={!temProxima}
               onClick={() => setOffset((o) => o + LIMITE_PAGINA)}
             >
-              Próxima
+              {t('common.action.next')}
             </Button>
           </div>
         </div>
@@ -98,7 +99,8 @@ export function HistoricoOrfaosScreen() {
 // tituloOrfao returns `raw_title` when available, otherwise it builds a label
 // from the raw external ids that the event brought (there may be none, if
 // the payload did not inform them — in that case only the kind/date is left).
-function tituloOrfao(evento: HistoricoEventoOrfao): string {
+// The ids themselves are data and stay as they are.
+function tituloOrfao(evento: HistoricoEventoOrfao, t: Translate): string {
   if (evento.raw_title) {
     return evento.raw_title
   }
@@ -109,15 +111,17 @@ function tituloOrfao(evento: HistoricoEventoOrfao): string {
     ids.tvdb ? `tvdb=${ids.tvdb}` : null,
   ].filter((p): p is string => p !== null)
   return partes.length > 0
-    ? `Item sem título (${partes.join(' / ')})`
-    : 'Item sem título'
+    ? t('review.orphanEvents.untitledWithIds', { ids: partes.join(' / ') })
+    : t('review.orphanEvents.untitled')
 }
 
 function EventoOrfaoRow({ evento }: { evento: HistoricoEventoOrfao }) {
+  const t = useT()
+  const locale = useLocale()
   return (
     <li className="flex flex-col gap-1 rounded-xl bg-card p-3 ring-1 ring-foreground/10">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium">{tituloOrfao(evento)}</span>
+        <span className="font-medium">{tituloOrfao(evento, t)}</span>
         {evento.raw_year ? (
           <span className="text-sm text-muted-foreground">
             ({evento.raw_year})
@@ -125,13 +129,15 @@ function EventoOrfaoRow({ evento }: { evento: HistoricoEventoOrfao }) {
         ) : null}
       </div>
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        <Badge variant="outline">{rotuloStatusHistorico(evento.status)}</Badge>
+        <Badge variant="outline">
+          {rotuloStatusHistorico(evento.status, t)}
+        </Badge>
         <span className="text-xs text-muted-foreground">{evento.kind}</span>
         <span className="text-muted-foreground">
-          {formatarCarimboHistorico(evento.occurred_at)}
+          {formatarCarimboHistorico(evento.occurred_at, locale)}
         </span>
         <span className="text-xs text-muted-foreground">
-          · {rotuloOrigemHistorico(evento.source)}
+          · {rotuloOrigemHistorico(evento.source, t)}
         </span>
       </div>
     </li>

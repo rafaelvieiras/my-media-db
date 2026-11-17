@@ -1,14 +1,18 @@
-// "Human" number formatting (pt-BR) shared between screens. Extracted
-// so as not to duplicate the inline bytes/duration logic on every screen (jscpd) —
-// today only `/health` uses it, but it is generic enough for other screens.
+// "Human" number formatting shared between screens. Extracted so as not to
+// duplicate the inline bytes/duration logic on every screen (jscpd) — today only
+// `/health` uses it, but it is generic enough for other screens.
+//
+// The decimal separator follows the interface locale (ADR-0032): "128,4 MB" in
+// pt-BR/es and "128.4 MB" in English. The unit suffixes (B/KB/MB, and d/h/min/s for
+// durations) are the same in the three languages, so they stay literal.
 
 const UNIDADES_BYTES = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'] as const
 
-// formatBytes converts a byte total into a short pt-BR label (decimal
-// comma), e.g. "128,4 MB"/"1,86 TB". It goes up a unit every 1024; the decimal
+// formatBytes converts a byte total into a short label, e.g. "128.4 MB"/"1.86 TB"
+// in English and "128,4 MB"/"1,86 TB" in pt-BR. It goes up a unit every 1024; the decimal
 // place grows (0 for B/KB, 2 above GB) so as not to lose precision on
 // large sizes nor exaggerate on small ones.
-export function formatBytes(bytes: number): string {
+export function formatBytes(bytes: number, locale = 'en'): string {
   if (!Number.isFinite(bytes) || bytes < 0) {
     return '—'
   }
@@ -22,7 +26,7 @@ export function formatBytes(bytes: number): string {
     unidade += 1
   }
   const casas = unidade <= 1 ? 0 : unidade >= 3 ? 2 : 1
-  return `${valor.toLocaleString('pt-BR', {
+  return `${valor.toLocaleString(locale, {
     minimumFractionDigits: casas,
     maximumFractionDigits: casas,
   })} ${UNIDADES_BYTES[unidade]}`

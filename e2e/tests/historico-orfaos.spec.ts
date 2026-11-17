@@ -8,26 +8,26 @@ import { expect, test } from '../fixtures'
 // validates that the screen renders without error from the sidebar link,
 // against whatever real orphan state the test server has.
 
-test('pagina de eventos sem item relacionado: navega pelo sidebar e carrega sem erro', async ({
+test('events without a related item page: navigate through the sidebar and load without error', async ({
   page,
 }) => {
   await page.goto('/dashboard')
-  await page.getByRole('link', { name: 'Eventos sem item' }).click()
+  await page.getByRole('link', { name: 'Events without item' }).click()
   await expect(page).toHaveURL(/\/dashboard\/historico-orfaos$/)
   await expect(
     page.getByRole('heading', {
       level: 1,
-      name: 'Eventos sem item relacionado',
+      name: 'Events without a related item',
     }),
   ).toBeVisible()
 
   // The query resolves to one of the three possible states: empty, list with
   // items, or error -- never an eternal loading.
-  const vazio = page.getByText('Nenhum evento sem item relacionado')
+  const vazio = page.getByText('No event without a related item')
   const erro = page.getByText(
-    'Não foi possível carregar os eventos sem item relacionado',
+    'Could not load the events without a related item',
   )
-  const listaComItens = page.getByRole('button', { name: 'Próxima' })
+  const listaComItens = page.getByRole('button', { name: 'Next' })
   await expect(vazio.or(erro).or(listaComItens)).toBeVisible()
 
   // An error is not an acceptable state here -- if the query fails, the test fails
@@ -35,12 +35,12 @@ test('pagina de eventos sem item relacionado: navega pelo sidebar e carrega sem 
   await expect(erro).not.toBeVisible()
 })
 
-test('sidebar do dashboard marca o link Eventos sem item como ativo na rota /dashboard/historico-orfaos', async ({
+test('dashboard sidebar marks the Events without item link as active on the /dashboard/historico-orfaos route', async ({
   page,
 }) => {
   await page.goto('/dashboard/historico-orfaos')
   const link = page
-    .getByRole('navigation', { name: 'Administração' })
-    .getByRole('link', { name: 'Eventos sem item' })
+    .getByRole('navigation', { name: 'Administration' })
+    .getByRole('link', { name: 'Events without item' })
   await expect(link).toHaveAttribute('aria-current', 'page')
 })

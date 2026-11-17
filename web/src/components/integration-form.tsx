@@ -6,6 +6,8 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { FormSaveFooter } from '@/components/query-states'
+import { useT } from '@/lib/i18n'
+import type { Translate } from '@/lib/i18n/types'
 import { ApiError, putIntegration, type IntegrationField } from '@/lib/api'
 
 // IntegrationForm: form GENERATED FROM THE SCHEMA of
@@ -21,8 +23,8 @@ import { ApiError, putIntegration, type IntegrationField } from '@/lib/api'
 // EstadoCampo is the local draft of ONE field: `valor` is what the owner typed/
 // selected in this editing session (never seeded with the effective value of a
 // secret field — only the non-secret ones pre-fill, see `estadoInicial`);
-// `limpar` marks that the "Limpar" button was clicked (it writes `null` in the PUT,
-// distinct from leaving the field empty without clicking Limpar — which does not enter the
+// `limpar` marks that the "Clear" button was clicked (it writes `null` in the PUT,
+// distinct from leaving the field empty without clicking Clear — which does not enter the
 // PUT, the same distinction as the `SchemaForm`/entity editor).
 interface EstadoCampo {
   valor: string
@@ -40,8 +42,8 @@ function estadoInicial(campo: IntegrationField): EstadoCampo {
 }
 
 // ENV_VAR_HINTS is a best-effort map of env-var name per slug+field, used
-// ONLY for the caption of `origem:"env"` (§2, item 3: "Definido
-// pela variável de ambiente MYMEDIADB_TMDB_TOKEN..."). The contract
+// ONLY for the caption of `origem:"env"` (§2, item 3: "Set by the
+// MYMEDIADB_TMDB_TOKEN environment variable..."). The contract
 // (`IntegrationField`, openapi.yaml) DELIBERATELY does not return the name of the
 // env var — only `origem`/`definido` — so this is a UI hint known
 // today only for TMDB; any field outside this map (e.g. a future plugin
@@ -51,15 +53,19 @@ const ENV_VAR_HINTS: Record<string, Record<string, string>> = {
   tmdb: { token: 'MYMEDIADB_TMDB_TOKEN', api_key: 'MYMEDIADB_TMDB_API_KEY' },
 }
 
-function legendaOrigem(slug: string, campo: IntegrationField): string | null {
+function legendaOrigem(
+  slug: string,
+  campo: IntegrationField,
+  t: Translate,
+): string | null {
   if (campo.origem === 'banco') {
-    return 'Definido no painel.'
+    return t('settings.integration.setInPanel')
   }
   if (campo.origem === 'env') {
     const envVar = ENV_VAR_HINTS[slug]?.[campo.nome]
     return envVar
-      ? `Definido pela variável de ambiente ${envVar} — salve aqui para sobrepor.`
-      : 'Definido por uma variável de ambiente do servidor — salve aqui para sobrepor.'
+      ? t('settings.integration.setByEnv', { variable: envVar })
+      : t('settings.integration.setByServerEnv')
   }
   return null
 }
@@ -73,13 +79,14 @@ export function IntegrationForm({
   slug,
   campos: camposIniciais,
 }: IntegrationFormProps) {
+  const t = useT()
   const queryClient = useQueryClient()
 
   // `campos` is ITS OWN STATE (seeded from the prop, not the prop directly): after
   // a successful PUT, it needs to reflect the fresh `definido`/`origem` WITHOUT
   // unmounting the form — unmounting (e.g. via a `key` on the parent refetch)
-  // would reset `mutation.isSuccess` and make the success message ("Salvo.
-  // Reinicie o servidor...") vanish before the owner manages to read it. That is why the
+  // would reset `mutation.isSuccess` and make the success message ("Saved.
+  // Restart the server...") vanish before the owner manages to read it. That is why the
   // reseed happens here, from the ECHO of the PUT itself (`onSuccess` below),
   // and the component stays mounted with the same `useMutation` instance.
   const [campos, setCampos] = useState(camposIniciais)
@@ -91,12 +98,12 @@ export function IntegrationForm({
     mutationFn: (valores: Record<string, string | null>) =>
       putIntegration(slug, valores),
     onSuccess: (detalhe) => {
-      // Invalidates the list (`configurada` badge) for when the owner comes back to
+      // Invalidates the list (`Configured` badge) for when the owner comes back to
       // `/dashboard/integrations`. The FORM ITSELF reseeds from the
       // echo of the PUT (`detalhe.campos`) — never from the value of a secret field
       // (which the echo never carries either, same rule as the GET): each secret
       // field becomes empty/masked again, with `origem`/`definido` already
-      // updated so that the caption and the "Limpar" button reflect it right away.
+      // updated so that the caption and the "Clear" button reflect it right away.
       void queryClient.invalidateQueries({ queryKey: ['integrations'] })
       void queryClient.invalidateQueries({ queryKey: ['integrations', slug] })
       setCampos(detalhe.campos)
@@ -157,7 +164,7 @@ export function IntegrationForm({
       <FormSaveFooter
         erro={mensagemErro}
         sucesso={mutation.isSuccess}
-        mensagemSucesso="Salvo. Reinicie o servidor (docker restart) para aplicar."
+        mensagemSucesso={t('settings.integration.savedRestart')}
         salvando={mutation.isPending}
       />
     </form>
@@ -179,7 +186,8 @@ function CampoIntegracao({
   onClear: () => void
   disabled: boolean
 }) {
-  const legenda = legendaOrigem(slug, campo)
+  const t = useT()
+  const legenda = legendaOrigem(slug, campo, t)
   const mostrarLimpar = campo.origem === 'banco'
 
   return (
@@ -218,7 +226,7 @@ function CampoIntegracao({
               onClick={onClear}
               disabled={disabled}
             >
-              Limpar
+              {t('common.action.clear')}
             </Button>
           ) : null}
         </div>
@@ -238,6 +246,8 @@ function CampoControle({
   onChange: (valor: string) => void
   disabled: boolean
 }) {
+  const t = useT()
+
   if (campo.tipo === 'secret') {
     return (
       <CampoSegredo
@@ -268,7 +278,7 @@ function CampoControle({
         aria-label={campo.label}
         disabled={disabled}
       >
-        <option value="">Selecione…</option>
+        <option value="">{t('settings.integration.selectPlaceholder')}</option>
         {(campo.opcoes ?? []).map((op) => (
           <option key={op.valor} value={op.valor}>
             {op.label}
@@ -304,6 +314,7 @@ function CampoSegredo({
   onChange: (valor: string) => void
   disabled: boolean
 }) {
+  const t = useT()
   const [mostrar, setMostrar] = useState(false)
 
   return (
@@ -325,7 +336,9 @@ function CampoSegredo({
         size="icon"
         onClick={() => setMostrar((v) => !v)}
         aria-label={
-          mostrar ? `Ocultar ${campo.label}` : `Mostrar ${campo.label}`
+          mostrar
+            ? t('settings.integration.hideField', { name: campo.label })
+            : t('settings.integration.showField', { name: campo.label })
         }
         disabled={disabled}
       >

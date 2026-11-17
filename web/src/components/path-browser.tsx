@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { ApiError } from '@/lib/api'
 import { libraryBrowseQueryOptions } from '@/lib/queries'
 import { cn } from '@/lib/utils'
+import { useT } from '@/lib/i18n'
 
 const RAIZ = '/'
 
@@ -34,6 +35,7 @@ export interface PathBrowserProps {
 // is never touched by this component (it does not have that power: the owner is the
 // `<Input>` of the caller).
 export function PathBrowser({ value, onChange }: PathBrowserProps) {
+  const t = useT()
   const [aberto, setAberto] = useState(false)
   const [pasta, setPasta] = useState(() =>
     pareceAbsoluto(value) ? value.trim() : RAIZ,
@@ -90,7 +92,7 @@ export function PathBrowser({ value, onChange }: PathBrowserProps) {
         onClick={() => setAberto(true)}
       >
         <FolderSearch aria-hidden />
-        Procurar pasta…
+        {t('jobs.pathBrowser.open')}
       </Button>
     )
   }
@@ -99,7 +101,7 @@ export function PathBrowser({ value, onChange }: PathBrowserProps) {
     query.error instanceof ApiError
       ? query.error.message
       : query.isError
-        ? 'Não foi possível listar esta pasta.'
+        ? t('jobs.pathBrowser.loadError')
         : null
 
   return (
@@ -110,7 +112,7 @@ export function PathBrowser({ value, onChange }: PathBrowserProps) {
           type="button"
           variant="ghost"
           size="icon-sm"
-          aria-label="Fechar navegador de pastas"
+          aria-label={t('jobs.pathBrowser.close')}
           onClick={() => setAberto(false)}
         >
           <X aria-hidden />
@@ -130,7 +132,7 @@ export function PathBrowser({ value, onChange }: PathBrowserProps) {
           }}
         >
           <ArrowUp aria-hidden />
-          Subir um nível
+          {t('jobs.pathBrowser.up')}
         </Button>
         <Button
           type="button"
@@ -142,13 +144,13 @@ export function PathBrowser({ value, onChange }: PathBrowserProps) {
             }
           }}
         >
-          Usar esta pasta
+          {t('jobs.pathBrowser.useThisFolder')}
         </Button>
       </div>
 
       {query.isPending ? (
         <p role="status" className="text-sm text-muted-foreground">
-          Carregando pastas…
+          {t('jobs.pathBrowser.loading')}
         </p>
       ) : query.isError ? (
         <p role="alert" className="text-sm font-medium text-destructive">
@@ -159,7 +161,7 @@ export function PathBrowser({ value, onChange }: PathBrowserProps) {
           <ul className="flex max-h-56 flex-col gap-0.5 overflow-y-auto">
             {query.data.entries.length === 0 ? (
               <li className="px-2 py-1.5 text-sm text-muted-foreground">
-                Nenhuma subpasta aqui.
+                {t('jobs.pathBrowser.empty')}
               </li>
             ) : (
               query.data.entries.map((entry) => (
@@ -168,7 +170,9 @@ export function PathBrowser({ value, onChange }: PathBrowserProps) {
                     type="button"
                     disabled={!entry.readable}
                     title={
-                      entry.readable ? undefined : 'sem permissão de leitura'
+                      entry.readable
+                        ? undefined
+                        : t('jobs.pathBrowser.noReadPermission')
                     }
                     onClick={() => setPasta(entry.path)}
                     className={cn(
@@ -187,7 +191,7 @@ export function PathBrowser({ value, onChange }: PathBrowserProps) {
           </ul>
           {query.data.truncated ? (
             <p className="text-xs text-muted-foreground">
-              Mostrando as primeiras 2000 pastas.
+              {t('jobs.pathBrowser.truncated')}
             </p>
           ) : null}
         </>
@@ -205,6 +209,7 @@ function Breadcrumb({
   path: string
   onNavigate: (path: string) => void
 }) {
+  const t = useT()
   const partes = path.split('/').filter(Boolean)
   const crumbs: { label: string; path: string }[] = [{ label: '/', path: '/' }]
   let acumulado = ''
@@ -215,7 +220,7 @@ function Breadcrumb({
 
   return (
     <nav
-      aria-label="Caminho atual"
+      aria-label={t('jobs.pathBrowser.currentPath')}
       className="flex min-w-0 flex-1 flex-wrap items-center gap-0.5 text-sm"
     >
       {crumbs.map((crumb, i) => (

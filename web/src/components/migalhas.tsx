@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { rotuloTipo } from '@/lib/entity-badges'
 import type { AncestorRef } from '@/lib/api'
+import { useT } from '@/lib/i18n'
 
 // Migalhas: the ASCENDING breadcrumb of the series tree. It gives context and
 // navigation for the nodes with no place on the home/search: inside a season or an
@@ -21,18 +22,19 @@ export function Migalhas({
   ancestors: AncestorRef[]
   atual: { title: string; type: string }
 }) {
+  const t = useT()
   if (ancestors.length === 0) {
     return null
   }
   return (
-    <nav aria-label="Trilha da série" className="min-w-0">
+    <nav aria-label={t('nav.breadcrumb.label')} className="min-w-0">
       <ol className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
         {ancestors.map((no) => (
           <li key={no.id} className="flex items-center gap-1.5">
             <Link
               to="/entities/$id"
               params={{ id: no.id }}
-              title={rotuloTipo(no.type)}
+              title={rotuloTipo(no.type, t)}
               className="max-w-[16rem] truncate hover:text-foreground hover:underline"
             >
               {no.title}
@@ -45,7 +47,7 @@ export function Migalhas({
         <li
           aria-current="page"
           className="max-w-[16rem] truncate font-medium text-foreground"
-          title={rotuloTipo(atual.type)}
+          title={rotuloTipo(atual.type, t)}
         >
           {atual.title}
         </li>

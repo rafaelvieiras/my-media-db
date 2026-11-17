@@ -3,6 +3,7 @@ import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CollectionDetailScreen } from '@/routes/collection-detail'
 import type { ExternalCollectionDetail } from '@/lib/api'
+import { I18nProvider } from '@/lib/i18n'
 import { renderWithClient } from '@/test/render'
 import { erroJson, okJson, stubExternalFetch } from '@/test/detail-harness'
 
@@ -58,12 +59,13 @@ function colecao(
 
 afterEach(() => {
   vi.restoreAllMocks()
+  localStorage.clear()
   spies.back.mockReset()
   estado.lang = 'pt-BR'
 })
 
 describe('CollectionDetailScreen', () => {
-  it('exibe o header e as partes da coleção', async () => {
+  it('renders the header and the parts of the collection', async () => {
     stubExternalFetch(() => okJson(colecao()))
     renderWithClient(<CollectionDetailScreen />)
 
@@ -75,7 +77,7 @@ describe('CollectionDetailScreen', () => {
     expect(screen.getByText('Duna: Parte 2')).toBeTruthy()
   })
 
-  it('renderiza o backdrop da coleção quando presente', async () => {
+  it('renders the backdrop of the collection when present', async () => {
     stubExternalFetch(() =>
       okJson(colecao({ backdrop_url: 'https://img.tmdb.org/colbg.jpg' })),
     )
@@ -88,18 +90,18 @@ describe('CollectionDetailScreen', () => {
     expect(banner).not.toBeNull()
   })
 
-  it('parte navega ao detalhe externo e traz o atalho Importar', async () => {
+  it('a part navigates to the external detail and brings the Import shortcut', async () => {
     stubExternalFetch(() => okJson(colecao()))
     renderWithClient(<CollectionDetailScreen />)
 
     const link = await screen.findByRole('link', { name: /Duna: Parte 2/ })
     expect(link.getAttribute('href')).toBe('/external/tmdb/movie/693134')
-    // Reuse of ExternalResultCard: each part has the Importar button (EXACT match —
-    // the header has "Importar coleção", which must not count here).
-    expect(screen.getAllByRole('button', { name: 'Importar' }).length).toBe(2)
+    // Reuse of ExternalResultCard: each part has the Import button (EXACT match —
+    // the header has "Import collection", which must not count here).
+    expect(screen.getAllByRole('button', { name: 'Import' }).length).toBe(2)
   })
 
-  it('parte JÁ na biblioteca vira card interno (link /entities, sem Importar) — 0026', async () => {
+  it('a part already in the library becomes an internal card (link /entities, no Import) — 0026', async () => {
     const comInterno = colecao({
       parts: [
         {
@@ -131,12 +133,12 @@ describe('CollectionDetailScreen', () => {
       .getAllByRole('link')
       .find((l) => l.getAttribute('href') === '/entities/ent-duna')
     expect(interno).toBeTruthy()
-    expect(screen.getByText('Na biblioteca')).toBeTruthy()
-    // 1 part "Importar" is left (the non-imported one); the header is still "Importar coleção".
-    expect(screen.getAllByRole('button', { name: 'Importar' }).length).toBe(1)
+    expect(screen.getByText('In the library')).toBeTruthy()
+    // 1 part "Import" is left (the non-imported one); the header is still "Import collection".
+    expect(screen.getAllByRole('button', { name: 'Import' }).length).toBe(1)
   })
 
-  it('coleção JÁ importada troca "Importar coleção" por "Ver coleção" interno — 0026', async () => {
+  it('an already imported collection swaps "Import collection" for the internal "View collection" — 0026', async () => {
     stubExternalFetch(() =>
       okJson(
         colecao({
@@ -146,19 +148,19 @@ describe('CollectionDetailScreen', () => {
     )
     renderWithClient(<CollectionDetailScreen />)
 
-    const ver = await screen.findByRole('link', { name: /Ver coleção/ })
+    const ver = await screen.findByRole('link', { name: /View collection/ })
     expect(ver.getAttribute('href')).toBe('/entities/ent-col')
     expect(
-      screen.queryByRole('button', { name: 'Importar coleção' }),
+      screen.queryByRole('button', { name: 'Import collection' }),
     ).toBeNull()
   })
 
-  it('Importar coleção importa com type=collection e navega para a entity', async () => {
+  it('"Import collection" imports with type=collection and navigates to the entity', async () => {
     const fetchMock = stubExternalFetch(() => okJson(colecao()))
     renderWithClient(<CollectionDetailScreen />)
 
     const botao = await screen.findByRole('button', {
-      name: 'Importar coleção',
+      name: 'Import collection',
     })
     await userEvent.setup().click(botao)
 
@@ -177,13 +179,15 @@ describe('CollectionDetailScreen', () => {
     ).toMatchObject({ source: 'tmdb', source_id: '726871', type: 'collection' })
   })
 
-  it('coleção sem itens mostra o aviso', async () => {
+  it('a collection without items shows the notice', async () => {
     stubExternalFetch(() => okJson(colecao({ parts: [] })))
     renderWithClient(<CollectionDetailScreen />)
-    expect(await screen.findByText('Esta coleção não tem itens.')).toBeTruthy()
+    expect(
+      await screen.findByText('This collection has no items.'),
+    ).toBeTruthy()
   })
 
-  it('passa o idioma ativo na busca (entra na queryKey)', async () => {
+  it('passes the active language into the query (it enters the queryKey)', async () => {
     estado.lang = 'en'
     const fetchMock = stubExternalFetch(() => okJson(colecao()))
     renderWithClient(<CollectionDetailScreen />)
@@ -195,38 +199,53 @@ describe('CollectionDetailScreen', () => {
     expect(String(chamada?.[0])).toContain('lang=en')
   })
 
-  it('404: coleção inexistente na fonte', async () => {
+  it('404: collection missing in the source', async () => {
     stubExternalFetch(() => erroJson(404, 'not_found', 'não existe'))
     renderWithClient(<CollectionDetailScreen />)
     expect(
-      await screen.findByText('Coleção não encontrada na fonte'),
+      await screen.findByText('Collection not found in the source'),
     ).toBeTruthy()
   })
 
-  it('503: fonte sem coleção', async () => {
+  it('503: source without the collection', async () => {
     stubExternalFetch(() => erroJson(503, 'unavailable', 'sem coleção'))
     renderWithClient(<CollectionDetailScreen />)
-    expect(
-      await screen.findByText('Fonte indisponível no momento'),
-    ).toBeTruthy()
+    expect(await screen.findByText('Source unavailable right now')).toBeTruthy()
   })
 
-  it('erro genérico (400) cai na mensagem padrão', async () => {
+  it('a generic error (400) falls back to the default message', async () => {
     stubExternalFetch(() => erroJson(400, 'bad_request', 'idioma inválido'))
     renderWithClient(<CollectionDetailScreen />)
     expect(
-      await screen.findByText('Não foi possível carregar a coleção'),
+      await screen.findByText('Could not load the collection'),
     ).toBeTruthy()
   })
 
-  it('Voltar retorna no histórico', async () => {
+  it('Back returns through the history', async () => {
     stubExternalFetch(() => okJson(colecao()))
     renderWithClient(<CollectionDetailScreen />)
     await screen.findByRole('heading', { name: 'Coleção Duna' })
 
-    await userEvent
-      .setup()
-      .click(screen.getByRole('button', { name: /Voltar/ }))
+    await userEvent.setup().click(screen.getByRole('button', { name: /Back/ }))
     expect(spies.back).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders the copy in pt-BR when the interface language is pt-BR', async () => {
+    // The interface language is a browser preference (ADR-0032): pin it before
+    // rendering so the Portuguese copy is the one under test.
+    localStorage.setItem('mmdb.ui-lang', 'pt-BR')
+    stubExternalFetch(() => okJson(colecao()))
+    renderWithClient(
+      <I18nProvider>
+        <CollectionDetailScreen />
+      </I18nProvider>,
+    )
+
+    expect(
+      await screen.findByRole('heading', { name: 'Filmes da coleção' }),
+    ).toBeTruthy()
+    expect(
+      screen.getByRole('button', { name: 'Importar coleção' }),
+    ).toBeTruthy()
   })
 })

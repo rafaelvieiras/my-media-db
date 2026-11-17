@@ -8,7 +8,7 @@ afterEach(() => {
 })
 
 // Standard body of `GET /api/v1/health/system` used in the success tests —
-// one online source (with a bar) and one offline (badge "indisponível"), covering
+// one online source (with a bar) and one offline (badge "unavailable"), covering
 // both branches of the storage block.
 const SYSTEM_HEALTH_OK = {
   computed_at: '2026-07-15T19:40:00.000Z',
@@ -91,7 +91,7 @@ function mockFetch({
 }
 
 describe('HealthScreen', () => {
-  it('mostra o estado de carregamento antes da resposta', () => {
+  it('shows the loading state before the response', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() => new Promise<Response>(() => {})),
@@ -99,11 +99,11 @@ describe('HealthScreen', () => {
 
     renderWithClient(<HealthScreen />)
 
-    expect(screen.getByText(/Conectando/)).toBeInTheDocument()
-    expect(screen.getByText('conectando')).toBeInTheDocument()
+    expect(screen.getByText(/Connecting/)).toBeInTheDocument()
+    expect(screen.getByText('connecting')).toBeInTheDocument()
   })
 
-  it('mostra "API online" com a versão em caso de sucesso', async () => {
+  it('shows "API online" with the version on success', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -121,7 +121,7 @@ describe('HealthScreen', () => {
     expect(screen.getByText('online')).toBeInTheDocument()
   })
 
-  it('mostra "API indisponível" em caso de erro', async () => {
+  it('shows "API unavailable" on error', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -134,25 +134,25 @@ describe('HealthScreen', () => {
     renderWithClient(<HealthScreen />)
 
     await waitFor(() =>
-      expect(screen.getByText('API indisponível')).toBeInTheDocument(),
+      expect(screen.getByText('API unavailable')).toBeInTheDocument(),
     )
     expect(screen.getByText('offline')).toBeInTheDocument()
   })
 
-  describe('seção Sistema (0055)', () => {
-    it('mostra loading nos três blocos enquanto a telemetria não responde', () => {
+  describe('System section (0055)', () => {
+    it('shows loading in the three blocks while the telemetry does not answer', () => {
       mockFetch({ system: 'pending' })
 
       renderWithClient(<HealthScreen />)
 
-      expect(screen.getByText('Banco de dados')).toBeInTheDocument()
-      expect(screen.getByText('Uso')).toBeInTheDocument()
-      expect(screen.getByText('Armazenamento')).toBeInTheDocument()
-      // One "Carregando…" per block (3), plus the "Conectando…" of the status card.
-      expect(screen.getAllByText('Carregando…')).toHaveLength(3)
+      expect(screen.getByText('Database')).toBeInTheDocument()
+      expect(screen.getByText('Usage')).toBeInTheDocument()
+      expect(screen.getByText('Storage')).toBeInTheDocument()
+      // One "Loading…" per block (3), plus the "Connecting…" of the status card.
+      expect(screen.getAllByText('Loading…')).toHaveLength(3)
     })
 
-    it('mostra ErrorState nos três blocos quando a telemetria falha, sem afetar o card de status', async () => {
+    it('shows ErrorState in the three blocks when the telemetry fails, without touching the status card', async () => {
       mockFetch({ system: { ok: false, status: 503, body: {} } })
 
       renderWithClient(<HealthScreen />)
@@ -163,45 +163,45 @@ describe('HealthScreen', () => {
       )
       await waitFor(() =>
         expect(
-          screen.getAllByText('Não foi possível carregar a telemetria'),
+          screen.getAllByText('Could not load the telemetry'),
         ).toHaveLength(3),
       )
     })
 
-    it('renderiza banco/uso/armazenamento com os dados do snapshot', async () => {
+    it('renders database/usage/storage with the data of the snapshot', async () => {
       mockFetch()
 
       renderWithClient(<HealthScreen />)
 
       await waitFor(() =>
-        expect(screen.getByText('128,4 MB')).toBeInTheDocument(),
+        expect(screen.getByText('128.4 MB')).toBeInTheDocument(),
       )
       expect(screen.getByText('12')).toBeInTheDocument() // schema_version
 
       expect(screen.getByText('812')).toBeInTheDocument() // entities.total
-      expect(screen.getByText('5d 2h')).toBeInTheDocument() // uptime formatado
+      expect(screen.getByText('5d 2h')).toBeInTheDocument() // formatted uptime
       expect(
-        screen.getByText('690 (682 presentes, 8 ausentes)'),
+        screen.getByText('690 (682 present, 8 missing)'),
       ).toBeInTheDocument()
 
       expect(screen.getByText('/mnt/filmes')).toBeInTheDocument()
       expect(screen.getByText('/mnt/series')).toBeInTheDocument()
-      expect(screen.getByText('indisponível')).toBeInTheDocument()
+      expect(screen.getByText('unavailable')).toBeInTheDocument()
     })
 
-    it('mostra os três buckets de disco do briefing 0063 (mídia gerenciada/cache/não identificado)', async () => {
+    it('shows the three disk buckets of briefing 0063 (managed media/cache/unidentified)', async () => {
       mockFetch()
 
       renderWithClient(<HealthScreen />)
 
       await waitFor(() =>
-        expect(screen.getByText('Mídia gerenciada')).toBeInTheDocument(),
+        expect(screen.getByText('Managed media')).toBeInTheDocument(),
       )
-      expect(screen.getByText('791,62 GB')).toBeInTheDocument() // managed_media_bytes
-      expect(screen.getByText('Cache da aplicação')).toBeInTheDocument()
-      expect(screen.getByText('2,00 GB')).toBeInTheDocument() // app_cache_bytes
-      expect(screen.getByText('Não identificado')).toBeInTheDocument()
-      expect(screen.getByText('5,00 GB')).toBeInTheDocument() // unmanaged_bytes
+      expect(screen.getByText('791.62 GB')).toBeInTheDocument() // managed_media_bytes
+      expect(screen.getByText('Application cache')).toBeInTheDocument()
+      expect(screen.getByText('2.00 GB')).toBeInTheDocument() // app_cache_bytes
+      expect(screen.getByText('Unidentified')).toBeInTheDocument()
+      expect(screen.getByText('5.00 GB')).toBeInTheDocument() // unmanaged_bytes
     })
   })
 })

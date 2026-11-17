@@ -29,9 +29,10 @@ import {
   infoKind,
   larguraKind,
   linhasDeArtwork,
-  rotuloKind,
   type LinhaArte,
 } from '@/lib/artwork'
+import { useT } from '@/lib/i18n'
+import type { Translate } from '@/lib/i18n/types'
 import { artworkQueryOptions } from '@/lib/queries'
 
 // Artwork gallery (a rewrite of the earlier artwork screens): it consumes the GROUPED
@@ -56,6 +57,15 @@ import { artworkQueryOptions } from '@/lib/queries'
 
 // Acceptance of the <input file> and of the validation on the client (same set as the backend).
 const ACCEPT = MIMES_ARTE.join(',')
+
+// Kind label through the catalog: an unknown kind echoes its raw name (it never turns
+// into a blank). `lib/artwork.ts` keeps the same fallback for the screens that were
+// not extracted yet.
+function rotuloArte(kind: string, t: Translate): string {
+  const chave = `media.artworkKind.${kind}`
+  const rotulo = t(chave)
+  return rotulo === chave ? kind : rotulo
+}
 
 // Invalidation after changing the artwork: the gallery/badges (`['artwork', id]`), the detail
 // (`['entity', id]`, prefix — every lang variation) and the grid (`['entities']`)
@@ -114,13 +124,15 @@ function LinhaGaleria({
   linha: LinhaArte
   onAbrir: (kind: string, index: number, item: ArtworkItem) => void
 }) {
+  const t = useT()
   const info = infoKind(linha.kind)
   const ajuste = info.contain ? 'object-contain' : 'object-cover'
   const fundo = info.contain ? 'bg-muted/40' : 'bg-muted'
+  const rotulo = rotuloArte(linha.kind, t)
   return (
     <section className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
-        <h3 className="text-sm font-medium">{rotuloKind(linha.kind)}</h3>
+        <h3 className="text-sm font-medium">{rotulo}</h3>
         <Badge variant="secondary">{linha.items.length}</Badge>
       </div>
       <ul className="flex gap-3 overflow-x-auto pb-2">
@@ -129,9 +141,14 @@ function LinhaGaleria({
             <button
               type="button"
               onClick={() => onAbrir(linha.kind, i, item)}
-              aria-label={`Ver ${rotuloKind(linha.kind)} ${i + 1}${
-                item.is_principal ? ' (principal)' : ''
-              }`}
+              aria-label={
+                item.is_principal
+                  ? t('media.gallery.viewArtworkPrincipal', {
+                      kind: rotulo,
+                      n: i + 1,
+                    })
+                  : t('media.gallery.viewArtwork', { kind: rotulo, n: i + 1 })
+              }
               className={`group relative block ${larguraKind(linha.kind)} overflow-hidden rounded-lg ${fundo} ring-1 transition ${
                 item.is_principal
                   ? 'ring-2 ring-amber-500'
@@ -140,13 +157,16 @@ function LinhaGaleria({
             >
               <img
                 src={item.url}
-                alt={`${rotuloKind(linha.kind)} ${i + 1}`}
+                alt={t('media.gallery.artworkAlt', {
+                  kind: rotulo,
+                  n: i + 1,
+                })}
                 loading="lazy"
                 className={`${info.aspect} w-full ${ajuste}`}
               />
               {item.is_principal ? (
                 <span
-                  title="Principal"
+                  title={t('media.gallery.principal')}
                   className="absolute left-1.5 top-1.5 flex size-6 items-center justify-center rounded-full bg-amber-500 text-white shadow"
                 >
                   <Star className="size-3.5 fill-current" aria-hidden />
@@ -154,7 +174,7 @@ function LinhaGaleria({
               ) : null}
               {item.is_local_in_library ? (
                 <span
-                  title="Salvo na pasta"
+                  title={t('media.gallery.savedInFolder')}
                   className={`absolute top-1.5 flex size-6 items-center justify-center rounded-full bg-emerald-600 text-white shadow ${
                     item.is_principal ? 'left-8' : 'left-1.5'
                   }`}
@@ -191,11 +211,13 @@ export function ArtGallery({
   owned?: boolean
 }) {
   const qc = useQueryClient()
+  const t = useT()
   const { data, isPending, isError, error } = useQuery(
     artworkQueryOptions(entityId),
   )
 
   // Upload of the owner: kinds according to the type; validation error on the client.
+  // The error is stored as a catalog KEY, not as text, so it follows a language change.
   const kindsUpload = kindsParaTipo(type)
   const [kindUpload, setKindUpload] = useState<KindArte>(kindsUpload[0])
   const [erroCliente, setErroCliente] = useState<string | null>(null)
@@ -281,7 +303,7 @@ export function ArtGallery({
       return
     }
     if (!(MIMES_ARTE as readonly string[]).includes(file.type)) {
-      setErroCliente('Tipo de imagem nao suportado (use PNG, JPEG ou WebP).')
+      setErroCliente('media.gallery.unsupportedType')
       return
     }
     setErroCliente(null)
@@ -294,7 +316,7 @@ export function ArtGallery({
     baixar.isPending ||
     remover.isPending
 
-  // Error of the lightbox ACTIONS (pt-BR from the envelope) — shown in the footer of the lightbox.
+  // Error of the lightbox ACTIONS (message from the API envelope) — shown in the footer of the lightbox.
   const erroAcao =
     preferir.error instanceof ApiError
       ? preferir.error.message
@@ -308,16 +330,16 @@ export function ArtGallery({
                 materializar.isError ||
                 baixar.isError ||
                 remover.isError
-              ? 'Nao foi possivel atualizar a arte.'
+              ? t('media.gallery.actionError')
               : null
 
   // Error of the UPLOAD (client > envelope > generic).
   const erroUpload =
-    erroCliente ??
+    (erroCliente ? t(erroCliente) : null) ??
     (enviar.error instanceof ApiError
       ? enviar.error.message
       : enviar.isError
-        ? 'Nao foi possivel enviar a arte.'
+        ? t('media.gallery.uploadError')
         : null)
 
   const linhas = linhasDeArtwork(data)
@@ -377,21 +399,25 @@ export function ArtGallery({
 
   return (
     <section className="mt-6 flex flex-col gap-4">
-      <h2 className="font-heading text-lg font-medium">Artes</h2>
+      <h2 className="font-heading text-lg font-medium">
+        {t('media.gallery.title')}
+      </h2>
 
       {/* Upload of the owner: kind selector + file input. */}
       <div className="flex flex-wrap items-end gap-2 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-muted-foreground">Tipo</span>
+          <span className="text-muted-foreground">
+            {t('common.label.type')}
+          </span>
           <Select
             value={kindUpload}
             onChange={(e) => setKindUpload(e.target.value as KindArte)}
-            aria-label="Tipo de arte"
+            aria-label={t('media.gallery.typeLabel')}
             className="w-full sm:w-36"
           >
             {kindsUpload.map((k) => (
               <option key={k} value={k}>
-                {rotuloKind(k)}
+                {rotuloArte(k, t)}
               </option>
             ))}
           </Select>
@@ -400,7 +426,7 @@ export function ArtGallery({
           ref={inputRef}
           type="file"
           accept={ACCEPT}
-          aria-label="Arquivo de arte"
+          aria-label={t('media.gallery.fileLabel')}
           className="hidden"
           onChange={onEscolherArquivo}
         />
@@ -410,7 +436,9 @@ export function ArtGallery({
           disabled={enviar.isPending}
         >
           <Upload aria-hidden />
-          {enviar.isPending ? 'Enviando…' : 'Enviar arte'}
+          {enviar.isPending
+            ? t('media.gallery.uploading')
+            : t('media.gallery.upload')}
         </Button>
       </div>
 
@@ -435,14 +463,14 @@ export function ArtGallery({
         </div>
       ) : isError ? (
         <ErrorState
-          title="Nao foi possivel carregar as artes"
+          title={t('media.gallery.loadError')}
           message={error instanceof Error ? error.message : undefined}
         />
       ) : linhas.length === 0 && !mostrarProviderStill ? (
         <p className="text-sm text-muted-foreground">
           {type === 'episode'
-            ? 'Nenhuma arte ainda. Envie um still para este episódio.'
-            : 'Nenhuma arte disponível ainda.'}
+            ? t('media.gallery.emptyEpisode')
+            : t('media.gallery.empty')}
         </p>
       ) : (
         <div className="flex flex-col gap-5">
@@ -450,13 +478,15 @@ export function ArtGallery({
           {mostrarProviderStill ? (
             <section className="flex flex-col gap-2">
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-medium">{rotuloKind('still')}</h3>
-                <Badge variant="outline">provider</Badge>
+                <h3 className="text-sm font-medium">
+                  {rotuloArte('still', t)}
+                </h3>
+                <Badge variant="outline">{t('media.gallery.provider')}</Badge>
               </div>
               <div className="w-80 overflow-hidden rounded-lg bg-muted ring-1 ring-foreground/10">
                 <img
                   src={arteSrc(stillUrl) ?? undefined}
-                  alt="Still do provider"
+                  alt={t('media.gallery.providerStillAlt')}
                   loading="lazy"
                   className="aspect-video w-full object-cover"
                 />

@@ -18,6 +18,8 @@ import {
   type EntityCard,
 } from '@/lib/api'
 import { aspectPorTipo, rotuloTipo } from '@/lib/entity-badges'
+import { useT } from '@/lib/i18n'
+import { ScreenHeader } from '@/components/screen-header'
 
 // Invalidation after purging (individual or batch): the orphan queue changes and the grid
 // (`['entities']`) loses the purged cards. There is no `['entity', id]` — the entity
@@ -27,11 +29,17 @@ function invalidarOrfas(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ['entities'] })
 }
 
+// The catalog has no ICU plural rules, so the caller picks the `_one`/`_other` suffix.
+function pluralKey(base: string, n: number): string {
+  return `${base}_${n === 1 ? 'one' : 'other'}`
+}
+
 // Route `/orphans`: the cleanup queue. Auto-created entities whose file
 // disappeared and with no investment from the owner. The ONLY action is the PURGE — destructive, which is why it
 // always has an EXPLICIT confirmation (a second step in the UI itself, without
 // `window.confirm`): individual per card or in batch through the selection.
 export function OrphansScreen() {
+  const t = useT()
   const qc = useQueryClient()
   const { data, isPending, isError, error } = useQuery(orphansQueryOptions)
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set())
@@ -87,25 +95,22 @@ export function OrphansScreen() {
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-6">
-      <div className="mb-4 flex flex-col gap-1">
-        <h1 className="font-heading text-xl font-semibold">Órfãs</h1>
-        <p className="text-sm text-muted-foreground">
-          Itens auto-criados cujo arquivo sumiu e sem edição sua. Nada é apagado
-          sozinho — a purga é sempre sua e explícita.
-        </p>
-      </div>
+      <ScreenHeader
+        title={t('review.orphans.title')}
+        subtitle={t('review.orphans.subtitle')}
+      />
 
       {isPending ? (
-        <LoadingState label="Carregando as órfãs…" />
+        <LoadingState label={t('review.orphans.loading')} />
       ) : isError ? (
         <ErrorState
-          title="Não foi possível carregar as órfãs"
+          title={t('review.orphans.loadError')}
           message={error instanceof Error ? error.message : undefined}
         />
       ) : cards.length === 0 ? (
         <EmptyState
-          title="Nenhuma órfã"
-          description="Nenhum item auto-criado ficou sem arquivo — nada a limpar."
+          title={t('review.orphans.emptyTitle')}
+          description={t('review.orphans.emptyDescription')}
         />
       ) : (
         <div className="flex flex-col gap-3">
@@ -114,20 +119,25 @@ export function OrphansScreen() {
               <input
                 type="checkbox"
                 className="size-4 accent-primary"
-                aria-label="Selecionar todas"
+                aria-label={t('review.orphans.selectAll')}
                 checked={todasSelecionadas}
                 onChange={alternarTodas}
               />
-              <span>Selecionar todas</span>
+              <span>{t('review.orphans.selectAll')}</span>
             </label>
             <span className="text-sm text-muted-foreground">
-              {selecionadas.size} selecionada(s)
+              {t(pluralKey('review.orphans.selected', selecionadas.size), {
+                n: selecionadas.size,
+              })}
             </span>
 
             <div className="ml-auto flex flex-wrap items-center gap-2">
               {confirmandoLote ? (
                 <ConfirmacaoInline
-                  mensagem={`Tem certeza? Isso remove ${selecionadas.size} itens e não pode ser desfeito.`}
+                  mensagem={t(
+                    pluralKey('review.orphans.confirmBatch', selecionadas.size),
+                    { n: selecionadas.size },
+                  )}
                   ocupado={purgarLote.isPending}
                   onConfirmar={() => purgarLote.mutate([...selecionadas])}
                   onCancelar={() => setConfirmandoLote(false)}
@@ -140,7 +150,7 @@ export function OrphansScreen() {
                   onClick={() => setConfirmandoLote(true)}
                 >
                   <Trash2 aria-hidden />
-                  Purgar selecionadas
+                  {t('review.orphans.purgeSelected')}
                 </Button>
               )}
             </div>
@@ -180,7 +190,7 @@ export function OrphansScreen() {
 }
 
 // Reusable explicit confirmation (the second step): the warning message plus
-// the "Confirmar purga" (destructive) and "Cancelar" buttons. WITHOUT `window.confirm` —
+// the "Confirm purge" (destructive) and "Cancel" buttons. WITHOUT `window.confirm` —
 // it is state of the UI itself, testable and cancelable.
 function ConfirmacaoInline({
   mensagem,
@@ -193,10 +203,11 @@ function ConfirmacaoInline({
   onConfirmar: () => void
   onCancelar: () => void
 }) {
+  const t = useT()
   return (
     <div
       role="alertdialog"
-      aria-label="Confirmar purga"
+      aria-label={t('review.orphans.confirmTitle')}
       className="flex flex-wrap items-center gap-2"
     >
       <span className="flex items-center gap-1.5 text-sm font-medium text-destructive">
@@ -214,10 +225,12 @@ function ConfirmacaoInline({
         ) : (
           <Trash2 aria-hidden />
         )}
-        {ocupado ? 'Purgando…' : 'Confirmar purga'}
+        {ocupado
+          ? t('review.orphans.purging')
+          : t('review.orphans.confirmPurge')}
       </Button>
       <Button variant="ghost" size="sm" disabled={ocupado} onClick={onCancelar}>
-        Cancelar
+        {t('common.action.cancel')}
       </Button>
     </div>
   )
@@ -244,6 +257,7 @@ function OrphanCard({
   ocupado: boolean
   erro: string | null
 }) {
+  const t = useT()
   const [falhouArte, setFalhouArte] = useState(false)
   const src = posterSrc(card.poster_url)
   const mostrarPlaceholder = src === null || falhouArte
@@ -254,7 +268,7 @@ function OrphanCard({
         <input
           type="checkbox"
           className="size-4 shrink-0 accent-primary"
-          aria-label={`Selecionar ${card.title}`}
+          aria-label={t('review.orphans.selectItem', { title: card.title })}
           checked={selecionada}
           onChange={onAlternar}
         />
@@ -271,7 +285,7 @@ function OrphanCard({
           ) : (
             <img
               src={src}
-              alt={`Pôster de ${card.title}`}
+              alt={t('review.row.posterAlt', { title: card.title })}
               loading="lazy"
               onError={() => setFalhouArte(true)}
               className="h-full w-full object-cover"
@@ -287,13 +301,13 @@ function OrphanCard({
             {card.title}
           </Link>
           <span className="text-xs text-muted-foreground">
-            {rotuloTipo(card.type)}
+            {rotuloTipo(card.type, t)}
           </span>
         </div>
         <div className="shrink-0">
           {confirmando ? (
             <ConfirmacaoInline
-              mensagem="Remove este item e não pode ser desfeito."
+              mensagem={t('review.orphans.confirmOne')}
               ocupado={ocupado}
               onConfirmar={onConfirmar}
               onCancelar={onCancelar}
@@ -302,11 +316,11 @@ function OrphanCard({
             <Button
               variant="outline"
               size="sm"
-              aria-label={`Purgar ${card.title}`}
+              aria-label={t('review.orphans.purgeItem', { title: card.title })}
               onClick={onPedirPurga}
             >
               <Trash2 aria-hidden />
-              Purgar
+              {t('review.orphans.purge')}
             </Button>
           )}
         </div>

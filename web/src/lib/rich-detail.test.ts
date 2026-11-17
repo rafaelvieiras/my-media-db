@@ -5,6 +5,8 @@ import {
   rotuloSituacao,
 } from '@/lib/rich-detail'
 import type { ExternalDetail } from '@/lib/api'
+import { translate } from '@/lib/i18n'
+import type { MessageParams } from '@/lib/i18n/types'
 import { baseEntity } from '@/test/entity-fixtures'
 
 // The adapters normalize both DTOs (external detail × resolved entity) into the
@@ -130,42 +132,53 @@ describe('rich-detail adapters', () => {
   })
 })
 
-// rotuloSituacao translates the RAW situation (TMDB or TVDB) into the pt-BR label + badge
-// variant. The data stays neutral in the backend; the translation is UI only.
+// rotuloSituacao translates the RAW situation (TMDB or TVDB) into the label (in the
+// interface language) + badge variant. The data stays neutral in the backend; the
+// translation is UI only.
 describe('rotuloSituacao', () => {
-  it('traduz o vocabulário TMDB', () => {
-    expect(rotuloSituacao('Returning Series')).toEqual({
-      label: 'Em exibição',
+  const tEn = (key: string, params?: MessageParams) =>
+    translate('en', key, params)
+  const tPt = (key: string, params?: MessageParams) =>
+    translate('pt-BR', key, params)
+
+  it('translates the TMDB vocabulary', () => {
+    expect(rotuloSituacao('Returning Series', tEn)).toEqual({
+      label: 'Airing',
       variant: 'default',
     })
-    expect(rotuloSituacao('Ended')).toEqual({
-      label: 'Encerrada',
+    expect(rotuloSituacao('Ended', tEn)).toEqual({
+      label: 'Ended',
       variant: 'secondary',
     })
-    expect(rotuloSituacao('Canceled')?.label).toBe('Cancelada')
-    expect(rotuloSituacao('Cancelled')?.label).toBe('Cancelada')
-    expect(rotuloSituacao('In Production')?.label).toBe('Em produção')
-    expect(rotuloSituacao('Planned')?.label).toBe('Planejada')
-    expect(rotuloSituacao('Pilot')?.label).toBe('Piloto')
+    expect(rotuloSituacao('Canceled', tEn)?.label).toBe('Canceled')
+    expect(rotuloSituacao('Cancelled', tEn)?.label).toBe('Canceled')
+    expect(rotuloSituacao('In Production', tEn)?.label).toBe('In production')
+    expect(rotuloSituacao('Planned', tEn)?.label).toBe('Planned')
+    expect(rotuloSituacao('Pilot', tEn)?.label).toBe('Pilot')
   })
 
-  it('traduz o vocabulário TVDB', () => {
+  it('translates the TVDB vocabulary', () => {
     // "Continuing" (TVDB) is equivalent to "Returning Series" (TMDB) → same label.
-    expect(rotuloSituacao('Continuing')).toEqual({
-      label: 'Em exibição',
+    expect(rotuloSituacao('Continuing', tEn)).toEqual({
+      label: 'Airing',
       variant: 'default',
     })
-    expect(rotuloSituacao('Upcoming')?.label).toBe('Em breve')
+    expect(rotuloSituacao('Upcoming', tEn)?.label).toBe('Upcoming')
   })
 
-  it('ausente/vazio → null (o selo não é renderizado)', () => {
-    expect(rotuloSituacao(null)).toBeNull()
-    expect(rotuloSituacao(undefined)).toBeNull()
-    expect(rotuloSituacao('   ')).toBeNull()
+  it('follows the interface language', () => {
+    expect(rotuloSituacao('Ended', tPt)?.label).toBe('Encerrada')
+    expect(rotuloSituacao('Returning Series', tPt)?.label).toBe('Em exibição')
   })
 
-  it('valor cru desconhecido → mostra o cru capitalizado (fallback gracioso)', () => {
-    expect(rotuloSituacao('rumored')).toEqual({
+  it('absent/empty → null (the badge is not rendered)', () => {
+    expect(rotuloSituacao(null, tEn)).toBeNull()
+    expect(rotuloSituacao(undefined, tEn)).toBeNull()
+    expect(rotuloSituacao('   ', tEn)).toBeNull()
+  })
+
+  it('unknown raw value → shows the raw value capitalized (graceful fallback)', () => {
+    expect(rotuloSituacao('rumored', tEn)).toEqual({
       label: 'Rumored',
       variant: 'secondary',
     })

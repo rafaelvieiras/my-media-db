@@ -143,7 +143,7 @@ function render(
 // abrirMenu clicks the "Gerenciar" trigger — the `DropdownMenuContent` only mounts in the
 // DOM after that (Radix, same behavior as Sheet/Dialog).
 async function abrirMenu(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('button', { name: /Gerenciar/ }))
+  await user.click(screen.getByRole('button', { name: /Manage/ }))
 }
 
 // expectForcedActionsVisible confirms that the 3 always-visible items of the
@@ -152,14 +152,14 @@ async function abrirMenu(user: ReturnType<typeof userEvent.setup>) {
 function expectForcedActionsVisible() {
   expect(
     screen.getByRole('menuitem', {
-      name: /Verificar Atualizações de Arquivos/,
+      name: /Check for file updates/,
     }),
   ).toBeInTheDocument()
   expect(
-    screen.getByRole('menuitem', { name: /Baixar Metadados/ }),
+    screen.getByRole('menuitem', { name: /Download metadata/ }),
   ).toBeInTheDocument()
   expect(
-    screen.getByRole('menuitem', { name: /Baixar Artes Faltantes/ }),
+    screen.getByRole('menuitem', { name: /Download all missing artwork/ }),
   ).toBeInTheDocument()
 }
 
@@ -193,29 +193,29 @@ async function acionarInformacoesFaltando(respostaEnriquecer: () => Response) {
   await abrirMenu(user)
 
   await user.click(
-    screen.getByRole('menuitem', { name: /Baixar informações faltando/ }),
+    screen.getByRole('menuitem', { name: /Download missing information/ }),
   )
 }
 
-describe('EntityManageMenu — itens condicionais do dropdown', () => {
-  it('"Editar" e "Salvar informações (NFO)" sempre aparecem, mesmo sem catalog_completeness', async () => {
+describe('EntityManageMenu — conditional dropdown items', () => {
+  it('"Edit" and "Save information (NFO)" always appear, even without catalog_completeness', async () => {
     const user = userEvent.setup()
     render(null)
     await abrirMenu(user)
 
-    expect(screen.getByRole('menuitem', { name: /Editar/ })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: /^Edit$/ })).toBeInTheDocument()
     expect(
-      screen.getByRole('menuitem', { name: /Salvar informações \(NFO\)/ }),
+      screen.getByRole('menuitem', { name: /Save information \(NFO\)/ }),
     ).not.toHaveAttribute('aria-disabled', 'true')
     expect(
-      screen.queryByRole('menuitem', { name: /Baixar informações faltando/ }),
+      screen.queryByRole('menuitem', { name: /Download missing information/ }),
     ).toBeNull()
     expect(
-      screen.queryByRole('menuitem', { name: /Baixar arte faltando/ }),
+      screen.queryByRole('menuitem', { name: /Download missing artwork/ }),
     ).toBeNull()
   })
 
-  it('as 3 ações forçadas (0088) sempre aparecem, mesmo sem catalog_completeness', async () => {
+  it('the 3 forced actions (0088) always appear, even without catalog_completeness', async () => {
     const user = userEvent.setup()
     render(null)
     await abrirMenu(user)
@@ -223,73 +223,73 @@ describe('EntityManageMenu — itens condicionais do dropdown', () => {
     expectForcedActionsVisible()
   })
 
-  it('"Salvar informações (NFO)" fica desabilitado com tooltip quando não há media_file (owned=false)', async () => {
+  it('"Save information (NFO)" stays disabled with a tooltip when there is no media_file (owned=false)', async () => {
     const user = userEvent.setup()
     render(null, false)
     await abrirMenu(user)
 
     const item = screen.getByRole('menuitem', {
-      name: /Salvar informações \(NFO\)/,
+      name: /Save information \(NFO\)/,
     })
     expect(item).toHaveAttribute('aria-disabled', 'true')
     expect(item).toHaveAttribute(
       'title',
-      expect.stringContaining('sem pasta de destino'),
+      expect.stringContaining('destination folder'),
     )
   })
 
-  it('nenhum item condicional aparece quando catalog_completeness.complete é true, mas as 3 ações forçadas (0088) continuam aparecendo', async () => {
+  it('no conditional item appears when catalog_completeness.complete is true, but the 3 forced actions (0088) keep appearing', async () => {
     const user = userEvent.setup()
     render({ complete: true, missing: [] })
     await abrirMenu(user)
 
     expect(
-      screen.queryByRole('menuitem', { name: /Baixar informações faltando/ }),
+      screen.queryByRole('menuitem', { name: /Download missing information/ }),
     ).toBeNull()
     expect(
-      screen.queryByRole('menuitem', { name: /Baixar arte faltando/ }),
+      screen.queryByRole('menuitem', { name: /Download missing artwork/ }),
     ).toBeNull()
     expectForcedActionsVisible()
   })
 
-  it('"Baixar informações faltando" aparece quando falta algo não-arte, "Baixar arte faltando" não', async () => {
+  it('"Download missing information" appears when a non-artwork key is missing, "Download missing artwork" does not', async () => {
     const user = userEvent.setup()
     render({ complete: false, missing: ['cast', 'description'] })
     await abrirMenu(user)
 
     expect(
-      screen.getByRole('menuitem', { name: /Baixar informações faltando/ }),
+      screen.getByRole('menuitem', { name: /Download missing information/ }),
     ).toBeInTheDocument()
     expect(
-      screen.queryByRole('menuitem', { name: /Baixar arte faltando/ }),
+      screen.queryByRole('menuitem', { name: /Download missing artwork/ }),
     ).toBeNull()
   })
 
-  it('"Baixar arte faltando" aparece quando falta ao menos uma chave artwork:', async () => {
+  it('"Download missing artwork" appears when at least one artwork: key is missing', async () => {
     const user = userEvent.setup()
     render({ complete: false, missing: ['cast', 'artwork:poster'] })
     await abrirMenu(user)
 
     expect(
-      screen.getByRole('menuitem', { name: /Baixar informações faltando/ }),
+      screen.getByRole('menuitem', { name: /Download missing information/ }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('menuitem', { name: /Baixar arte faltando/ }),
+      screen.getByRole('menuitem', { name: /Download missing artwork/ }),
     ).toBeInTheDocument()
   })
 
-  it('"Excluir coleção" só aparece quando isCollection é true', async () => {
+  it('"Delete collection" only appears when isCollection is true', async () => {
     const user = userEvent.setup()
     render(null, true, false)
     await abrirMenu(user)
     expect(
-      screen.queryByRole('menuitem', { name: /Excluir coleção/ }),
+      screen.queryByRole('menuitem', { name: /Delete collection/ }),
     ).toBeNull()
   })
 })
 
-describe('EntityManageMenu — "Baixar informações faltando" (0056 sob demanda)', () => {
-  it('mostra "Buscando…" enquanto pendente, depois a mensagem de aplicado', async () => {
+describe('EntityManageMenu — "Download missing information" (0056 on demand)', () => {
+  it('shows "Searching…" while pending, then the applied message', async () => {
     const user = userEvent.setup()
     const liberar = stubEntityActionsAdiado(
       '/api/v1/entities/e1/enrich-missing',
@@ -299,46 +299,48 @@ describe('EntityManageMenu — "Baixar informações faltando" (0056 sob demanda
     await abrirMenu(user)
 
     await user.click(
-      screen.getByRole('menuitem', { name: /Baixar informações faltando/ }),
+      screen.getByRole('menuitem', { name: /Download missing information/ }),
     )
     expect(
-      await screen.findByText('Buscando…', { exact: false }),
+      await screen.findByText('Searching…', { exact: false }),
     ).toBeInTheDocument()
 
     liberar()
     expect(
-      await screen.findByText(/Aplicado — enriquecido via provider\./),
+      await screen.findByText(/Applied — enriched via provider\./),
     ).toBeInTheDocument()
   })
 
-  it('outcome "applied" via local mostra a mensagem de aplicado (ligado a item já catalogado)', async () => {
+  it('outcome "applied" via local shows the applied message (linked to an item already cataloged)', async () => {
     await acionarInformacoesFaltando(() =>
       okJson({ outcome: 'applied', method: 'local', score: 98 }),
     )
     expect(
-      await screen.findByText(/Aplicado — ligado a um item já catalogado\./),
+      await screen.findByText(
+        /Applied — linked to an item already cataloged\./,
+      ),
     ).toBeInTheDocument()
   })
 
-  it('outcome "flagged" mostra a mensagem com link para /dashboard/review', async () => {
+  it('outcome "flagged" shows the message with a link to /dashboard/review', async () => {
     await acionarInformacoesFaltando(() =>
       okJson({ outcome: 'flagged', score: 61 }),
     )
     expect(
-      await screen.findByText(/Não encontramos uma correspondência confiável/),
+      await screen.findByText(/We could not find a reliable match/),
     ).toBeInTheDocument()
-    const link = screen.getByRole('link', { name: 'Revisão' })
+    const link = screen.getByRole('link', { name: 'Review' })
     expect(link).toHaveAttribute('href', '/dashboard/review')
   })
 
-  it('outcome "none" mostra mensagem neutra', async () => {
+  it('outcome "none" shows a neutral message', async () => {
     await acionarInformacoesFaltando(() => okJson({ outcome: 'none' }))
     expect(
-      await screen.findByText('Nenhuma correspondência encontrada desta vez.'),
+      await screen.findByText('No match found this time.'),
     ).toBeInTheDocument()
   })
 
-  it('erro de rede/500 mostra mensagem role=alert', async () => {
+  it('a network/500 error shows a role=alert message', async () => {
     await acionarInformacoesFaltando(() =>
       erroJson(500, 'db_error', 'falha ao buscar candidato'),
     )
@@ -347,8 +349,8 @@ describe('EntityManageMenu — "Baixar informações faltando" (0056 sob demanda
   })
 })
 
-describe('EntityManageMenu — "Baixar arte faltando" (0048/0049 sob demanda)', () => {
-  it('mostra "Baixando…" enquanto pendente, depois a lista PT-BR (Pôster e fanart baixados.)', async () => {
+describe('EntityManageMenu — "Download missing artwork" (0048/0049 on demand)', () => {
+  it('shows "Downloading…" while pending, then the list of kinds (Poster and fanart downloaded.)', async () => {
     const user = userEvent.setup()
     const liberar = stubEntityActionsAdiado(
       '/api/v1/entities/e1/download-missing-artwork',
@@ -358,19 +360,19 @@ describe('EntityManageMenu — "Baixar arte faltando" (0048/0049 sob demanda)', 
     await abrirMenu(user)
 
     await user.click(
-      screen.getByRole('menuitem', { name: /Baixar arte faltando/ }),
+      screen.getByRole('menuitem', { name: /Download missing artwork/ }),
     )
     expect(
-      await screen.findByText('Baixando…', { exact: false }),
+      await screen.findByText('Downloading…', { exact: false }),
     ).toBeInTheDocument()
 
     liberar()
     expect(
-      await screen.findByText('Pôster e fanart baixados.'),
+      await screen.findByText('Poster and fanart downloaded.'),
     ).toBeInTheDocument()
   })
 
-  it('nenhuma opção disponível mostra mensagem neutra', async () => {
+  it('no option available shows a neutral message', async () => {
     const user = userEvent.setup()
     stubEntityActions(
       () => okJson({ outcome: 'none' }),
@@ -380,16 +382,16 @@ describe('EntityManageMenu — "Baixar arte faltando" (0048/0049 sob demanda)', 
     await abrirMenu(user)
 
     await user.click(
-      screen.getByRole('menuitem', { name: /Baixar arte faltando/ }),
+      screen.getByRole('menuitem', { name: /Download missing artwork/ }),
     )
     expect(
       await screen.findByText(
-        'Nenhuma arte disponível nos provedores para o que falta.',
+        'No artwork available from the providers for what is missing.',
       ),
     ).toBeInTheDocument()
   })
 
-  it('erro de rede/500 mostra mensagem role=alert', async () => {
+  it('a network/500 error shows a role=alert message', async () => {
     const user = userEvent.setup()
     stubEntityActions(
       () => okJson({ outcome: 'none' }),
@@ -399,55 +401,55 @@ describe('EntityManageMenu — "Baixar arte faltando" (0048/0049 sob demanda)', 
     await abrirMenu(user)
 
     await user.click(
-      screen.getByRole('menuitem', { name: /Baixar arte faltando/ }),
+      screen.getByRole('menuitem', { name: /Download missing artwork/ }),
     )
     const alerta = await screen.findByRole('alert')
     expect(alerta).toHaveTextContent('falha ao baixar arte')
   })
 })
 
-describe('EntityManageMenu — "Forçar reconciliação" (briefing 0122)', () => {
-  it('aparece quando type="faixa" e status="draft"', async () => {
+describe('EntityManageMenu — "Force reconciliation" (briefing 0122)', () => {
+  it('appears when type="faixa" and status="draft"', async () => {
     const user = userEvent.setup()
     render(null, true, false, 'faixa', 'draft')
     await abrirMenu(user)
 
     expect(
-      screen.getByRole('menuitem', { name: /Forçar reconciliação/ }),
+      screen.getByRole('menuitem', { name: /Force reconciliation/ }),
     ).toBeInTheDocument()
   })
 
-  it('aparece quando type="tv" e status="draft"', async () => {
+  it('appears when type="tv" and status="draft"', async () => {
     const user = userEvent.setup()
     render(null, true, false, 'tv', 'draft')
     await abrirMenu(user)
 
     expect(
-      screen.getByRole('menuitem', { name: /Forçar reconciliação/ }),
+      screen.getByRole('menuitem', { name: /Force reconciliation/ }),
     ).toBeInTheDocument()
   })
 
-  it('some quando o type não é faixa/tv, mesmo em draft', async () => {
+  it('disappears when the type is not faixa/tv, even in draft', async () => {
     const user = userEvent.setup()
     render(null, true, false, 'movie', 'draft')
     await abrirMenu(user)
 
     expect(
-      screen.queryByRole('menuitem', { name: /Forçar reconciliação/ }),
+      screen.queryByRole('menuitem', { name: /Force reconciliation/ }),
     ).toBeNull()
   })
 
-  it('some quando o status não é draft, mesmo em type faixa/tv', async () => {
+  it('disappears when the status is not draft, even with type faixa/tv', async () => {
     const user = userEvent.setup()
     render(null, true, false, 'faixa', 'cataloged')
     await abrirMenu(user)
 
     expect(
-      screen.queryByRole('menuitem', { name: /Forçar reconciliação/ }),
+      screen.queryByRole('menuitem', { name: /Force reconciliation/ }),
     ).toBeNull()
   })
 
-  it('clique chama forceReconcile e mostra "Religado com sucesso" quando linked=true', async () => {
+  it('the click calls forceReconcile and shows "Reconciled" when linked=true', async () => {
     const user = userEvent.setup()
     const fetchMock = stubRota(
       (p, m) => p === '/api/v1/entities/e1/force-reconcile' && m === 'POST',
@@ -457,10 +459,10 @@ describe('EntityManageMenu — "Forçar reconciliação" (briefing 0122)', () =>
     await abrirMenu(user)
 
     await user.click(
-      screen.getByRole('menuitem', { name: /Forçar reconciliação/ }),
+      screen.getByRole('menuitem', { name: /Force reconciliation/ }),
     )
     expect(
-      await screen.findByText('Religado com sucesso — item saiu do rascunho.'),
+      await screen.findByText('Reconciled — the item left the draft.'),
     ).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/v1/entities/e1/force-reconcile'),
@@ -468,7 +470,7 @@ describe('EntityManageMenu — "Forçar reconciliação" (briefing 0122)', () =>
     )
   })
 
-  it('mostra "Não foi possível religar desta vez" quando linked=false', async () => {
+  it('shows "Could not reconcile this time" when linked=false', async () => {
     const user = userEvent.setup()
     stubRota(
       (p, m) => p === '/api/v1/entities/e1/force-reconcile' && m === 'POST',
@@ -478,16 +480,16 @@ describe('EntityManageMenu — "Forçar reconciliação" (briefing 0122)', () =>
     await abrirMenu(user)
 
     await user.click(
-      screen.getByRole('menuitem', { name: /Forçar reconciliação/ }),
+      screen.getByRole('menuitem', { name: /Force reconciliation/ }),
     )
     expect(
       await screen.findByText(
-        'Não foi possível religar desta vez — o item continua em rascunho.',
+        'Could not reconcile this time — the item is still a draft.',
       ),
     ).toBeInTheDocument()
   })
 
-  it('mostra "Reconciliando…" enquanto pendente', async () => {
+  it('shows "Reconciling…" while pending', async () => {
     const user = userEvent.setup()
     const liberar = stubEntityActionsAdiado(
       '/api/v1/entities/e1/force-reconcile',
@@ -497,19 +499,19 @@ describe('EntityManageMenu — "Forçar reconciliação" (briefing 0122)', () =>
     await abrirMenu(user)
 
     await user.click(
-      screen.getByRole('menuitem', { name: /Forçar reconciliação/ }),
+      screen.getByRole('menuitem', { name: /Force reconciliation/ }),
     )
     expect(
-      await screen.findByText('Reconciliando…', { exact: false }),
+      await screen.findByText('Reconciling…', { exact: false }),
     ).toBeInTheDocument()
 
     liberar()
     expect(
-      await screen.findByText('Religado com sucesso — item saiu do rascunho.'),
+      await screen.findByText('Reconciled — the item left the draft.'),
     ).toBeInTheDocument()
   })
 
-  it('erro de rede/500 mostra mensagem role=alert', async () => {
+  it('a network/500 error shows a role=alert message', async () => {
     const user = userEvent.setup()
     stubRota(
       (p, m) => p === '/api/v1/entities/e1/force-reconcile' && m === 'POST',
@@ -519,15 +521,15 @@ describe('EntityManageMenu — "Forçar reconciliação" (briefing 0122)', () =>
     await abrirMenu(user)
 
     await user.click(
-      screen.getByRole('menuitem', { name: /Forçar reconciliação/ }),
+      screen.getByRole('menuitem', { name: /Force reconciliation/ }),
     )
     const alerta = await screen.findByRole('alert')
     expect(alerta).toHaveTextContent('falha ao forçar reconciliação')
   })
 })
 
-describe('EntityManageMenu — "Verificar Atualizações de Arquivos" (briefing 0088, sempre visível)', () => {
-  it('mostra "Verificando…" enquanto pendente, depois o resumo do resultado', async () => {
+describe('EntityManageMenu — "Check for file updates" (briefing 0088, always visible)', () => {
+  it('shows "Checking…" while pending, then the result summary', async () => {
     const user = userEvent.setup()
     const liberar = stubEntityActionsAdiado(
       '/api/v1/entities/e1/refresh-files',
@@ -543,21 +545,19 @@ describe('EntityManageMenu — "Verificar Atualizações de Arquivos" (briefing 
 
     await user.click(
       screen.getByRole('menuitem', {
-        name: /Verificar Atualizações de Arquivos/,
+        name: /Check for file updates/,
       }),
     )
     expect(
-      await screen.findByText('Verificando…', { exact: false }),
+      await screen.findByText('Checking…', { exact: false }),
     ).toBeInTheDocument()
 
     liberar()
-    expect(
-      await screen.findByText(/2 arquivo\(s\) reconferido\(s\)/),
-    ).toBeInTheDocument()
+    expect(await screen.findByText(/2 file\(s\) rechecked/)).toBeInTheDocument()
     expect(screen.getByText(/watched, play_count/)).toBeInTheDocument()
   })
 
-  it('desabilita o item enquanto a mutation está pendente', async () => {
+  it('disables the item while the mutation is pending', async () => {
     const user = userEvent.setup()
     stubEntityActionsAdiado('/api/v1/entities/e1/refresh-files', () =>
       okJson({
@@ -571,13 +571,14 @@ describe('EntityManageMenu — "Verificar Atualizações de Arquivos" (briefing 
 
     await user.click(
       screen.getByRole('menuitem', {
-        name: /Verificar Atualizações de Arquivos/,
+        name: /Check for file updates/,
       }),
     )
     await abrirMenu(user)
-    expect(
-      screen.getByRole('menuitem', { name: /Verificando…/ }),
-    ).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByRole('menuitem', { name: /Checking…/ })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
   })
 
   it('erro de rede/500 mostra mensagem role=alert', () =>
@@ -590,13 +591,13 @@ describe('EntityManageMenu — "Verificar Atualizações de Arquivos" (briefing 
           undefined,
           () => erroJson(500, 'db_error', 'falha ao reconferir arquivos'),
         ),
-      /Verificar Atualizações de Arquivos/,
+      /Check for file updates/,
       'falha ao reconferir arquivos',
     ))
 })
 
-describe('EntityManageMenu — "Baixar Metadados" (briefing 0088, sempre visível, force: true)', () => {
-  it('envia { force: true } para POST /enrich e mostra "Baixando…"/sucesso', async () => {
+describe('EntityManageMenu — "Download metadata" (briefing 0088, always visible, force: true)', () => {
+  it('sends { force: true } to POST /enrich and shows "Downloading…"/success', async () => {
     const user = userEvent.setup()
     const fetchMock = stubEntityActions(
       () => okJson({ outcome: 'none' }),
@@ -609,10 +610,10 @@ describe('EntityManageMenu — "Baixar Metadados" (briefing 0088, sempre visíve
     render(null)
     await abrirMenu(user)
 
-    await user.click(screen.getByRole('menuitem', { name: /Baixar Metadados/ }))
-    expect(
-      await screen.findByText('Metadados atualizados.'),
-    ).toBeInTheDocument()
+    await user.click(
+      screen.getByRole('menuitem', { name: /Download metadata/ }),
+    )
+    expect(await screen.findByText('Metadata updated.')).toBeInTheDocument()
 
     const chamada = fetchMock.mock.calls.find(
       ([url]) =>
@@ -635,13 +636,13 @@ describe('EntityManageMenu — "Baixar Metadados" (briefing 0088, sempre visíve
           undefined,
           () => erroJson(500, 'db_error', 'falha ao baixar metadados'),
         ),
-      /Baixar Metadados/,
+      /Download metadata/,
       'falha ao baixar metadados',
     ))
 })
 
-describe('EntityManageMenu — "Baixar Artes Faltantes" (briefing 0088, sempre visível)', () => {
-  it('mostra "Baixando…" enquanto pendente, depois a lista PT-BR dos kinds baixados', async () => {
+describe('EntityManageMenu — "Download all missing artwork" (briefing 0088, always visible)', () => {
+  it('shows "Downloading…" while pending, then the list of downloaded kinds', async () => {
     const user = userEvent.setup()
     const liberar = stubEntityActionsAdiado(
       '/api/v1/entities/e1/materialize-missing-media',
@@ -652,19 +653,19 @@ describe('EntityManageMenu — "Baixar Artes Faltantes" (briefing 0088, sempre v
     await abrirMenu(user)
 
     await user.click(
-      screen.getByRole('menuitem', { name: /Baixar Artes Faltantes/ }),
+      screen.getByRole('menuitem', { name: /Download all missing artwork/ }),
     )
     expect(
-      await screen.findByText('Baixando…', { exact: false }),
+      await screen.findByText('Downloading…', { exact: false }),
     ).toBeInTheDocument()
 
     liberar()
     expect(
-      await screen.findByText(/Pôster e fanart baixados\./),
+      await screen.findByText(/Poster and fanart downloaded\./),
     ).toBeInTheDocument()
   })
 
-  it('nada baixado e nfo não gravado mostra mensagem neutra', async () => {
+  it('nothing downloaded and nfo not written shows a neutral message', async () => {
     const user = userEvent.setup()
     stubEntityActions(
       () => okJson({ outcome: 'none' }),
@@ -679,10 +680,10 @@ describe('EntityManageMenu — "Baixar Artes Faltantes" (briefing 0088, sempre v
     await abrirMenu(user)
 
     await user.click(
-      screen.getByRole('menuitem', { name: /Baixar Artes Faltantes/ }),
+      screen.getByRole('menuitem', { name: /Download all missing artwork/ }),
     )
     expect(
-      await screen.findByText('Nenhuma arte nova para materializar.'),
+      await screen.findByText('No new artwork to materialize.'),
     ).toBeInTheDocument()
   })
 
@@ -698,13 +699,13 @@ describe('EntityManageMenu — "Baixar Artes Faltantes" (briefing 0088, sempre v
           undefined,
           () => erroJson(500, 'db_error', 'falha ao baixar artes'),
         ),
-      /Baixar Artes Faltantes/,
+      /Download all missing artwork/,
       'falha ao baixar artes',
     ))
 })
 
-describe('EntityManageMenu — "Salvar informações (NFO)" (briefing 0062)', () => {
-  it('sucesso: mostra "Gravando…" enquanto pendente, depois o nfo_path gravado', async () => {
+describe('EntityManageMenu — "Save information (NFO)" (briefing 0062)', () => {
+  it('success: shows "Writing…" while pending, then the written nfo_path', async () => {
     const user = userEvent.setup()
     const liberar = stubEntityActionsAdiado('/api/v1/entities/e1/nfo', () =>
       okJson({
@@ -716,10 +717,10 @@ describe('EntityManageMenu — "Salvar informações (NFO)" (briefing 0062)', ()
     await abrirMenu(user)
 
     await user.click(
-      screen.getByRole('menuitem', { name: /Salvar informações \(NFO\)/ }),
+      screen.getByRole('menuitem', { name: /Save information \(NFO\)/ }),
     )
     expect(
-      await screen.findByText('Gravando…', { exact: false }),
+      await screen.findByText('Writing…', { exact: false }),
     ).toBeInTheDocument()
 
     liberar()
@@ -728,7 +729,7 @@ describe('EntityManageMenu — "Salvar informações (NFO)" (briefing 0062)', ()
     ).toBeInTheDocument()
   })
 
-  it('404 sem media_file: mensagem de erro clara (role=alert)', async () => {
+  it('404 without media_file: a clear error message (role=alert)', async () => {
     const user = userEvent.setup()
     stubEntityActions(
       () => okJson({ outcome: 'none' }),
@@ -739,7 +740,7 @@ describe('EntityManageMenu — "Salvar informações (NFO)" (briefing 0062)', ()
     await abrirMenu(user)
 
     await user.click(
-      screen.getByRole('menuitem', { name: /Salvar informações \(NFO\)/ }),
+      screen.getByRole('menuitem', { name: /Save information \(NFO\)/ }),
     )
     const alerta = await screen.findByRole('alert')
     expect(alerta).toHaveTextContent('entity sem arquivo na biblioteca')
@@ -759,25 +760,25 @@ async function abrirDialogoExclusaoColecao(respostaExcluir?: () => Response) {
   )
   render(null, true, true)
   await abrirMenu(user)
-  await user.click(screen.getByRole('menuitem', { name: /Excluir coleção/ }))
-  await screen.findByRole('alertdialog', { name: 'Excluir coleção?' })
+  await user.click(screen.getByRole('menuitem', { name: /Delete collection/ }))
+  await screen.findByRole('alertdialog', { name: 'Delete the collection?' })
   return { user, fetchMock }
 }
 
-describe('EntityManageMenu — "Excluir coleção" (0026, agora via AlertDialog)', () => {
-  it('clicar no item abre o AlertDialog — NÃO apaga direto (sem chamada DELETE)', async () => {
+describe('EntityManageMenu — "Delete collection" (0026, now via AlertDialog)', () => {
+  it('clicking the item opens the AlertDialog — it does NOT delete right away (no DELETE call)', async () => {
     const { fetchMock } = await abrirDialogoExclusaoColecao()
 
     expect(
-      screen.getByRole('alertdialog', { name: 'Excluir coleção?' }),
+      screen.getByRole('alertdialog', { name: 'Delete the collection?' }),
     ).toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('"Cancelar" fecha o diálogo sem apagar', async () => {
+  it('"Cancel" closes the dialog without deleting', async () => {
     const { user, fetchMock } = await abrirDialogoExclusaoColecao()
 
-    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
 
     await waitFor(() => {
       expect(screen.queryByRole('alertdialog')).toBeNull()
@@ -786,22 +787,22 @@ describe('EntityManageMenu — "Excluir coleção" (0026, agora via AlertDialog)
     expect(navigateSpy).not.toHaveBeenCalled()
   })
 
-  it('confirmar chama DELETE e navega para / no sucesso', async () => {
+  it('confirming calls DELETE and navigates to / on success', async () => {
     const { user } = await abrirDialogoExclusaoColecao(() => okJson({}))
 
-    await user.click(screen.getByRole('button', { name: 'Excluir coleção' }))
+    await user.click(screen.getByRole('button', { name: 'Delete collection' }))
 
     await waitFor(() => {
       expect(navigateSpy).toHaveBeenCalledWith({ to: '/' })
     })
   })
 
-  it('erro na exclusão mostra role=alert dentro do diálogo, sem navegar', async () => {
+  it('a delete error shows role=alert inside the dialog, without navigating', async () => {
     const { user } = await abrirDialogoExclusaoColecao(() =>
       erroJson(409, 'conflict', 'não foi possível excluir a coleção'),
     )
 
-    await user.click(screen.getByRole('button', { name: 'Excluir coleção' }))
+    await user.click(screen.getByRole('button', { name: 'Delete collection' }))
 
     const alerta = await screen.findByRole('alert')
     expect(alerta).toHaveTextContent('não foi possível excluir a coleção')
@@ -814,21 +815,21 @@ describe('EntityManageMenu — "Excluir coleção" (0026, agora via AlertDialog)
 // is already done by the badge/section of the detail, not by this menu). "Assistido" creates the
 // `completed` event; "não assistido" deletes the MOST
 // RECENT `kind=assistir` event (it fetches the list before deleting).
-describe('EntityManageMenu — "Marcar como (não) assistido" (0094)', () => {
-  it('os dois itens sempre aparecem no menu', async () => {
+describe('EntityManageMenu — "Mark as (not) watched" (0094)', () => {
+  it('both items always appear in the menu', async () => {
     const user = userEvent.setup()
     render(null)
     await abrirMenu(user)
 
     expect(
-      screen.getByRole('menuitem', { name: /Marcar como assistido/ }),
+      screen.getByRole('menuitem', { name: /Mark as watched/ }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('menuitem', { name: /Marcar como não assistido/ }),
+      screen.getByRole('menuitem', { name: /Mark as not watched/ }),
     ).toBeInTheDocument()
   })
 
-  it('"Marcar como assistido" cria o evento e mostra a mensagem de sucesso', async () => {
+  it('"Mark as watched" creates the event and shows the success message', async () => {
     const user = userEvent.setup()
     const fetchMock = stubRota(
       (p, m) => p === '/api/v1/entities/e1/historico' && m === 'POST',
@@ -837,19 +838,15 @@ describe('EntityManageMenu — "Marcar como (não) assistido" (0094)', () => {
     render(null)
     await abrirMenu(user)
 
-    await user.click(
-      screen.getByRole('menuitem', { name: /Marcar como assistido/ }),
-    )
-    expect(
-      await screen.findByText('Marcado como assistido.'),
-    ).toBeInTheDocument()
+    await user.click(screen.getByRole('menuitem', { name: /Mark as watched/ }))
+    expect(await screen.findByText('Marked as watched.')).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/v1/entities/e1/historico'),
       expect.objectContaining({ method: 'POST' }),
     )
   })
 
-  it('erro ao "Marcar como assistido" mostra role=alert com a mensagem do envelope', async () => {
+  it('an error on "Mark as watched" shows role=alert with the envelope message', async () => {
     const user = userEvent.setup()
     stubRota(
       (p, m) => p === '/api/v1/entities/e1/historico' && m === 'POST',
@@ -858,9 +855,7 @@ describe('EntityManageMenu — "Marcar como (não) assistido" (0094)', () => {
     render(null)
     await abrirMenu(user)
 
-    await user.click(
-      screen.getByRole('menuitem', { name: /Marcar como assistido/ }),
-    )
+    await user.click(screen.getByRole('menuitem', { name: /Mark as watched/ }))
     const alerta = await screen.findByRole('alert')
     expect(alerta).toHaveTextContent('status inválido')
   })
@@ -874,14 +869,14 @@ describe('EntityManageMenu — "Marcar como (não) assistido" (0094)', () => {
     render(null)
     await abrirMenu(user)
     await user.click(
-      screen.getByRole('menuitem', { name: /Marcar como não assistido/ }),
+      screen.getByRole('menuitem', { name: /Mark as not watched/ }),
     )
     expect(
-      await screen.findByText('Marcado como não assistido.'),
+      await screen.findByText('Marked as not watched.'),
     ).toBeInTheDocument()
   }
 
-  it('"Marcar como não assistido" busca o evento mais recente e apaga-o', async () => {
+  it('"Mark as not watched" fetches the most recent event and deletes it', async () => {
     const user = userEvent.setup()
     const fetchMock = stubRotas([
       [
@@ -918,7 +913,7 @@ describe('EntityManageMenu — "Marcar como (não) assistido" (0094)', () => {
     ).toBe(true)
   })
 
-  it('"Marcar como não assistido" sem nenhum evento assistir não chama DELETE', async () => {
+  it('"Mark as not watched" without any assistir event does not call DELETE', async () => {
     const user = userEvent.setup()
     const fetchMock = stubRota(
       (p, m) => p === '/api/v1/entities/e1/historico' && m === 'GET',
@@ -933,18 +928,18 @@ describe('EntityManageMenu — "Marcar como (não) assistido" (0094)', () => {
   })
 })
 
-// "Gravar metadados no arquivo": the item is visible only for
+// "Write metadata to the file": the item is visible only for
 // `type==='faixa'`/`type==='album'` (it does NOT depend on `owned`/a real folder
 // — that is about the NFO). A destructive/irreversible action on the tag of the
 // file: it requires confirmation via AlertDialog before firing
 // `writeAudioTags`, the same 2-step pattern as "Excluir coleção".
-describe('EntityManageMenu — "Gravar metadados no arquivo" (briefing 0125)', () => {
-  it('aparece para type="faixa"', async () => {
+describe('EntityManageMenu — "Write metadata to the file" (briefing 0125)', () => {
+  it('appears for type="faixa"', async () => {
     const user = userEvent.setup()
     render(null, true, false, 'faixa', 'cataloged')
     await abrirMenu(user)
     expect(
-      screen.getByRole('menuitem', { name: /Gravar metadados no arquivo/ }),
+      screen.getByRole('menuitem', { name: /Write metadata to the file/ }),
     ).toBeInTheDocument()
   })
 
@@ -953,29 +948,29 @@ describe('EntityManageMenu — "Gravar metadados no arquivo" (briefing 0125)', (
     render(null, true, false, 'album', 'cataloged')
     await abrirMenu(user)
     expect(
-      screen.getByRole('menuitem', { name: /Gravar metadados no arquivo/ }),
+      screen.getByRole('menuitem', { name: /Write metadata to the file/ }),
     ).toBeInTheDocument()
   })
 
-  it('não aparece para type="movie"', async () => {
+  it('does not appear for type="movie"', async () => {
     const user = userEvent.setup()
     render(null, true, false, 'movie', 'cataloged')
     await abrirMenu(user)
     expect(
-      screen.queryByRole('menuitem', { name: /Gravar metadados no arquivo/ }),
+      screen.queryByRole('menuitem', { name: /Write metadata to the file/ }),
     ).toBeNull()
   })
 
-  it('não aparece para type="artista"', async () => {
+  it('does not appear for type="artista"', async () => {
     const user = userEvent.setup()
     render(null, true, false, 'artista', 'cataloged')
     await abrirMenu(user)
     expect(
-      screen.queryByRole('menuitem', { name: /Gravar metadados no arquivo/ }),
+      screen.queryByRole('menuitem', { name: /Write metadata to the file/ }),
     ).toBeNull()
   })
 
-  it('clicar no item abre o AlertDialog de confirmação — NÃO dispara a mutation direto', async () => {
+  it('clicking the item opens the confirmation AlertDialog — it does NOT fire the mutation right away', async () => {
     const user = userEvent.setup()
     const fetchMock = stubRota(
       (p, m) => p === '/api/v1/entities/e1/audio-tags/write' && m === 'POST',
@@ -985,18 +980,18 @@ describe('EntityManageMenu — "Gravar metadados no arquivo" (briefing 0125)', (
     await abrirMenu(user)
 
     await user.click(
-      screen.getByRole('menuitem', { name: /Gravar metadados no arquivo/ }),
+      screen.getByRole('menuitem', { name: /Write metadata to the file/ }),
     )
 
     expect(
       await screen.findByRole('alertdialog', {
-        name: 'Gravar metadados no arquivo?',
+        name: 'Write metadata to the file?',
       }),
     ).toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('"Cancelar" fecha o diálogo sem chamar a API', async () => {
+  it('"Cancel" closes the dialog without calling the API', async () => {
     const user = userEvent.setup()
     const fetchMock = stubRota(
       (p, m) => p === '/api/v1/entities/e1/audio-tags/write' && m === 'POST',
@@ -1005,11 +1000,11 @@ describe('EntityManageMenu — "Gravar metadados no arquivo" (briefing 0125)', (
     render(null, true, false, 'faixa', 'cataloged')
     await abrirMenu(user)
     await user.click(
-      screen.getByRole('menuitem', { name: /Gravar metadados no arquivo/ }),
+      screen.getByRole('menuitem', { name: /Write metadata to the file/ }),
     )
     await screen.findByRole('alertdialog')
 
-    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
 
     await waitFor(() => {
       expect(screen.queryByRole('alertdialog')).toBeNull()
@@ -1017,7 +1012,7 @@ describe('EntityManageMenu — "Gravar metadados no arquivo" (briefing 0125)', (
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('confirmar chama writeAudioTags e mostra "Gravando…" seguido do resumo de sucesso', async () => {
+  it('confirming calls writeAudioTags and shows "Writing…" followed by the success summary', async () => {
     const user = userEvent.setup()
     const liberar = stubEntityActionsAdiado(
       '/api/v1/entities/e1/audio-tags/write',
@@ -1026,28 +1021,28 @@ describe('EntityManageMenu — "Gravar metadados no arquivo" (briefing 0125)', (
     render(null, true, false, 'album', 'cataloged')
     await abrirMenu(user)
     await user.click(
-      screen.getByRole('menuitem', { name: /Gravar metadados no arquivo/ }),
+      screen.getByRole('menuitem', { name: /Write metadata to the file/ }),
     )
     await screen.findByRole('alertdialog')
 
-    await user.click(screen.getByRole('button', { name: 'Gravar metadados' }))
+    await user.click(screen.getByRole('button', { name: 'Write metadata' }))
     // While the AlertDialog is open, the rest of the tree (where the inline
     // "Gravando…" echo lives) stays `aria-hidden` (Radix traps focus/AT) — the
     // pending assertion is about the dialog button ITSELF, not the echo.
     expect(
-      await screen.findByRole('button', { name: 'Gravando…' }),
+      await screen.findByRole('button', { name: 'Writing…' }),
     ).toBeDisabled()
 
     liberar()
     expect(
-      await screen.findByText('12 faixa(s) regravada(s).'),
+      await screen.findByText('12 track(s) rewritten.'),
     ).toBeInTheDocument()
     await waitFor(() => {
       expect(screen.queryByRole('alertdialog')).toBeNull()
     })
   })
 
-  it('resumo com falhas parciais mostra a contagem de erros junto do sucesso', async () => {
+  it('a summary with partial failures shows the error count together with the success', async () => {
     const user = userEvent.setup()
     stubRota(
       (p, m) => p === '/api/v1/entities/e1/audio-tags/write' && m === 'POST',
@@ -1060,17 +1055,17 @@ describe('EntityManageMenu — "Gravar metadados no arquivo" (briefing 0125)', (
     render(null, true, false, 'album', 'cataloged')
     await abrirMenu(user)
     await user.click(
-      screen.getByRole('menuitem', { name: /Gravar metadados no arquivo/ }),
+      screen.getByRole('menuitem', { name: /Write metadata to the file/ }),
     )
     await screen.findByRole('alertdialog')
-    await user.click(screen.getByRole('button', { name: 'Gravar metadados' }))
+    await user.click(screen.getByRole('button', { name: 'Write metadata' }))
 
     expect(
-      await screen.findByText('10 faixa(s) regravada(s) — 2 com erro.'),
+      await screen.findByText('10 track(s) rewritten — 2 with errors.'),
     ).toBeInTheDocument()
   })
 
-  it('erro de rede/500 mostra role=alert DENTRO do diálogo, que permanece aberto', async () => {
+  it('a network/500 error shows role=alert INSIDE the dialog, which stays open', async () => {
     const user = userEvent.setup()
     stubRota(
       (p, m) => p === '/api/v1/entities/e1/audio-tags/write' && m === 'POST',
@@ -1079,10 +1074,10 @@ describe('EntityManageMenu — "Gravar metadados no arquivo" (briefing 0125)', (
     render(null, true, false, 'faixa', 'cataloged')
     await abrirMenu(user)
     await user.click(
-      screen.getByRole('menuitem', { name: /Gravar metadados no arquivo/ }),
+      screen.getByRole('menuitem', { name: /Write metadata to the file/ }),
     )
     await screen.findByRole('alertdialog')
-    await user.click(screen.getByRole('button', { name: 'Gravar metadados' }))
+    await user.click(screen.getByRole('button', { name: 'Write metadata' }))
 
     const alerta = await screen.findByRole('alert')
     expect(alerta).toHaveTextContent('ffmpeg indisponível')
