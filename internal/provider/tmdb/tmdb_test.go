@@ -16,7 +16,8 @@ const respostaFixa = `{
     {
       "id": 603,
       "media_type": "movie",
-      "title": "The Matrix",
+      "title": "Matrix",
+      "original_title": "The Matrix",
       "overview": "Neo descobre a verdade.",
       "poster_path": "/matrix.jpg",
       "release_date": "1999-03-31"
@@ -25,6 +26,7 @@ const respostaFixa = `{
       "id": 1396,
       "media_type": "tv",
       "name": "Breaking Bad",
+      "original_name": "Breaking Bad",
       "overview": "Um professor vira quimico do crime.",
       "poster_path": "/bb.jpg",
       "first_air_date": "2008-01-20"
@@ -91,7 +93,10 @@ func TestBuscarMapeiaEFiltra(t *testing.T) {
 	eqS(t, "filme.source", filme.Source, "tmdb")
 	eqS(t, "filme.source_id", filme.SourceID, "603")
 	eqS(t, "filme.type", filme.Type, "movie")
-	eqS(t, "filme.title", filme.Title, "The Matrix")
+	eqS(t, "filme.title", filme.Title, "Matrix") // o titulo TRADUZIDO da busca
+	// The original title travels in the same payload. It is what the local folder name
+	// matches, and the scoring depends on it (see melhorCandidatoExterno).
+	eqS(t, "filme.titulo_original", filme.TituloOriginal, "The Matrix")
 	eqSPtr(t, "filme.year", filme.Year, "1999")
 	eqSPtr(t, "filme.poster_url", filme.PosterURL, "https://image.tmdb.org/t/p/w342/matrix.jpg")
 	eqSPtr(t, "filme.overview", filme.Overview, "Neo descobre a verdade.")

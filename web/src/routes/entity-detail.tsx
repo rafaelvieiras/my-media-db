@@ -314,6 +314,7 @@ export function EntityDetailScreen() {
             type={data.type}
             status={data.status}
             catalogCompleteness={data.catalog_completeness}
+            titulo={data.title}
             owned={podeGravarNaPastaReal}
             isCollection={data.type === 'collection'}
           />

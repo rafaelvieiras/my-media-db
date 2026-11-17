@@ -12,11 +12,13 @@ import {
   Link2,
   Pencil,
   RefreshCw,
+  SearchCheck,
   Settings,
   Sparkles,
   Tag,
   Trash2,
 } from 'lucide-react'
+import { ManualMatchPanel } from '@/components/manual-match-panel'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -25,6 +27,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -264,6 +273,7 @@ export function EntityManageMenu({
   type,
   status,
   catalogCompleteness,
+  titulo = '',
   owned = true,
   isCollection = false,
 }: {
@@ -274,6 +284,10 @@ export function EntityManageMenu({
   type: string
   status: string
   catalogCompleteness: CatalogCompleteness
+  // Current title, used only to PREFILL the manual match search: the owner opens the
+  // panel already seeing the wrong identity and edits it. Optional, so whoever does not
+  // pass it keeps working (empty search).
+  titulo?: string
   // Ownership (`ResolvedEntity.owned`, `EXISTS media_file present`): without it there is no
   // destination folder in the real library for the .nfo. Default
   // `true` — compatible with whoever does not pass the prop.
@@ -481,6 +495,7 @@ export function EntityManageMenu({
           : null
   const atualizandoAssistido =
     marcarAssistido.isPending || desmarcarAssistido.isPending
+  const [matchManualAberto, setMatchManualAberto] = useState(false)
 
   return (
     <div className="flex flex-col items-end gap-1.5">
@@ -498,6 +513,14 @@ export function EntityManageMenu({
               <Pencil aria-hidden />
               {t('common.action.edit')}
             </Link>
+          </DropdownMenuItem>
+          {/* Manual match: the ONLY way to fix an identity the auto-match got WRONG.
+              A wrong match above the threshold leaves the entity `cataloged`, so it
+              never reaches the review queue -- without this action the owner has no
+              place to say "it is this other one". */}
+          <DropdownMenuItem onSelect={() => setMatchManualAberto(true)}>
+            <SearchCheck aria-hidden />
+            {t('entity.edit.manage.manualMatch')}
           </DropdownMenuItem>
           {mostrarInformacoes ? (
             <DropdownMenuItem
@@ -733,6 +756,27 @@ export function EntityManageMenu({
       ) : baixarArtesFaltantes.isSuccess ? (
         mensagemArtesFaltantes(baixarArtesFaltantes.data, t)
       ) : null}
+
+      {/* Manual match: applies to ANY entity -- a wrong identity is not a
+          collection-only problem. */}
+      <Sheet open={matchManualAberto} onOpenChange={setMatchManualAberto}>
+        <SheetContent
+          side="right"
+          className="w-full gap-4 overflow-y-auto sm:max-w-md"
+        >
+          <SheetHeader>
+            <SheetTitle>{t('entity.edit.manage.manualMatch')}</SheetTitle>
+            <SheetDescription>
+              {t('entity.edit.manage.manualMatchDescription')}
+            </SheetDescription>
+          </SheetHeader>
+          <ManualMatchPanel
+            entityId={id}
+            initialQuery={titulo}
+            onApplied={() => setMatchManualAberto(false)}
+          />
+        </SheetContent>
+      </Sheet>
 
       {isCollection ? (
         <AlertDialog open={alertaAberto} onOpenChange={setAlertaAberto}>

@@ -90,14 +90,16 @@ type respostaMulti struct {
 // itemMulti is a raw result of /search/multi. media_type discriminates the type
 // (movie|tv|person|…); only movie and tv interest us.
 type itemMulti struct {
-	ID           int64  `json:"id"`
-	MediaType    string `json:"media_type"`
-	Title        string `json:"title"` // movies
-	Name         string `json:"name"`  // series
-	Overview     string `json:"overview"`
-	PosterPath   string `json:"poster_path"`
-	ReleaseDate  string `json:"release_date"`   // movies
-	FirstAirDate string `json:"first_air_date"` // series
+	ID            int64  `json:"id"`
+	MediaType     string `json:"media_type"`
+	Title         string `json:"title"`          // movies
+	Name          string `json:"name"`           // series
+	OriginalTitle string `json:"original_title"` // movies: the title in the original language
+	OriginalName  string `json:"original_name"`  // series: the title in the original language
+	Overview      string `json:"overview"`
+	PosterPath    string `json:"poster_path"`
+	ReleaseDate   string `json:"release_date"`   // movies
+	FirstAirDate  string `json:"first_air_date"` // series
 }
 
 // Buscar queries /search/multi and maps the results to ResultadoExterno, discarding
@@ -686,25 +688,29 @@ func nomesDosGeneros(gs []generoTMDB) []string {
 // ok=false for a media_type that is not movie/tv. title/date vary by type
 // (title/release_date for a movie, name/first_air_date for a series).
 func mapearItem(it itemMulti) (provider.ResultadoExterno, bool) {
-	var titulo, data string
+	var titulo, original, data string
 	switch it.MediaType {
 	case "movie":
-		titulo, data = it.Title, it.ReleaseDate
+		titulo, original, data = it.Title, it.OriginalTitle, it.ReleaseDate
 	case "tv":
-		titulo, data = it.Name, it.FirstAirDate
+		titulo, original, data = it.Name, it.OriginalName, it.FirstAirDate
 	default:
 		return provider.ResultadoExterno{}, false
 	}
 
 	res := provider.ResultadoExterno{
-		Source:    "tmdb",
-		SourceID:  fmt.Sprintf("%d", it.ID),
-		Type:      it.MediaType,
-		Title:     titulo,
-		Year:      anoDe(data),
-		Overview:  ptrNaoVazio(it.Overview),
-		PosterURL: posterURL(it.PosterPath),
-		Saved:     false,
+		Source:   "tmdb",
+		SourceID: fmt.Sprintf("%d", it.ID),
+		Type:     it.MediaType,
+		Title:    titulo,
+		// The original title comes in the SAME search payload -- no extra request. It is
+		// what the local folder name usually matches ("White Collar" against the pt-BR
+		// "Crimes do Colarinho Branco" is a ~0 score).
+		TituloOriginal: original,
+		Year:           anoDe(data),
+		Overview:       ptrNaoVazio(it.Overview),
+		PosterURL:      posterURL(it.PosterPath),
+		Saved:          false,
 	}
 	return res, true
 }
