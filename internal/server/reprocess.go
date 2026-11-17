@@ -262,9 +262,18 @@ func (s *Server) analisarReprocess(ctx context.Context, sourceID string) (*repro
 	if err != nil {
 		return nil, fmt.Errorf("listar filmes pendentes: %w", err)
 	}
-	episodios, err := q.ContarEpisodiosDraftDaFonte(ctx, source)
+	// The draft episodes come from the review listing the UI already shows: it is a
+	// cheap indexed query, and a dedicated COUNT per source made sqlc's SQLite grammar
+	// choke (and the naive JOIN with OR cost 65 s on a real catalog).
+	revisao, err := q.ListarRevisao(ctx, sql.NullFloat64{Float64: limiarBaixaConfianca, Valid: true})
 	if err != nil {
-		return nil, fmt.Errorf("contar episódios em draft: %w", err)
+		return nil, fmt.Errorf("listar revisão: %w", err)
+	}
+	var episodios int64
+	for _, row := range revisao {
+		if row.Type == "episode" {
+			episodios++
+		}
 	}
 	orfaos, err := q.ContarRascunhosVazios(ctx)
 	if err != nil {
