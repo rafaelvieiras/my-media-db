@@ -393,15 +393,13 @@ func (q *Queries) ListarFaixasDraftOrfasPorSource(ctx context.Context, arg Lista
 }
 
 const listarFilmesPendentesPorSource = `-- name: ListarFilmesPendentesPorSource :many
-SELECT e.id, e.type
-FROM entity e
-WHERE e.type = 'movie'
+SELECT DISTINCT e.id, e.type
+FROM media_file m
+JOIN entity e ON e.id = m.entity_id
+WHERE m.state = 'present'
+  AND m.library_source_id = ?1
+  AND e.type = 'movie'
   AND (e.external_ids_json IS NULL OR e.external_ids_json NOT LIKE '%tmdb%')
-  AND EXISTS (
-        SELECT 1 FROM media_file m
-        WHERE m.entity_id = e.id AND m.state = 'present'
-          AND m.library_source_id = ?1
-      )
 ORDER BY e.id
 LIMIT ?2
 `
@@ -420,6 +418,10 @@ type ListarFilmesPendentesPorSourceRow struct {
 // and whose best match stayed below the low-confidence threshold -- the universe that
 // the post-scan auto-match retries (real case: an item that came in raw because
 // of the 0089 bug, Nov 8, 2026).
+// Driven from media_file (index on library_source_id), not from entity: the
+// previous shape scanned EVERY movie of the catalog and ran a correlated EXISTS per
+// row, which cost 64 s on a 15k-file catalog even on a series library that has no
+// movie at all. DISTINCT replaces the EXISTS (one row per entity).
 func (q *Queries) ListarFilmesPendentesPorSource(ctx context.Context, arg ListarFilmesPendentesPorSourceParams) ([]ListarFilmesPendentesPorSourceRow, error) {
 	rows, err := q.db.QueryContext(ctx, listarFilmesPendentesPorSource, arg.SourceID, arg.Limite)
 	if err != nil {

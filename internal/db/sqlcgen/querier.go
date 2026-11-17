@@ -202,6 +202,15 @@ type Querier interface {
 	// WHERE clause as ListarEntityCards -- without LIMIT/OFFSET/ORDER BY. It includes the same
 	// sub-node exclusion (season/episode) so the total matches the page (0032).
 	ContarEntityCards(ctx context.Context, arg ContarEntityCardsParams) (int64, error)
+	// Episodes in draft hanging DIRECTLY from a show with a file in the source
+	// (episode -> show). Indexed joins only: the tempting single join with
+	// "m.entity_id = p.id OR m.entity_id = r2.parent_id" degenerates into a cartesian
+	// product (64 s measured on a 15k-file catalog). The season hop lives in the twin
+	// file, and the caller sums the two.
+	ContarEpisodiosDraftDaFonteDireto(ctx context.Context, sourceID sql.NullString) (int64, error)
+	// Same count for the episode -> season -> show shape (the common one in a library
+	// organized by season folders).
+	ContarEpisodiosDraftDaFonteViaTemporada(ctx context.Context, sourceID sql.NullString) (int64, error)
 	// Total orphan events, for the "total" field of the pagination above.
 	ContarHistoricoEventoOrfaos(ctx context.Context) (int64, error)
 	// Since ADR-0028 (LAYER 3): job_execution was dropped
@@ -548,6 +557,10 @@ type Querier interface {
 	// and whose best match stayed below the low-confidence threshold -- the universe that
 	// the post-scan auto-match retries (real case: an item that came in raw because
 	// of the 0089 bug, Nov 8, 2026).
+	// Driven from media_file (index on library_source_id), not from entity: the
+	// previous shape scanned EVERY movie of the catalog and ran a correlated EXISTS per
+	// row, which cost 64 s on a 15k-file catalog even on a series library that has no
+	// movie at all. DISTINCT replaces the EXISTS (one row per entity).
 	ListarFilmesPendentesPorSource(ctx context.Context, arg ListarFilmesPendentesPorSourceParams) ([]ListarFilmesPendentesPorSourceRow, error)
 	// Person filmography (internal-first): the works in the catalog
 	// that credit them, cast OR crew (a production company credit has no person_id, it

@@ -262,19 +262,19 @@ func (s *Server) analisarReprocess(ctx context.Context, sourceID string) (*repro
 	if err != nil {
 		return nil, fmt.Errorf("listar filmes pendentes: %w", err)
 	}
-	// The draft episodes come from the review listing the UI already shows: it is a
-	// cheap indexed query, and a dedicated COUNT per source made sqlc's SQLite grammar
-	// choke (and the naive JOIN with OR cost 65 s on a real catalog).
-	revisao, err := q.ListarRevisao(ctx, sql.NullFloat64{Float64: limiarBaixaConfianca, Valid: true})
+	// Per source, with an indexed join: the review listing (ListarRevisao) is the
+	// obvious source of this number and the wrong one here — its five correlated
+	// subqueries per entity cost ~60 s on this catalog, which is fine for the screen
+	// that asks once and absurd for a preview.
+	direto, err := q.ContarEpisodiosDraftDaFonteDireto(ctx, source)
 	if err != nil {
-		return nil, fmt.Errorf("listar revisão: %w", err)
+		return nil, fmt.Errorf("contar episódios em draft (direto): %w", err)
 	}
-	var episodios int64
-	for _, row := range revisao {
-		if row.Type == "episode" {
-			episodios++
-		}
+	viaTemporada, err := q.ContarEpisodiosDraftDaFonteViaTemporada(ctx, source)
+	if err != nil {
+		return nil, fmt.Errorf("contar episódios em draft (temporada): %w", err)
 	}
+	episodios := direto + viaTemporada
 	orfaos, err := q.ContarRascunhosVazios(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("contar rascunhos vazios: %w", err)
