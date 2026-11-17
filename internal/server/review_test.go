@@ -578,3 +578,32 @@ func TestReviewEpisodioContaArquivoDaJuncao(t *testing.T) {
 		t.Fatalf("review_group = %+v, quero agrupado pela pasta (nao 'sem arquivo')", ep1.ReviewGroup)
 	}
 }
+
+// TestCorrigirDescartaIdentidadeAntigaDasOutrasFontes is the regression of a real
+// corruption found right after correcting a wrong match: the series wrongly matched to
+// "White Collar Blue" (2002) carried `tvdb: 82010` -- the id of the OTHER show -- and
+// correcting it to the right TMDB id kept that id alongside. The NFO export would point
+// Jellyfin at a different series.
+func TestCorrigirDescartaIdentidadeAntigaDasOutrasFontes(t *testing.T) {
+	h, d, _, _, _ := setupEnrichServer(t)
+	semearEntity(t, d, "e-errada", "movie", "White Collar")
+	semearFile(t, d, "f-errada", "e-errada", "/lib/x.mkv", "present", 40, "")
+	// The wrong identity: the id of the OTHER source was written by the earlier match.
+	if err := escrita(t, d).AtualizarExternalIds(context.Background(), sqlcgen.AtualizarExternalIdsParams{
+		ExternalIdsJson: nsOf(`{"tmdb":"2154","tvdb":"82010"}`),
+		ID:              "e-errada",
+	}); err != nil {
+		t.Fatalf("AtualizarExternalIds: %v", err)
+	}
+
+	rec := do(t, h, http.MethodPost, "/api/v1/entities/e-errada/correct",
+		map[string]string{"source_id": "21510"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("correct status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	ent := decodeEntidade(t, rec)
+	eq(t, "external_ids.tmdb", ent.ExternalIDs["tmdb"], "21510")
+	if v, sobrou := ent.ExternalIDs["tvdb"]; sobrou {
+		t.Fatalf("tvdb = %q sobreviveu: o id da identidade ERRADA nao pode ficar", v)
+	}
+}

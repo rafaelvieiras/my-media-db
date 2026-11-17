@@ -190,6 +190,14 @@ func (s *Server) aplicarIdentidadeExterna(w http.ResponseWriter, ctx context.Con
 	if err != nil {
 		return false
 	}
+	// The new identity WINS: the ids of the OTHER sources belonged to the previous
+	// (wrong) identity and must not survive a correction -- see the comment of
+	// AplicarIdentidadeExclusiva. The enrichment right below writes back whatever
+	// cross-id it can resolve.
+	if err := s.enrich.AplicarIdentidadeExclusiva(ctx, id, source, sourceID); err != nil {
+		respondErroInterno(w)
+		return false
+	}
 	if err := s.enrich.Enriquecer(ctx, id, source, sourceID, tipo, langs, false); err != nil {
 		respondFonteIndisponivel(w)
 		return false
