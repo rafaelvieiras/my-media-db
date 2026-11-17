@@ -37,15 +37,15 @@ beats any external source.
 Existing tools solve part of the problem and then hit the same wall: someone else
 owns your data.
 
-| Pain | How tools handle it today | What MyMediaDB does |
-| --- | --- | --- |
-| Metadata lives in scattered `.nfo` files, never queryable | tinyMediaManager is stateless and only writes NFO | One database with an API. NFO becomes an optional export, not the truth |
-| Your artwork or edit needs a moderator's approval | TMDB, Fanart.tv | Nobody approves anything. Your art and text go in |
-| The Brazilian title (VHS, TV) differs from the official one | You are stuck with the TMDB name | Override layer: you rename it, and your name wins |
-| A short film outside the official taxonomy disappears | TMDB philosophy rejects it | Your taxonomy: you decide what is an episode, a collection, or anything else |
-| You want media that no database covers well | No decent source exists | Universal, extensible model. New verticals join without touching the core |
-| The public API has quotas and rules that are not yours | TMDB API | Your API, no limits, your users and permissions |
-| You want to plan media you do not own yet | The manager only sees files | The catalog is bigger than the library (the `status` field) |
+| Pain                                                        | How tools handle it today                         | What MyMediaDB does                                                          |
+| ----------------------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Metadata lives in scattered `.nfo` files, never queryable   | tinyMediaManager is stateless and only writes NFO | One database with an API. NFO becomes an optional export, not the truth      |
+| Your artwork or edit needs a moderator's approval           | TMDB, Fanart.tv                                   | Nobody approves anything. Your art and text go in                            |
+| The Brazilian title (VHS, TV) differs from the official one | You are stuck with the TMDB name                  | Override layer: you rename it, and your name wins                            |
+| A short film outside the official taxonomy disappears       | TMDB philosophy rejects it                        | Your taxonomy: you decide what is an episode, a collection, or anything else |
+| You want media that no database covers well                 | No decent source exists                           | Universal, extensible model. New verticals join without touching the core    |
+| The public API has quotas and rules that are not yours      | TMDB API                                          | Your API, no limits, your users and permissions                              |
+| You want to plan media you do not own yet                   | The manager only sees files                       | The catalog is bigger than the library (the `status` field)                  |
 
 ## Features
 
@@ -79,7 +79,11 @@ curl -o .env https://raw.githubusercontent.com/rafaelvieiras/my-media-db/master/
 
 # 2. Point the media volume in compose.yaml to your library folder.
 
-# 3. Start it.
+# 3. Give the data folder to the container user (uid 100, gid 101). Compose creates
+#    ./data owned by you, and the app writes the database as its own user.
+mkdir -p data && sudo chown -R 100:101 data
+
+# 4. Start it.
 docker compose up -d
 ```
 
@@ -99,16 +103,21 @@ Every key is optional. Without keys the app starts and the external providers st
 off. You can also set each provider from the UI, and the UI value wins over the
 environment.
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `PORT` | `8080` | HTTP port inside the container |
-| `MYMEDIADB_DB_PATH` | `data/mymediadb.sqlite` | Database file |
-| `MYMEDIADB_ASSETS_DIR` | `data/assets` | Downloaded artwork |
-| `MYMEDIADB_TMDB_TOKEN` | *(empty)* | TMDB API read token (v4, preferred) |
-| `MYMEDIADB_TMDB_API_KEY` | *(empty)* | TMDB API key (v3, alternative) |
-| `MYMEDIADB_FANARTTV_API_KEY` | *(empty)* | fanart.tv, artwork only |
-| `MYMEDIADB_TTDB_API_KEY` | *(empty)* | TheTVDB, series metadata |
-| `MYMEDIADB_ACOUSTID_CLIENT_KEY` | *(empty)* | AcoustID, audio fingerprint |
+| Variable                        | Default                               | Meaning                             |
+| ------------------------------- | ------------------------------------- | ----------------------------------- |
+| `PORT`                          | `8080`                                | HTTP port inside the container      |
+| `MYMEDIADB_DB_PATH`             | `/data/mymediadb.sqlite` in the image | Database file                       |
+| `MYMEDIADB_ASSETS_DIR`          | `/data/assets` in the image           | Downloaded artwork                  |
+| `MYMEDIADB_TMDB_TOKEN`          | _(empty)_                             | TMDB API read token (v4, preferred) |
+| `MYMEDIADB_TMDB_API_KEY`        | _(empty)_                             | TMDB API key (v3, alternative)      |
+| `MYMEDIADB_FANARTTV_API_KEY`    | _(empty)_                             | fanart.tv, artwork only             |
+| `MYMEDIADB_TTDB_API_KEY`        | _(empty)_                             | TheTVDB, series metadata            |
+| `MYMEDIADB_ACOUSTID_CLIENT_KEY` | _(empty)_                             | AcoustID, audio fingerprint         |
+
+Both paths live under the `/data` volume, so `docker run -v mydata:/data` (or the
+`./data` bind mount in `compose.yaml`) is all you need to keep the database and
+the artwork. Running the binary without Docker keeps its development default,
+`tmp/mymediadb.sqlite`.
 
 MusicBrainz and Cover Art Archive need no key. See
 [`docs/07`](docs/07-enrichment-and-providers.md) for provider precedence and cache
@@ -141,21 +150,21 @@ versioned and migrations run on start.
 
 ## Documentation
 
-| Doc | Content |
-| --- | --- |
-| [01 — Vision and use cases](docs/01-vision-and-use-cases.md) | Normative scenarios the implementation must satisfy |
-| [02 — Glossary](docs/02-glossary.md) | Canonical vocabulary |
-| [03 — Architecture](docs/03-architecture.md) | Go + Vite/React, single container, layers |
-| [04 — Data model](docs/04-data-model.md) | Base entity, override layer, extension data, `status`, assets |
-| [05 — API](docs/05-api.md) | `/api/tmdb` (compatible) and `/api/v1` (native) |
-| [06 — Library and scan](docs/06-library-and-scan.md) | Datasources, walk, mediainfo, matching, dedup |
-| [07 — Enrichment and providers](docs/07-enrichment-and-providers.md) | On-demand sources, cache, image proxy |
-| [08 — Artwork and assets](docs/08-artwork-and-assets.md) | Storage, art types, custom upload |
-| [09 — NFO and export](docs/09-nfo-and-export.md) | Kodi/Jellyfin NFO as an optional output |
-| [10 — Users and permissions](docs/10-users-and-permissions.md) | Multiuser, tokens, scopes |
-| [11 — Open decisions](docs/11-open-decisions.md) | What is not decided yet, risks |
-| [12 — Roadmap](docs/12-roadmap.md) | Phases and what each one delivers |
-| [ADRs](docs/adr/) | Closed architecture decisions, one file each |
+| Doc                                                                  | Content                                                       |
+| -------------------------------------------------------------------- | ------------------------------------------------------------- |
+| [01 — Vision and use cases](docs/01-vision-and-use-cases.md)         | Normative scenarios the implementation must satisfy           |
+| [02 — Glossary](docs/02-glossary.md)                                 | Canonical vocabulary                                          |
+| [03 — Architecture](docs/03-architecture.md)                         | Go + Vite/React, single container, layers                     |
+| [04 — Data model](docs/04-data-model.md)                             | Base entity, override layer, extension data, `status`, assets |
+| [05 — API](docs/05-api.md)                                           | `/api/tmdb` (compatible) and `/api/v1` (native)               |
+| [06 — Library and scan](docs/06-library-and-scan.md)                 | Datasources, walk, mediainfo, matching, dedup                 |
+| [07 — Enrichment and providers](docs/07-enrichment-and-providers.md) | On-demand sources, cache, image proxy                         |
+| [08 — Artwork and assets](docs/08-artwork-and-assets.md)             | Storage, art types, custom upload                             |
+| [09 — NFO and export](docs/09-nfo-and-export.md)                     | Kodi/Jellyfin NFO as an optional output                       |
+| [10 — Users and permissions](docs/10-users-and-permissions.md)       | Multiuser, tokens, scopes                                     |
+| [11 — Open decisions](docs/11-open-decisions.md)                     | What is not decided yet, risks                                |
+| [12 — Roadmap](docs/12-roadmap.md)                                   | Phases and what each one delivers                             |
+| [ADRs](docs/adr/)                                                    | Closed architecture decisions, one file each                  |
 
 ## Contributing
 
