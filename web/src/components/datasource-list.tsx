@@ -1,12 +1,23 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { FolderPlus, Pencil, RefreshCw } from 'lucide-react'
+import { FolderPlus, Pencil, RefreshCw, Wrench } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import { patchLibrary, startScan, type Source, ApiError } from '@/lib/api'
-import { libraryQueryOptions, scanStatusQueryOptions } from '@/lib/queries'
+import {
+  patchLibrary,
+  startScan,
+  startReprocess,
+  type Source,
+  type ReprocessReport,
+  ApiError,
+} from '@/lib/api'
+import {
+  libraryQueryOptions,
+  scanStatusQueryOptions,
+  reprocessStatusQueryOptions,
+} from '@/lib/queries'
 import { EmptyState, ErrorState, LoadingState } from '@/components/query-states'
 
 // Datasources screen: the creation and the editing/removal of a path
@@ -84,6 +95,29 @@ function DatasourceRow({ source }: { source: Source }) {
     },
   })
 
+  // Reprocessamento: o dry-run é o passo 1 (obrigatório) e mostra o que mudaria;
+  // só depois o botão de aplicar aparece. O progresso vem do próprio endpoint.
+  const [previa, setPrevia] = useState<ReprocessReport | null>(null)
+  const { data: reproc } = useQuery(reprocessStatusQueryOptions(source.id))
+  const reprocRodando = reproc?.running ?? false
+
+  const previaMutation = useMutation({
+    mutationFn: () => startReprocess(source.id, { dry_run: true }),
+    onSuccess: (r) => setPrevia(r as ReprocessReport),
+  })
+  const aplicarMutation = useMutation({
+    mutationFn: () =>
+      startReprocess(source.id, { dry_run: false, delete_orphans: true }),
+    onSuccess: () => {
+      setPrevia(null)
+      queryClient.invalidateQueries({ queryKey: ['reprocess', source.id] })
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['entities'] })
+      queryClient.invalidateQueries({ queryKey: ['library'] })
+    },
+  })
+
   const rodando = status?.running ?? false
 
   return (
@@ -108,6 +142,16 @@ function DatasourceRow({ source }: { source: Source }) {
               className={rodando ? 'animate-spin' : undefined}
             />
             {rodando ? 'Escaneando…' : 'Escanear'}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={rodando || reprocRodando || previaMutation.isPending}
+            onClick={() => previaMutation.mutate()}
+            title="Corrige o catálogo já existente: retenta os itens em revisão e limpa os rascunhos vazios"
+          >
+            <Wrench aria-hidden />
+            {reprocRodando ? 'Reprocessando…' : 'Reprocessar'}
           </Button>
           <Button asChild variant="outline" size="sm">
             <Link to="/dashboard/library/$id/edit" params={{ id: source.id }}>
@@ -134,6 +178,14 @@ function DatasourceRow({ source }: { source: Source }) {
           </span>
         </span>
       </label>
+      <PainelReprocess
+        previa={previa}
+        reproc={reproc}
+        onAplicar={() => aplicarMutation.mutate()}
+        onCancelar={() => setPrevia(null)}
+        erro={previaMutation.error ?? aplicarMutation.error}
+        aplicando={aplicarMutation.isPending}
+      />
       <ProgressoScan status={status} erroScan={scanMutation.error} />
     </li>
   )
@@ -192,4 +244,83 @@ function ProgressoScan({
     )
   }
   return null
+}
+
+// PainelReprocess shows the MANDATORY dry-run before anything is written: the counts
+// of what the reprocess would touch, with "Aplicar" only after the preview. While it
+// runs, the same block becomes the progress of the phase.
+function PainelReprocess({
+  previa,
+  reproc,
+  onAplicar,
+  onCancelar,
+  erro,
+  aplicando,
+}: {
+  previa: ReprocessReport | null
+  reproc?: {
+    running: boolean
+    phase?: string
+    done: number
+    total: number
+    report?: ReprocessReport
+    last_error?: string
+  }
+  onAplicar: () => void
+  onCancelar: () => void
+  erro: unknown
+  aplicando: boolean
+}) {
+  if (erro) {
+    return (
+      <p className="text-xs text-destructive">
+        {erro instanceof Error ? erro.message : 'Falha ao reprocessar'}
+      </p>
+    )
+  }
+
+  if (reproc?.running) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Reprocessando ({reproc.phase ?? 'reconcile'}): {reproc.done}/
+        {reproc.total} itens…
+      </p>
+    )
+  }
+
+  if (reproc?.report && !previa) {
+    const r = reproc.report
+    return (
+      <p className="text-xs text-muted-foreground">
+        Último reprocessamento: {r.promoted} promovidos, {r.orphans_deleted}{' '}
+        rascunhos vazios apagados.
+      </p>
+    )
+  }
+
+  if (!previa) return null
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg bg-muted/40 p-3 text-xs">
+      <span className="font-medium">Prévia — nada foi escrito ainda</span>
+      <ul className="flex flex-col gap-1 text-muted-foreground">
+        <li>{previa.series_draft} série(s) em revisão a retentar</li>
+        <li>{previa.movies_pending} filme(s) pendente(s) de match</li>
+        <li>{previa.draft_episodes} episódio(s) em revisão nesta biblioteca</li>
+        <li>{previa.orphans} rascunho(s) vazio(s) a apagar</li>
+      </ul>
+      <p className="text-muted-foreground">
+        Modo {previa.mode}. Sem orçamento de tempo e sem throttle: resolve tudo
+        que está pendente agora.
+      </p>
+      <div className="flex gap-2">
+        <Button size="sm" disabled={aplicando} onClick={onAplicar}>
+          {aplicando ? 'Aplicando…' : 'Aplicar'}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onCancelar}>
+          Cancelar
+        </Button>
+      </div>
+    </div>
+  )
 }
