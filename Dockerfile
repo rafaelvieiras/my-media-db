@@ -23,7 +23,7 @@ ARG VERSION=docker
 # emulated — the generated dist is arch-neutral, so there is no reason to build
 # it through QEMU (pointlessly slower).
 # ---------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM node:24-slim AS builder-web
+FROM --platform=$BUILDPLATFORM node:26-slim AS builder-web
 WORKDIR /app/web
 
 # Dependency layer: the manifest rarely changes, so it makes good use of the cache.
