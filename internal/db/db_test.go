@@ -130,8 +130,14 @@ func TestMigrateUp(t *testing.T) {
 	// execqueue, so job_execution becomes a redundant second source of
 	// truth and is dropped) + 0026 integration_config (foundation of the
 	// integrations configurable through the UI, ADR-0023).
-	if v := mustSchemaVersion(t, d); v != 27 {
-		t.Errorf("versão após up = %d, quero 27", v)
+	// The expected version comes from the EMBEDDED migrations instead of a literal: a new
+	// migration must not require editing this assertion (it did, every time).
+	alvo, err := versaoEmbarcada()
+	if err != nil {
+		t.Fatalf("versaoEmbarcada: %v", err)
+	}
+	if v := mustSchemaVersion(t, d); v != alvo {
+		t.Errorf("versão após up = %d, quero %d (última migration embarcada)", v, alvo)
 	}
 
 	// The seed migration created the metadata table with one row.
@@ -181,7 +187,15 @@ func TestMigrateDown(t *testing.T) {
 		t.Fatalf("Migrate: %v", err)
 	}
 
+	alvo, err := versaoEmbarcada()
+	if err != nil {
+		t.Fatalf("versaoEmbarcada: %v", err)
+	}
 	// Down reverts one migration at a time, from the top down to the base.
+	downPara(t, d, alvo-1) // 0028: removes match_suggestion (the "did you mean this?" hint).
+	querFalha(t, d, "SELECT 1 FROM match_suggestion",
+		"tabela match_suggestion ainda existe após o down do 0028")
+
 	downPara(t, d, 26) // 0027: reverts the cron of the midias_faltantes job from 0h05 back to 0h04.
 
 	downPara(t, d, 25) // 0026: removes integration_config.

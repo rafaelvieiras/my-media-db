@@ -186,6 +186,15 @@ type Entidade struct {
 	// boundary as Ancestors), because the aggregation walks entity_relation.
 	Ownership *OwnershipInfo `json:"ownership"`
 
+	// MatchSuggestion is the "did you mean this?" hint the SCANNER persisted for an item
+	// that is still unidentified: the name on disk found nothing, but a cheaper variant of
+	// it (one token less) did. It is a HINT, never an identity -- the owner decides, and the
+	// action behind it is the existing POST /entities/{id}/confirm-candidate. Absent
+	// (omitempty) when there is no hint, which is the normal case. Annotated in the server
+	// after resolution (same boundary as Ancestors/Ownership): it lives in its own table
+	// (match_suggestion), not in the entity.
+	MatchSuggestion *MatchSuggestion `json:"match_suggestion,omitempty"`
+
 	// Orderings are the available episode display orders of a SERIES:
 	// the `default` (the default_season_type recorded on import) and the `available`
 	// list (union of the `numbering` keys of the episodes + `absolute` when there is
@@ -1336,4 +1345,20 @@ func dedup(in []string) []string {
 // the ERASE signal in the presence-of-the-key rule (R6).
 func ehNull(raw json.RawMessage) bool {
 	return bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
+}
+
+// MatchSuggestion is a candidate the scanner found for a name it could not resolve, kept
+// for the owner to accept or ignore. Source/SourceID identify the CANDIDATE (the entity
+// itself has no identity yet).
+type MatchSuggestion struct {
+	Source    string  `json:"source"`
+	SourceID  string  `json:"source_id"`
+	Title     string  `json:"title"`
+	Year      *string `json:"year"`
+	PosterURL *string `json:"poster_url"`
+	// Score is the similarity [0,100] between the name ON DISK and the candidate: it says
+	// how plausible the hint is, and it is what the UI uses to sort/justify it.
+	Score int `json:"score"`
+	// Query is the variant that found it (e.g. "2 Broke"), so the hint can explain itself.
+	Query string `json:"query"`
 }

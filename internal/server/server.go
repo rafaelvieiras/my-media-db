@@ -869,6 +869,9 @@ func (s *Server) Handler() (http.Handler, error) {
 				// threshold -- an informed human decision, a third endpoint, not a
 				// rework of /confirm nor /correct.
 				ent.Get("/{id}/match-preview", s.matchPreview)
+				// The SUGGESTED MATCH hint (migration 0028): dismissed by the owner.
+				// 204, idempotent; 404 only when the entity does not exist.
+				ent.Delete("/{id}/match-suggestion", s.deleteMatchSuggestion)
 				ent.Post("/{id}/confirm-candidate", s.confirmCandidate)
 
 				// Quick actions ON DEMAND for ONE item open in the detail:

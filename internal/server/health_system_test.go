@@ -117,8 +117,14 @@ func TestSystemHealthShapeCompleto(t *testing.T) {
 	if out.Database.SizeBytes != pageCount*pageSize {
 		t.Errorf("database.size_bytes = %d, quero %d (page_count*page_size)", out.Database.SizeBytes, pageCount*pageSize)
 	}
-	if out.Database.SchemaVersion != 27 {
-		t.Errorf("database.schema_version = %d, quero 27", out.Database.SchemaVersion)
+	// Compared with the database's own migrated version: a new migration must not require
+	// editing this assertion.
+	migrado, err := d.SchemaVersion(context.Background())
+	if err != nil {
+		t.Fatalf("SchemaVersion: %v", err)
+	}
+	if out.Database.SchemaVersion != migrado {
+		t.Errorf("database.schema_version = %d, quero %d (schema migrado)", out.Database.SchemaVersion, migrado)
 	}
 
 	if len(out.Storage.Sources) != 1 {
@@ -377,7 +383,7 @@ func TestSystemHealthNaoAlteraHealthBasico(t *testing.T) {
 	_ = doSystemHealth(t, s)
 
 	basico := doHealth(t, s)
-	if basico.Status != "ok" || basico.Version != "v-teste" || !basico.DB.OK || basico.DB.Schema != 27 {
+	if basico.Status != "ok" || basico.Version != "v-teste" || !basico.DB.OK || basico.DB.Schema == 0 {
 		t.Errorf("GET /health mudou de shape/valor apos /health/system: %+v", basico)
 	}
 }

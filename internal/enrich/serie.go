@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/matching"
 	"github.com/rafaelvieiras/my-media-db/internal/naming"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 	"github.com/rafaelvieiras/my-media-db/internal/tvext"
@@ -492,6 +493,129 @@ func (s *Servico) ImportarSeriePorNome(ctx context.Context, nome string, langs [
 		return "", ErrSerieAmbigua // candidates existed, none exact-unique
 	}
 	return "", ErrSerieNaoEncontrada
+}
+
+// SugestaoDeSerie is a "did you mean this?" candidate: an item a CHEAPER VARIANT of the
+// name found after the literal name found nothing. It is never applied automatically --
+// the scanner persists it and the item screen offers the correction to the owner.
+type SugestaoDeSerie struct {
+	// Resultado is the candidate exactly as the source returned it (the UI shows its
+	// poster/title/year).
+	Resultado provider.ResultadoExterno
+	// Score is the similarity [0,100] between the name ON DISK and the candidate -- the
+	// misspelled name, not the variant, so the number means "how plausible this is".
+	Score float64
+	// Consulta is the variant query that found it (observability: it explains the guess).
+	Consulta string
+}
+
+// SugerirSerie searches for a candidate using CHEAPER VARIANTS of the name: with 2+ tokens,
+// it drops the first and the last token ("2 Broken Girls" -> "Broken Girls", "2 Broke").
+// The sources are literal, so a misspelled name returns zero for the full query and hits
+// with one token less.
+//
+// It only runs once the literal import already FAILED (the caller decides), it asks at most
+// len(variantes) x len(sources) times, and it returns ok=false when nothing reaches
+// matching.LimiarSugestao -- a weak hint is worse than none, because it would teach the
+// owner to ignore the warning. ok=false also when the name has less than 2 tokens: there is
+// nothing to drop.
+func (s *Servico) SugerirSerie(ctx context.Context, nome string, langs []string) (SugestaoDeSerie, bool) {
+	alvo := strings.TrimSpace(nome)
+	variantes := variantesDeNome(alvo)
+	if len(variantes) == 0 {
+		return SugestaoDeSerie{}, false
+	}
+	lang := langPrincipal(langs)
+	melhor := SugestaoDeSerie{}
+	for _, prov := range s.providers.All() {
+		if _, ok := prov.(provider.SerieProvider); !ok {
+			continue
+		}
+		for _, variante := range variantes {
+			res, err := prov.Buscar(ctx, variante, tipoSerie, lang)
+			if err != nil {
+				log.Printf("enrich: sugestao para %q (variante %q) na fonte %q falhou (segue): %v", alvo, variante, prov.Nome(), err)
+				continue
+			}
+			for _, r := range res {
+				if r.Type != tipoSerie {
+					continue
+				}
+				if score := pontuarSugestao(alvo, r); score > melhor.Score {
+					melhor = SugestaoDeSerie{Resultado: r, Score: score, Consulta: variante}
+				}
+			}
+		}
+	}
+	if melhor.Score < matching.LimiarSugestao {
+		return SugestaoDeSerie{}, false
+	}
+	return melhor, true
+}
+
+// variantesDeNome builds the cheaper queries to try when the literal name found nothing.
+//
+// MEASURED against TMDb with the case that motivated this ("2 Broken Girls" for "2 Broke
+// Girls"): the source matches word PREFIXES, so dropping tokens does NOT help ("2 Broken"
+// and "Broken Girls" both return nothing useful), while CUTTING the string until it becomes
+// a prefix of the real title does ("2 Brok" finds it). The ladder therefore mixes both:
+// drop the last token, drop the first, and two proportional cuts.
+//
+// Four queries is the cap on purpose: each one hits every source, and this runs only for an
+// item the owner actually opens (never for the whole review queue at scan time).
+func variantesDeNome(alvo string) []string {
+	tokens := strings.Fields(alvo)
+	if len(tokens) < 2 {
+		return nil
+	}
+	candidatas := []string{
+		strings.Join(tokens[:len(tokens)-1], " "), // drop the last token
+		strings.Join(tokens[1:], " "),             // drop the first token
+	}
+	for _, fracao := range []float64{0.6, 0.45} {
+		if corte, ok := corteDoNome(alvo, fracao); ok {
+			candidatas = append(candidatas, corte)
+		}
+	}
+	vistas := map[string]bool{strings.ToLower(alvo): true}
+	out := make([]string, 0, len(candidatas))
+	for _, c := range candidatas {
+		c = strings.TrimSpace(c)
+		if c == "" || vistas[strings.ToLower(c)] {
+			continue
+		}
+		vistas[strings.ToLower(c)] = true
+		out = append(out, c)
+	}
+	return out
+}
+
+// corteDoNome cuts the name at `fracao` of its length (never below the first token, so the
+// cut does not degenerate into a single leading article). It trims a trailing partial word
+// only when the cut lands right after a space.
+func corteDoNome(alvo string, fracao float64) (string, bool) {
+	n := int(float64(len(alvo)) * fracao)
+	if n < 2 || n >= len(alvo) {
+		return "", false
+	}
+	corte := strings.TrimSpace(alvo[:n])
+	if corte == "" || corte == alvo {
+		return "", false
+	}
+	return corte, true
+}
+
+// pontuarSugestao scores the candidate against the name ON DISK, considering the title in
+// the active language AND the original one -- the folder name usually carries the original
+// ("2 Broke Girls"), while the source answers with the localized title.
+func pontuarSugestao(alvo string, r provider.ResultadoExterno) float64 {
+	score, _ := matching.Pontuar(alvo, 0, r.Title, 0)
+	if r.TituloOriginal != "" {
+		if alt, _ := matching.Pontuar(alvo, 0, r.TituloOriginal, 0); alt > score {
+			score = alt
+		}
+	}
+	return score
 }
 
 // ImportarSeriePorID imports the series that the folder NAMES by id ("Series (2011)

@@ -59,8 +59,14 @@ func TestHealthComBanco(t *testing.T) {
 	if !got.DB.OK {
 		t.Error("db.ok = false, quero true")
 	}
-	if got.DB.Schema != 27 {
-		t.Errorf("db.schema = %d, quero 27", got.DB.Schema)
+	// The schema is compared with the DATABASE's own migrated version instead of a literal:
+	// a new migration must not require editing this assertion (it did, three times).
+	want, err := database.SchemaVersion(context.Background())
+	if err != nil {
+		t.Fatalf("SchemaVersion: %v", err)
+	}
+	if got.DB.Schema != want {
+		t.Errorf("db.schema = %d, quero %d (schema migrado)", got.DB.Schema, want)
 	}
 }
 

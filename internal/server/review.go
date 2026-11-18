@@ -215,6 +215,8 @@ func (s *Server) aplicarIdentidadeExterna(w http.ResponseWriter, ctx context.Con
 		respondFonteIndisponivel(w)
 		return false
 	}
+	// The item now has a REAL identity: the hint about the old (unresolved) state is over.
+	s.esquecerSugestao(ctx, id)
 	if err := s.finalizarRevisao(ctx, id); err != nil {
 		respondErroInterno(w)
 		return false

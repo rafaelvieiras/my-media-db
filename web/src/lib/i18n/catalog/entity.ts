@@ -41,6 +41,15 @@ export const entity = defineDomain({
     hero: {
       trailerOf: 'Trailer of {name}',
     },
+    suggestedMatch: {
+      title: 'Is this the right item?',
+      reason:
+        'The name on disk finds nothing in the sources. Searching for "{query}" found this candidate — it is a guess, so nothing was changed.',
+      apply: 'Fix match',
+      applying: 'Fixing…',
+      dismiss: 'Not this one',
+      error: 'Could not apply the suggestion.',
+    },
     section: {
       videos: 'Videos',
       similars: 'Similar',
@@ -340,6 +349,15 @@ export const entity = defineDomain({
     hero: {
       trailerOf: 'Trailer de {name}',
     },
+    suggestedMatch: {
+      title: 'É este o item certo?',
+      reason:
+        'O nome no disco não retorna nada nas fontes. Buscando por "{query}" apareceu este candidato — é um palpite, então nada foi alterado.',
+      apply: 'Corrigir Match',
+      applying: 'Corrigindo…',
+      dismiss: 'Não é este',
+      error: 'Não foi possível aplicar a sugestão.',
+    },
     section: {
       videos: 'Vídeos',
       similars: 'Similares',
@@ -638,6 +656,15 @@ export const entity = defineDomain({
     },
     hero: {
       trailerOf: 'Tráiler de {name}',
+    },
+    suggestedMatch: {
+      title: '¿Es este el ítem correcto?',
+      reason:
+        'El nombre en el disco no devuelve nada en las fuentes. Buscando «{query}» apareció este candidato — es una suposición, así que no se cambió nada.',
+      apply: 'Corregir coincidencia',
+      applying: 'Corrigiendo…',
+      dismiss: 'No es este',
+      error: 'No se pudo aplicar la sugerencia.',
     },
     section: {
       videos: 'Vídeos',

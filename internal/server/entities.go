@@ -784,6 +784,9 @@ func (s *Server) getEntity(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "entidade não encontrada")
 		return
 	}
+	// The scanner may have left a "did you mean this?" hint for this item: attach it to
+	// the resolved entity (server-annotated field, same boundary as Ancestors/Ownership).
+	resolvida.MatchSuggestion = s.sugestaoDeMatch(ctx, resolvida)
 	writeJSON(w, http.StatusOK, resolvida)
 }
 

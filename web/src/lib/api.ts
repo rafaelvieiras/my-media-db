@@ -594,6 +594,27 @@ export async function deleteOwnerOrder(id: string): Promise<void> {
   }
 }
 
+// ── Suggested match ("did you mean this?") ───────────────────────────────────
+
+// The hint the backend keeps for an item it could not resolve: a cheaper VARIANT of the name
+// on disk found this candidate. It is never applied on its own -- the action behind it is
+// `confirmCandidate(id, { method: 'external', ... })`, the same endpoint the review card
+// already uses.
+export type MatchSuggestion = components['schemas']['MatchSuggestion']
+
+// Dismisses the hint. The backend KEEPS the row (dismissed), so opening the item again
+// neither re-queries the sources nor brings the warning back. Idempotent: 204 even when
+// there was no hint.
+export async function dismissMatchSuggestion(id: string): Promise<void> {
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/match-suggestion`,
+    { method: 'DELETE' },
+  )
+  if (!res.ok) {
+    throw await erroDaResposta(res)
+  }
+}
+
 // ── Language settings ────────────────────────────────────────────────────────
 
 // Current language config (primary, fallback, allowed). When there is no
