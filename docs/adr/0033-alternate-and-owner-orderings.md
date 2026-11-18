@@ -77,10 +77,23 @@ The owner declares their own numbering, and it is stored like any other order:
   `media_file_entity.ordinal`.
 - It is a **projection**: choosing it renumbers what the UI shows and what the export writes. It
   never renames a file and never duplicates an episode.
-- Stored in `extension_data` (ADR-0005) — no migration. It becomes a table only if it earns its
-  own artwork or relations.
-- It is written **only** by the owner (an explicit endpoint), never by an import: a re-enrich
-  must not overwrite it.
+- Stored in the **override layer** (`media_override`, ADR-0004) under the `core.tv@1`
+  namespace — not in `extension_data`. The reason is narrow and decisive: a re-enrich rewrites
+  `extension_data` from the provider, so an owner number kept there would be erased by the next
+  import. The override layer is the one place the resolver already treats as final authority.
+  No migration: it becomes a table only if it earns its own artwork or relations.
+- It is written **only** by the owner, through `GET/PUT/DELETE /api/v1/entities/{id}/owner-order`,
+  never by an import. `PUT` validates the whole body before writing anything (unusable numbers,
+  a repeated `(season, number)`, an empty unit, an episode of another series, a repeated episode,
+  the two caps) and refuses with a stable `code`. Handlers edit only that key, so the owner's
+  other overrides survive both the write and the delete.
+- When it exists it becomes the series' **default order**, and the matcher tries it first:
+  `owner → default → other orders → absolute`. A file on a merged unit links its N episodes with
+  `ordinal` 0..N-1; where the owner order has no unit for a number, resolution falls through to
+  the provider orders as before.
+- Episodes of a merged unit come back from `GET /entities/{id}/episodes` with
+  `merged_episodes`/`merged_ordinal`, so the UI can show the number once and mark the position
+  of each episode inside it.
 
 ### 3. The TheTVDB key is deferred, not rejected
 
@@ -102,7 +115,10 @@ disjoint by construction, because TMDB keys always come from a name slug.
 - Cost of the import: up to 9 extra TMDB requests per series, once, and up to a few hundred
   extra `numbering` entries per episode in `extension_data` (the same order of magnitude TheTVDB
   would bring).
-- Known gap, to be handled with the editor: the ordering selector shows the **key**
-  (`blu-ray-order`). A human label per order (`order_labels` in `extension_data`) needs the
-  label to travel provider → server → UI, which is a cross-cutting change; until then the UI
-  prettifies the key.
+- **Editor**: a drawer on the series screen starts from the base order (one unit per episode),
+  merges the selected episodes into one unit, splits, moves, renumbers and edits a unit's
+  season/number. The rules are pure (`web/src/lib/owner-order-model.ts`) so the component stays a
+  view; the backend refuses invalid states anyway.
+- Still open: the ordering selector shows the **key** (`blu-ray-order`). A human label per order
+  (`order_labels` in `extension_data`) needs the label to travel provider → server → UI, which is
+  a cross-cutting change; until then the UI prettifies the key.
