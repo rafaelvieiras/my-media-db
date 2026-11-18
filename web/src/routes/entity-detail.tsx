@@ -1,7 +1,10 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { TriangleAlert } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { OwnerOrderEditor } from '@/components/owner-order-editor'
 import type { OrderingsInfo } from '@/lib/api'
 import {
   artworkQueryOptions,
@@ -172,6 +175,9 @@ function SecaoCompletudeIncompleta({ cc }: { cc: CatalogCompleteness }) {
 // shows the navigable season cards (the usual view); an alternative order
 // shows the sections of regrouped episodes. Switching the order navigates the search param
 // (going back to the default REMOVES the param — clean URL, without persistence).
+//
+// The OWNER order (ADR-0033) is always a grouped view, even when it is the default: its
+// seasons are not materialized, and its units may hold several episodes under one number.
 function SecaoSerie({
   id,
   orderings,
@@ -186,8 +192,12 @@ function SecaoSerie({
   const def = orderings?.default
   const mostrarSeletor = (orderings?.available.length ?? 0) > 1
   // "Alternative" order = chosen and != default. Only it fires the grouped view; the
-  // default (or absent) falls into the seasons view.
-  const alternativa = ordering && ordering !== def ? ordering : null
+  // default (or absent) falls into the seasons view — except the owner order, which is
+  // always grouped (its seasons are a projection, not entities).
+  const efetiva = ordering ?? def
+  const alternativa =
+    efetiva && (efetiva === 'owner' || efetiva !== def) ? efetiva : null
+  const [editorAberto, setEditorAberto] = useState(false)
 
   const trocar = (novo: string) => {
     navigate({
@@ -197,14 +207,31 @@ function SecaoSerie({
     })
   }
 
-  const seletor =
-    mostrarSeletor && def && orderings ? (
-      <SeletorOrdenacao
-        value={ordering ?? def}
-        options={orderings.available}
-        onChange={trocar}
+  const seletor = (
+    <div className="flex items-center gap-2">
+      {mostrarSeletor && def && orderings ? (
+        <SeletorOrdenacao
+          value={ordering ?? def}
+          options={orderings.available}
+          onChange={trocar}
+        />
+      ) : null}
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        onClick={() => setEditorAberto(true)}
+      >
+        {t('entity.edit.ownerOrder.trigger')}
+      </Button>
+      <OwnerOrderEditor
+        id={id}
+        base={def ?? 'official'}
+        open={editorAberto}
+        onOpenChange={setEditorAberto}
       />
-    ) : null
+    </div>
+  )
 
   if (alternativa) {
     return (
