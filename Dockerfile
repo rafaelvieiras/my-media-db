@@ -81,7 +81,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOARM=${TARGETVARIANT#v}
 # ffmpeg` must bring the package for the right arch (amd64/arm64/armv7) — only the
 # Go binary copied from builder-go already comes cross-compiled for that arch.
 # ---------------------------------------------------------------------------
-FROM alpine:3.22 AS final
+FROM alpine:3.24 AS final
 
 # RUNTIME dependencies:
 #   ffmpeg     → scanner ffprobe (ADR-0014). Without it the scan still
