@@ -1451,6 +1451,56 @@ func (q *Queries) ObterEntityPorImdb(ctx context.Context, externalIDImdb sql.Nul
 	return i, err
 }
 
+const obterEntityPorImdbTipo = `-- name: ObterEntityPorImdbTipo :one
+SELECT id, type, title, original_title, description, release_date,
+    status, tags_json, external_ids_json, extension_data_json,
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at,
+    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds, external_id_mbid
+FROM entity
+WHERE external_id_imdb = ? AND type = ?
+`
+
+type ObterEntityPorImdbTipoParams struct {
+	ExternalIDImdb sql.NullString
+	Type           string
+}
+
+// TYPE-SCOPED lookup by imdb id, same reasoning as ObterEntityPorTmdbTipo: imdb
+// episodes and titles share the tt space.
+func (q *Queries) ObterEntityPorImdbTipo(ctx context.Context, arg ObterEntityPorImdbTipoParams) (Entity, error) {
+	row := q.db.QueryRowContext(ctx, obterEntityPorImdbTipo, arg.ExternalIDImdb, arg.Type)
+	var i Entity
+	err := row.Scan(
+		&i.ID,
+		&i.Type,
+		&i.Title,
+		&i.OriginalTitle,
+		&i.Description,
+		&i.ReleaseDate,
+		&i.Status,
+		&i.TagsJson,
+		&i.ExternalIdsJson,
+		&i.ExtensionDataJson,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ExternalIDTmdb,
+		&i.ExternalIDImdb,
+		&i.OriginalLanguage,
+		&i.ExternalIDTvdb,
+		&i.LastExternalMatchAttemptAt,
+		&i.NfoPath,
+		&i.NfoWrittenAt,
+		&i.Watched,
+		&i.PlayCount,
+		&i.UserRating,
+		&i.LastPlayedAt,
+		&i.ResumePositionSeconds,
+		&i.ResumeTotalSeconds,
+		&i.ExternalIDMbid,
+	)
+	return i, err
+}
+
 const obterEntityPorMbid = `-- name: ObterEntityPorMbid :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
@@ -1649,6 +1699,59 @@ func (q *Queries) ObterEntityPorTmdb(ctx context.Context, externalIDTmdb sql.Nul
 	return i, err
 }
 
+const obterEntityPorTmdbTipo = `-- name: ObterEntityPorTmdbTipo :one
+SELECT id, type, title, original_title, description, release_date,
+    status, tags_json, external_ids_json, extension_data_json,
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at,
+    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds, external_id_mbid
+FROM entity
+WHERE external_id_tmdb = ? AND type = ?
+`
+
+type ObterEntityPorTmdbTipoParams struct {
+	ExternalIDTmdb sql.NullString
+	Type           string
+}
+
+// TYPE-SCOPED lookup by tmdb id. TMDB episode ids and series ids live in the SAME
+// numeric space (measured: series 13943 = Beavis and Butt-Head, episode 13943 =
+// Everybody Hates PSATs of series 252), so an unscoped lookup lets an episode import
+// reuse the series entity -- exactly the corruption that turned a series into an
+// episode-shaped entity holding 314 files.
+func (q *Queries) ObterEntityPorTmdbTipo(ctx context.Context, arg ObterEntityPorTmdbTipoParams) (Entity, error) {
+	row := q.db.QueryRowContext(ctx, obterEntityPorTmdbTipo, arg.ExternalIDTmdb, arg.Type)
+	var i Entity
+	err := row.Scan(
+		&i.ID,
+		&i.Type,
+		&i.Title,
+		&i.OriginalTitle,
+		&i.Description,
+		&i.ReleaseDate,
+		&i.Status,
+		&i.TagsJson,
+		&i.ExternalIdsJson,
+		&i.ExtensionDataJson,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ExternalIDTmdb,
+		&i.ExternalIDImdb,
+		&i.OriginalLanguage,
+		&i.ExternalIDTvdb,
+		&i.LastExternalMatchAttemptAt,
+		&i.NfoPath,
+		&i.NfoWrittenAt,
+		&i.Watched,
+		&i.PlayCount,
+		&i.UserRating,
+		&i.LastPlayedAt,
+		&i.ResumePositionSeconds,
+		&i.ResumeTotalSeconds,
+		&i.ExternalIDMbid,
+	)
+	return i, err
+}
+
 const obterEntityPorTvdb = `-- name: ObterEntityPorTvdb :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
@@ -1663,6 +1766,55 @@ WHERE external_id_tvdb = ?
 // imdb counterpart, e.g. Looney Tunes) dedupe through this path on import.
 func (q *Queries) ObterEntityPorTvdb(ctx context.Context, externalIDTvdb sql.NullString) (Entity, error) {
 	row := q.db.QueryRowContext(ctx, obterEntityPorTvdb, externalIDTvdb)
+	var i Entity
+	err := row.Scan(
+		&i.ID,
+		&i.Type,
+		&i.Title,
+		&i.OriginalTitle,
+		&i.Description,
+		&i.ReleaseDate,
+		&i.Status,
+		&i.TagsJson,
+		&i.ExternalIdsJson,
+		&i.ExtensionDataJson,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ExternalIDTmdb,
+		&i.ExternalIDImdb,
+		&i.OriginalLanguage,
+		&i.ExternalIDTvdb,
+		&i.LastExternalMatchAttemptAt,
+		&i.NfoPath,
+		&i.NfoWrittenAt,
+		&i.Watched,
+		&i.PlayCount,
+		&i.UserRating,
+		&i.LastPlayedAt,
+		&i.ResumePositionSeconds,
+		&i.ResumeTotalSeconds,
+		&i.ExternalIDMbid,
+	)
+	return i, err
+}
+
+const obterEntityPorTvdbTipo = `-- name: ObterEntityPorTvdbTipo :one
+SELECT id, type, title, original_title, description, release_date,
+    status, tags_json, external_ids_json, extension_data_json,
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at,
+    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds, external_id_mbid
+FROM entity
+WHERE external_id_tvdb = ? AND type = ?
+`
+
+type ObterEntityPorTvdbTipoParams struct {
+	ExternalIDTvdb sql.NullString
+	Type           string
+}
+
+// TYPE-SCOPED lookup by tvdb id, same reasoning as ObterEntityPorTmdbTipo.
+func (q *Queries) ObterEntityPorTvdbTipo(ctx context.Context, arg ObterEntityPorTvdbTipoParams) (Entity, error) {
+	row := q.db.QueryRowContext(ctx, obterEntityPorTvdbTipo, arg.ExternalIDTvdb, arg.Type)
 	var i Entity
 	err := row.Scan(
 		&i.ID,

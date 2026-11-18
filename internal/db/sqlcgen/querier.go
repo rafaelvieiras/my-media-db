@@ -800,6 +800,9 @@ type Querier interface {
 	// depth and to any relation kind (not hardcoded to music).
 	ObterEntityCard(ctx context.Context, id string) (ObterEntityCardRow, error)
 	ObterEntityPorImdb(ctx context.Context, externalIDImdb sql.NullString) (Entity, error)
+	// TYPE-SCOPED lookup by imdb id, same reasoning as ObterEntityPorTmdbTipo: imdb
+	// episodes and titles share the tt space.
+	ObterEntityPorImdbTipo(ctx context.Context, arg ObterEntityPorImdbTipoParams) (Entity, error)
 	// Lookup by external mbid (MusicBrainz) via generated column + index (ADR-0027
 	// item 6). Mirrors ObterEntityPorTmdb: used by the music vertical import
 	// for idempotent dedupe of artist/album/track by MBID.
@@ -816,10 +819,18 @@ type Querier interface {
 	ObterEntityPorTituloTipo(ctx context.Context, arg ObterEntityPorTituloTipoParams) (Entity, error)
 	// Lookup by external tmdb id via generated column + index (doc 04, search without GIN).
 	ObterEntityPorTmdb(ctx context.Context, externalIDTmdb sql.NullString) (Entity, error)
+	// TYPE-SCOPED lookup by tmdb id. TMDB episode ids and series ids live in the SAME
+	// numeric space (measured: series 13943 = Beavis and Butt-Head, episode 13943 =
+	// Everybody Hates PSATs of series 252), so an unscoped lookup lets an episode import
+	// reuse the series entity -- exactly the corruption that turned a series into an
+	// episode-shaped entity holding 314 files.
+	ObterEntityPorTmdbTipo(ctx context.Context, arg ObterEntityPorTmdbTipoParams) (Entity, error)
 	// Lookup by external tvdb id via generated column + index (migration 0007, ADR-0021).
 	// Mirrors ObterEntityPorTmdb: series exclusive to TheTVDB (no tmdb/
 	// imdb counterpart, e.g. Looney Tunes) dedupe through this path on import.
 	ObterEntityPorTvdb(ctx context.Context, externalIDTvdb sql.NullString) (Entity, error)
+	// TYPE-SCOPED lookup by tvdb id, same reasoning as ObterEntityPorTmdbTipo.
+	ObterEntityPorTvdbTipo(ctx context.Context, arg ObterEntityPorTvdbTipoParams) (Entity, error)
 	ObterEntityRelation(ctx context.Context, id string) (EntityRelation, error)
 	// Reads the cache of ONE external item by the logical key (source, source_id).
 	// fetched_at and langs_json feed the refresh decision (TTL + language set) in the app.
