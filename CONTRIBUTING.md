@@ -143,6 +143,12 @@ When a metric shows *não medido*, the full output of the failing command is in
 | `make gate-local` | Full ratchet with human output, before a commit |
 | `make gate` | Ratchet in CI mode (Markdown) |
 
+The collectors of a side run **in parallel** (vitest, `tsc`, ESLint, jscpd and
+`npm audit` are independent; so are the two Go suites): a side costs its slowest
+collector, not the sum. In CI the two sides run in separate jobs and a third job
+merges their partial reports — `--side=go|web --out=<file>` measures one side,
+`--report=<a>,<b>` merges them and prints the single table.
+
 Do not run `make baseline`. Only the maintainer advances the baseline, and only
 after a genuine improvement.
 

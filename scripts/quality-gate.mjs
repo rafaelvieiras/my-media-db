@@ -37,7 +37,7 @@
  */
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
-import { execSync, spawnSync } from 'node:child_process';
+import { execSync, spawn, spawnSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -230,6 +230,39 @@ function run(cmd, opts = {}) {
   }
 }
 
+// Same contract as run(), but does not block the event loop.
+//
+// The collectors of one side are INDEPENDENT: vitest does not read tsc's output,
+// `go test ./...` does not read golangci-lint's report. Running them one after the
+// other made the side cost the SUM of the collectors; started together, it costs
+// the SLOWEST one (plus CPU contention, which is why this is measured and not
+// assumed).
+//
+// `run()` stays synchronous for the few callers that are not collectors (git
+// commands, the diff base) and for the sequential steps inside a collector
+// (`go test` → `go tool cover` reads the profile the first one wrote).
+function runAsync(cmd, opts = {}) {
+  return new Promise((resolve) => {
+    const child = spawn(cmd, {
+      cwd: opts.cwd ?? ROOT,
+      shell: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: process.env,
+    });
+    const CAP = 64 * 1024 * 1024;
+    let stdout = '';
+    let stderr = '';
+    let resolvido = false;
+    const concluir = (r) => {
+      if (!resolvido) { resolvido = true; resolve(r); }
+    };
+    child.stdout.on('data', (d) => { if (stdout.length < CAP) stdout += d.toString(); });
+    child.stderr.on('data', (d) => { if (stderr.length < CAP) stderr += d.toString(); });
+    child.on('error', (e) => concluir({ code: 1, stdout, stderr: `${stderr}\n${e?.message ?? e}` }));
+    child.on('close', (code, signal) => concluir({ code: code ?? (signal ? 1 : 0), stdout, stderr }));
+  });
+}
+
 function countNonEmptyLines(s) {
   return s.split('\n').filter((l) => l.trim() !== '').length;
 }
@@ -279,16 +312,16 @@ function falhou(key, stdout, stderr, message) {
 // Coverage: go test -coverprofile → go tool cover -func → total %.
 // go test/gofmt always exist (they ship with Go). If the tests fail to
 // compile/run, the metric becomes FALHOU (blocking) — it never crashes.
-function collectGoCoverage() {
+async function collectGoCoverage() {
   const profile = join(REPORTS, 'go-coverage.out');
-  const t = run(`go test ./... -coverprofile="${profile}" -covermode=set`);
+  const t = await runAsync(`go test ./... -coverprofile="${profile}" -covermode=set`);
   if (t.code !== 0) {
     return falhou('go_coverage_lines', t.stdout, t.stderr, 'go test falhou — cobertura NÃO MEDIDA (bloqueante):');
   }
   if (!existsSync(profile)) {
     return falhou('go_coverage_lines', t.stdout, t.stderr, 'go test passou mas não gerou o perfil de cobertura — cobertura NÃO MEDIDA:');
   }
-  const f = run(`go tool cover -func="${profile}"`);
+  const f = await runAsync(`go tool cover -func="${profile}"`);
   if (f.code !== 0) {
     return falhou('go_coverage_lines', f.stdout, f.stderr, 'go tool cover falhou — cobertura NÃO MEDIDA:');
   }
@@ -304,8 +337,8 @@ function collectGoCoverage() {
 // number). A metric SEPARATE from the unit one on purpose (journey × branch).
 // It runs with -count=1 (the go test cache has masked a failure before). null
 // when it skips (it never crashes).
-function collectE2ECoverage() {
-  const listed = run('go list ./internal/...');
+async function collectE2ECoverage() {
+  const listed = await runAsync('go list ./internal/...');
   if (listed.code !== 0) {
     return falhou('e2e_coverage_lines', listed.stdout, listed.stderr, 'go list falhou — cobertura E2E NÃO MEDIDA:');
   }
@@ -317,7 +350,7 @@ function collectE2ECoverage() {
     return falhou('e2e_coverage_lines', listed.stdout, listed.stderr, 'nenhum pacote para -coverpkg — cobertura E2E NÃO MEDIDA:');
   }
   const profile = join(REPORTS, 'e2e-coverage.out');
-  const t = run(
+  const t = await runAsync(
     `go test ./internal/e2e/... -coverpkg="${pkgs.join(',')}" -covermode=set -coverprofile="${profile}" -count=1`,
   );
   if (t.code !== 0) {
@@ -326,7 +359,7 @@ function collectE2ECoverage() {
   if (!existsSync(profile)) {
     return falhou('e2e_coverage_lines', t.stdout, t.stderr, 'go test das jornadas passou mas não gerou o perfil — cobertura E2E NÃO MEDIDA:');
   }
-  const f = run(`go tool cover -func="${profile}"`);
+  const f = await runAsync(`go tool cover -func="${profile}"`);
   if (f.code !== 0) {
     return falhou('e2e_coverage_lines', f.stdout, f.stderr, 'go tool cover (e2e) falhou — cobertura E2E NÃO MEDIDA:');
   }
@@ -337,9 +370,9 @@ function collectE2ECoverage() {
 }
 
 // gofmt -l: number of unformatted .go files. Always available.
-function collectGofmt() {
+async function collectGofmt() {
   // Restricted to the Go code directories so it does not walk node_modules.
-  const r = run('gofmt -l cmd internal');
+  const r = await runAsync('gofmt -l cmd internal');
   // gofmt exits != 0 on a parse error, and it prints nothing to stdout in that
   // case — counting lines would report "0 files unformatted", i.e. perfect
   // formatting, for a file it could not even read.
@@ -350,7 +383,7 @@ function collectGofmt() {
 }
 
 // golangci-lint (OPTIONAL): counts the Issues in the JSON. v2 uses --output.json.path.
-function collectGolangciLint() {
+async function collectGolangciLint() {
   if (!commandExists('golangci-lint')) {
     // Absent tool = skip BY DESIGN (it is optional; local machines may not have it).
     // CI installs it and verifies it in its own step, so where the verdict matters
@@ -361,7 +394,7 @@ function collectGolangciLint() {
   const out = join(REPORTS, 'golangci.json');
   // We write the JSON to a file (not to stdout) because golangci-lint v2
   // also prints a human summary ("N issues.") to stdout, which would dirty the JSON.
-  const r = run(`golangci-lint run --config .golangci.yml --output.json.path "${out}" ./...`);
+  const r = await runAsync(`golangci-lint run --config .golangci.yml --output.json.path "${out}" ./...`);
   // exit 1 = found issues (expected); it is only a real failure if the file does
   // not exist.
   if (!existsSync(out)) {
@@ -381,12 +414,12 @@ function collectGolangciLint() {
 // govulncheck (OPTIONAL): stream of JSON objects. We count distinct OSVs with
 // at least one reachable "finding" (top frame with a function) — the same thing
 // govulncheck reports as "your code is affected by N vulnerabilities".
-function collectGovulncheck() {
+async function collectGovulncheck() {
   if (!commandExists('govulncheck')) {
     warn('govulncheck não está no PATH — métrica "go_vuln_high" pulada (instale com: go install golang.org/x/vuln/cmd/govulncheck@latest)');
     return null;
   }
-  const r = run('govulncheck -json ./...');
+  const r = await runAsync('govulncheck -json ./...');
   if (r.code !== 0 && !r.stdout.trim()) {
     return falhou('go_vuln_high', r.stdout, r.stderr, 'govulncheck falhou sem saída — vulnerabilidades NÃO MEDIDAS (bloqueante):');
   }
@@ -402,12 +435,12 @@ function collectGovulncheck() {
 }
 
 // gocyclo (OPTIONAL): number of functions above the limit 10.
-function collectGocyclo() {
+async function collectGocyclo() {
   if (!commandExists('gocyclo')) {
     warn('gocyclo não está no PATH — métrica "go_cyclo_violations" pulada (instale com: go install github.com/fzipp/gocyclo/cmd/gocyclo@latest)');
     return null;
   }
-  const r = run('gocyclo -over 10 cmd internal');
+  const r = await runAsync('gocyclo -over 10 cmd internal');
   // gocyclo exits 1 when there are violations; the output (one line per function)
   // is what counts.
   return countNonEmptyLines(r.stdout);
@@ -442,12 +475,12 @@ function splitJsonStream(raw) {
 // ─── Web collectors (run in web/) ────────────────────────────────────────────
 
 // jscpd over web/src → duplication percentage.
-function collectWebDuplication() {
+async function collectWebDuplication() {
   if (!existsSync(WEB)) { warn('web/ não encontrado — duplicação pulada'); return null; }
   const outDir = join(REPORTS, 'jscpd');
   mkdirSync(outDir, { recursive: true });
   // Runs in web/, points the output to reports/jscpd at the root.
-  const r = run(`npx --yes jscpd src --reporters json --output "${outDir}" --silent`, { cwd: WEB });
+  const r = await runAsync(`npx --yes jscpd src --reporters json --output "${outDir}" --silent`, { cwd: WEB });
   const reportPath = join(outDir, 'jscpd-report.json');
   if (!existsSync(reportPath)) {
     return falhou('web_duplicate_percent', r.stdout, r.stderr, 'jscpd rodou e não gerou relatório — duplicação NÃO MEDIDA (bloqueante):');
@@ -462,9 +495,9 @@ function collectWebDuplication() {
 }
 
 // npm audit --json in web → number of "critical" vulnerabilities.
-function collectWebAuditCritical() {
+async function collectWebAuditCritical() {
   if (!existsSync(WEB)) { warn('web/ não encontrado — audit pulado'); return null; }
-  const r = run('npm audit --json', { cwd: WEB });
+  const r = await runAsync('npm audit --json', { cwd: WEB });
   const raw = r.stdout.trim();
   if (!raw) {
     return falhou('web_audit_critical', r.stdout, r.stderr, 'npm audit não produziu saída — auditoria NÃO MEDIDA (bloqueante):');
@@ -492,9 +525,9 @@ function collectWebAuditCritical() {
 // errors; otherwise, it counts the occurrences of "error TSxxxx" in the output. Guards
 // against regression of the generated shape (e.g.: outdated guard-test fixture),
 // which vitest (esbuild, no type-check) and eslint do not catch.
-function collectWebTypecheck() {
+async function collectWebTypecheck() {
   if (!existsSync(WEB)) { warn('web/ não encontrado — type-check pulado'); return null; }
-  const r = run('npx --yes tsc -b --force', { cwd: WEB });
+  const r = await runAsync('npx --yes tsc -b --force', { cwd: WEB });
   if (r.code === 0) return 0;
   const saida = `${r.stdout}\n${r.stderr}`;
   const m = saida.match(/error TS\d+/g);
@@ -509,9 +542,9 @@ function collectWebTypecheck() {
 // ESLint (flat config in web/): runs `eslint . -f json`, sums errors + warnings
 // from all files. eslint exits 1 when it finds a problem — that is expected; it is
 // only a real failure if the JSON cannot be read/parsed.
-function collectWebLint() {
+async function collectWebLint() {
   if (!existsSync(WEB)) { warn('web/ não encontrado — lint pulado'); return null; }
-  const r = run('npx --yes eslint . -f json', { cwd: WEB });
+  const r = await runAsync('npx --yes eslint . -f json', { cwd: WEB });
   const raw = r.stdout.trim();
   if (!raw) {
     return falhou('web_lint_issues', r.stdout, r.stderr, 'eslint não produziu saída JSON — lint NÃO MEDIDO (bloqueante):');
@@ -534,9 +567,9 @@ function collectWebLint() {
 // Web coverage (vitest + v8): runs `npm run test:coverage` in web/, reads
 // coverage/coverage-summary.json → total.lines.pct. If the file is not generated
 // (or the tests fail to produce the summary), the metric is FALHOU (blocking).
-function collectWebCoverage() {
+async function collectWebCoverage() {
   if (!existsSync(WEB)) { warn('web/ não encontrado — cobertura pulada'); return null; }
-  const r = run('npm run test:coverage', { cwd: WEB });
+  const r = await runAsync('npm run test:coverage', { cwd: WEB });
   const summary = join(WEB, 'coverage', 'coverage-summary.json');
   if (!existsSync(summary)) {
     return falhou('web_coverage_lines', r.stdout, r.stderr, 'vitest não gerou coverage-summary.json — cobertura web NÃO MEDIDA (bloqueante):');
@@ -564,13 +597,13 @@ const E2E_ARTIFACTS = join(ROOT, 'e2e', '.artifacts');
 // Reads the textfmt profile that `coberturaBinario()` (e2e/global-teardown.ts)
 // writes and extracts the aggregate total via `go tool cover -func`, like the Go
 // collectors.
-function collectE2EBinaryCoverage() {
+async function collectE2EBinaryCoverage() {
   const perfil = join(E2E_ARTIFACTS, 'e2e-binary-coverage.txt');
   if (!existsSync(perfil)) {
     warn('e2e/.artifacts/e2e-binary-coverage.txt não encontrado — rode `make e2e-cov` antes; métrica "e2e_binary_coverage_lines" pulada');
     return null;
   }
-  const f = run(`go tool cover -func="${perfil}"`);
+  const f = await runAsync(`go tool cover -func="${perfil}"`);
   if (f.code !== 0) {
     return falhou('e2e_binary_coverage_lines', f.stdout, f.stderr, 'go tool cover falhou sobre o perfil E2E — cobertura do binário NÃO MEDIDA:');
   }
@@ -582,7 +615,7 @@ function collectE2EBinaryCoverage() {
 
 // Reads the `{ linesPct }` JSON that `coberturaFront()` (e2e/global-teardown.ts) writes
 // from the monocart report.
-function collectE2EFrontCoverage() {
+async function collectE2EFrontCoverage() {
   const arquivo = join(E2E_ARTIFACTS, 'e2e-front-coverage.json');
   if (!existsSync(arquivo)) {
     warn('e2e/.artifacts/e2e-front-coverage.json não encontrado — rode `make e2e-cov` antes; métrica "e2e_front_coverage_lines" pulada');
@@ -636,7 +669,7 @@ const SIDE_SKIP_REASONS = {
 // the collector calls for that side entirely (it does not run the command and
 // leaves the metric null) — reusing the null handling that already exists in
 // compareMetrics/printLocal/printMarkdown.
-function collectMetrics(touches = { touchesGo: true, touchesWeb: true }, opts = {}) {
+async function collectMetrics(touches = { touchesGo: true, touchesWeb: true }, opts = {}) {
   const { fast = false, side = null } = opts;
   mkdirSync(REPORTS, { recursive: true });
   const metrics = {};
@@ -661,24 +694,39 @@ function collectMetrics(touches = { touchesGo: true, touchesWeb: true }, opts = 
       }
       continue;
     }
-    log(`${c.dim}Coletando métricas ${SIDE_LABELS[side]}...${c.reset}`);
+    log(`${c.dim}Coletando métricas ${SIDE_LABELS[side]} (em paralelo)...${c.reset}`);
+    const tarefas = [];
     for (const [key, def] of Object.entries(METRIC_DEFS)) {
       if (def.side !== side) continue;
       if (fast && !FAST_METRIC_KEYS.has(key)) {
         metrics[key] = null;
         continue;
       }
-      metrics[key] = COLLECTORS[key]();
+      tarefas.push([key, COLLECTORS[key]]);
     }
+    // Started together, collected together: the side costs its slowest collector.
+    // The values are assigned AFTER all finish so the report order stays the
+    // METRIC_DEFS order, never the completion order.
+    // A collector that THROWS is a measurement that failed, not a crash of the gate:
+    // one broken collector must not take the other five down with it.
+    const resultados = await Promise.all(tarefas.map(async ([key, coletor]) => {
+      try {
+        return [key, await coletor()];
+      } catch (e) {
+        warn(`coletor de "${key}" lançou exceção (${e?.message ?? e}) — métrica NÃO MEDIDA`);
+        return [key, FALHOU];
+      }
+    }));
+    for (const [key, valor] of resultados) metrics[key] = valor;
   }
 
   return metrics;
 }
 
 // ─── Baseline generation ─────────────────────────────────────────────────────
-function generateBaseline() {
+async function generateBaseline() {
   log(`${c.bold}Gerando baseline de qualidade para ${PROJECT}...${c.reset}\n`);
-  const novasMetricas = collectMetrics();
+  const novasMetricas = await collectMetrics();
 
   // Always merges on top of the existing baseline.json (if any) — never
   // overwrites from scratch. Needed because `--generate-baseline --e2e` only
@@ -950,8 +998,8 @@ function mergedReport(baseline) {
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────
-function main() {
-  if (isGenBaseline) { generateBaseline(); return; }
+async function main() {
+  if (isGenBaseline) { await generateBaseline(); return; }
 
   if (!existsSync(BASELINE_PATH)) {
     warn('baseline.json não encontrado. Rode: make baseline');
@@ -989,7 +1037,7 @@ function main() {
     return;
   }
 
-  const current = collectMetrics(touches, { fast: isFast, side: onlySide });
+  const current = await collectMetrics(touches, { fast: isFast, side: onlySide });
   if (outFile) {
     // Partial report consumed by the merge job (see mergedReport).
     mkdirSync(dirname(outFile), { recursive: true });
@@ -1002,4 +1050,4 @@ function main() {
   if (!passed) process.exit(1);
 }
 
-main();
+await main();
