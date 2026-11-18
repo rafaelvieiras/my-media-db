@@ -97,8 +97,10 @@ That activates three hooks:
 - **`pre-push`** runs the ratchet and stops the push on a blocking regression.
 - **`commit-msg`** checks the Conventional Commits format.
 
-**Tools for `pre-push`.** The ratchet needs these tools on your `PATH`. When one
-is missing, the metric is skipped with a warning instead of failing the gate:
+**Tools for `pre-push`.** The ratchet needs these tools on your `PATH`. These
+three are optional: when one is missing, its metric is skipped with a warning
+instead of failing the gate (CI installs all three and verifies them, so the PR
+always measures them):
 
 ```bash
 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
@@ -111,13 +113,26 @@ go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
 
 **Web tools.** The front end has ESLint and vitest with v8 coverage. The ratchet
 reads line coverage (blocking) and ESLint issue count (warning). Install the web
-dependencies first, otherwise those two metrics are skipped:
+dependencies first — without them those collectors cannot run, which is a
+**blocking** "not measured", not a skip:
 
 ```bash
 cd web && npm install
 npm run lint
 npm run test:coverage     # writes web/coverage/coverage-summary.json
 ```
+
+**Measured, skipped, or not measured.** Three different things
+(see [ADR-0036](docs/adr/0036-gate-unknown-is-not-fine.md)):
+
+| result | meaning | blocks? |
+| --- | --- | --- |
+| a number | the collector measured it | only if it got worse than `baseline.json` |
+| *pulada* | skipped on purpose: the side was not touched by the diff, `--fast`, or the metric belongs to another workflow | no |
+| *não medido* | the collector ran and could not produce a result (suite does not compile, tool missing, report not written) | **yes** |
+
+When a metric shows *não medido*, the full output of the failing command is in
+`reports/<metric>-failure.log`.
 
 **Commands** (Makefile at the root):
 

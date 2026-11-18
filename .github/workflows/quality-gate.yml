@@ -100,6 +100,21 @@ jobs:
       - name: Put the Go quality tools on PATH
         run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
+      # These three are OPTIONAL for the gate: a collector that cannot find its tool
+      # skips the metric instead of blocking (right on a dev machine, wrong in CI).
+      # Verify them here, so a corrupted cache or a silent install failure becomes a
+      # red step instead of a metric that quietly disappears from the table.
+      - name: Verify the Go quality tools
+        run: |
+          set -euo pipefail
+          for tool in golangci-lint govulncheck gocyclo; do
+            if ! command -v "$tool" >/dev/null 2>&1; then
+              echo "::$tool não está no PATH — o gate pularia a métrica. Abortando."
+              exit 1
+            fi
+            echo "ok: $tool ($(command -v "$tool"))"
+          done
+
       # The internal/mediainfo package has an integration test that runs ffprobe
       # FOR REAL (it generates a clip with ffmpeg); it skips itself when the
       # binaries are missing. Without ffmpeg on the runner that path stays
