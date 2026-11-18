@@ -1,9 +1,23 @@
 # quality-gate.yml — MyMediaDB unified quality ratchet (Go + TS).
 #
-# Runs the same `scripts/quality-gate.mjs` as the local pre-push, now in CI
-# mode (Markdown output). Blocks the merge on a blocking regression and comments the
+# Runs the same `scripts/quality-gate.mjs` as the local pre-push, now in CI mode
+# (Markdown output). Blocks the merge on a blocking regression and comments the
 # metrics table on the PR (sticky comment). The gate is dev/CI tooling and does not
 # enter the production image.
+#
+# THREE jobs instead of one, because the two sides are independent work:
+#
+#   go      measures the Go side (unit coverage, journey coverage, gofmt, lint,
+#           vulns, gocyclo) in web-less runner.
+#   web     measures the Web side (coverage, type-check, lint, duplication, audit).
+#   report  merges the two partial reports, comments ONE table on the PR and owns the
+#           verdict. Its name is kept as `Quality Gate (Go + TS)` on purpose: it is
+#           the check the branch protection points at, and the split must not change
+#           what a merge is waiting for.
+#
+# Wall time is the MAXIMUM of the two sides instead of their sum. Measured on the run
+# before the split: 272 s total, of which 52 s was compiling golangci-lint from source
+# (`go install`), 18 s was ffmpeg, 47 s was `npm ci` and 144 s was the gate itself.
 
 name: Quality Gate
 
@@ -17,46 +31,74 @@ permissions:
   contents: read
   pull-requests: write
 
+# A new push to the same PR makes the previous run pointless: cancel it instead of
+# paying for two full ratchets. `cancel-in-progress` is safe here because the gate is
+# read-only (it comments and uploads artifacts, nothing else).
+concurrency:
+  group: quality-gate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # EXACT patches, bumped deliberately (see the comments in each job).
+  GO_VERSION: '1.26.11'
+  NODE_VERSION: '24'
+  GOLANGCI_LINT_VERSION: 'v2.12.2'
+  GOVULNCHECK_VERSION: 'v1.6.0'
+  GOCYCLO_VERSION: 'v0.6.0'
+
 jobs:
-  quality-gate:
-    name: Quality Gate (Go + TS)
-    runs-on: ubuntu-latest
+  go:
+    name: Gate — Go
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
+          # The gate diffs against the base of the PR/push, so it needs the history.
           fetch-depth: 0
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           # EXACT patch (= go.mod toolchain). Do not use '1.26.x': the runner
           # resolves through the cache and may land on an earlier patch with a
           # stdlib vuln already fixed in the current pin, and govulncheck flags it
           # as blocking. Pinning also guarantees deterministic coverage in the
           # ratchet. Bump it together with the go.mod toolchain.
-          go-version: '1.26.11'
+          go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      # The three tools are pinned (do not use @latest): a new linter release may
+      # introduce checks that find new issues, or gocyclo may count differently,
+      # breaking the ratchet with no code change. Bump consciously, after
+      # revalidating the baseline.
+      #
+      # The binaries are cached by version, so the install only happens when a
+      # version changes. On a miss, golangci-lint is a PREBUILT download: `go install`
+      # compiles it from source and that alone cost 52 s of every run.
+      - name: Cache the Go quality tools
+        id: gotools
+        uses: actions/cache@v6
         with:
-          node-version: '24'
-          cache: 'npm'
-          cache-dependency-path: web/package-lock.json
+          path: ~/go/bin
+          key: gotools-${{ runner.os }}-${{ env.GOLANGCI_LINT_VERSION }}-${{ env.GOVULNCHECK_VERSION }}-${{ env.GOCYCLO_VERSION }}
 
-      - name: Install Go quality tools
-        # PINNED versions (do not use @latest): a new linter release may
-        # introduce checks that find new issues, or gocyclo may count
-        # differently, breaking the ratchet with no code change. Pinning guarantees
-        # determinism; bump it consciously after revalidating the baseline
-        # (0 issues / 0 vulns / 4 funcs > gocyclo 10).
+      - name: Install the Go quality tools
+        if: steps.gotools.outputs.cache-hit != 'true'
         run: |
-          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
-          go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
-          go install github.com/fzipp/gocyclo/cmd/gocyclo@v0.6.0
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          set -euo pipefail
+          ver="${GOLANGCI_LINT_VERSION#v}"
+          curl -fsSL "https://github.com/golangci/golangci-lint/releases/download/${GOLANGCI_LINT_VERSION}/golangci-lint-${ver}-linux-amd64.tar.gz" \
+            | tar -xz -C /tmp
+          install "/tmp/golangci-lint-${ver}-linux-amd64/golangci-lint" "$(go env GOPATH)/bin/"
+          go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+          go install "github.com/fzipp/gocyclo/cmd/gocyclo@${GOCYCLO_VERSION}"
+
+      # Always, cache hit or not: restoring the bin directory does not put it on PATH.
+      - name: Put the Go quality tools on PATH
+        run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       # The internal/mediainfo package has an integration test that runs ffprobe
       # FOR REAL (it generates a clip with ffmpeg); it skips itself when the
@@ -64,31 +106,160 @@ jobs:
       # uncovered and the Go total drops ~0.3% (73.9% vs 74.2% of the baseline,
       # captured with ffmpeg present). Installing ffmpeg makes CI reproduce the
       # baseline and exercise the integration.
-      - name: Install ffmpeg (teste real do ffprobe)
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      # --no-install-recommends: the recommends of ffmpeg are not needed by a CLI
+      # test and pull in a pile of GUI libraries that only cost download time.
+      - name: Install ffmpeg (real ffprobe test)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg
 
-      - name: Install web dependencies
-        working-directory: web
-        run: npm ci
+      # Only the `node` runtime: the gate script uses node: builtins and never
+      # imports a package, so this job does not install web dependencies at all.
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
 
-      - name: Run quality gate (CI / Markdown)
+      - name: Run the Go side of the gate
         id: gate
         env:
           GATE_DIFF_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-        run: node scripts/quality-gate.mjs
+        run: node scripts/quality-gate.mjs --side=go --out=reports/metrics-go.json
         continue-on-error: true
+
+      # Best-effort: the merge job below owns the metric table and the verdict. An
+      # upload failure (e.g. a full artifact storage quota) must NOT paint the ratchet
+      # red — but it DOES leave the merge without a number, which shows up as a
+      # skipped metric there.
+      - name: Upload the Go partial report
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: metrics-go
+          path: |
+            reports/metrics-go.json
+            reports/*-failure.log
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Fail on a blocking Go regression
+        if: steps.gate.outcome == 'failure'
+        run: |
+          echo "Quality gate (Go) falhou: regressão bloqueante. Veja a tabela no comentário do PR."
+          exit 1
+
+  web:
+    name: Gate — TS/Web
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      # `npm ci` unpacks the whole tree on every run (~47 s measured) even with the
+      # npm cache warm, because that cache holds the tarballs, not the result. The
+      # installed tree is cached directly, keyed by BOTH files: a change in
+      # package.json invalidates it even when the lockfile is untouched.
+      - name: Cache web/node_modules
+        id: nodemodules
+        uses: actions/cache@v6
+        with:
+          path: web/node_modules
+          key: nodemodules-${{ runner.os }}-${{ env.NODE_VERSION }}-${{ hashFiles('web/package-lock.json', 'web/package.json') }}
+
+      - name: Install web dependencies
+        if: steps.nodemodules.outputs.cache-hit != 'true'
+        working-directory: web
+        run: npm ci --prefer-offline --no-audit --no-fund
+
+      - name: Run the Web side of the gate
+        id: gate
+        env:
+          GATE_DIFF_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: node scripts/quality-gate.mjs --side=web --out=reports/metrics-web.json
+        continue-on-error: true
+
+      - name: Upload the Web partial report
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: metrics-web
+          path: |
+            reports/metrics-web.json
+            reports/*-failure.log
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Fail on a blocking Web regression
+        if: steps.gate.outcome == 'failure'
+        run: |
+          echo "Quality gate (Web) falhou: regressão bloqueante. Veja a tabela no comentário do PR."
+          exit 1
+
+  # The merge is cheap (a few seconds) and keeps ONE table, ONE comment and ONE check
+  # name for the branch protection — the split changed where the work runs, not what
+  # the ratchet means.
+  report:
+    name: Quality Gate (Go + TS)
+    needs: [go, web]
+    # Always: a red side still has to produce the table that explains why.
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download both partial reports
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          path: reports
+          merge-multiple: true
+          pattern: metrics-*
+
+      - name: Merge, comment and decide
+        env:
+          GO_RESULT: ${{ needs.go.result }}
+          WEB_RESULT: ${{ needs.web.result }}
+        run: |
+          set +e
+          node scripts/quality-gate.mjs --report=reports/metrics-go.json,reports/metrics-web.json
+          gate=$?
+          set -e
+          if [ "$GO_RESULT" != "success" ] || [ "$WEB_RESULT" != "success" ]; then
+            echo "Um dos lados não terminou bem: go=$GO_RESULT web=$WEB_RESULT."
+            exit 1
+          fi
+          exit "$gate"
 
       - name: Comment metrics table on PR
         if: github.event_name == 'pull_request'
+        continue-on-error: true
         uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: quality-gate
           recreate: true
           path: reports/quality-gate-report.md
 
-      # Best-effort: the metrics table is already commented on the PR and the
-      # blocking regression is decided by the step below. An upload failure (e.g. a full
-      # artifact storage quota) must NOT paint the ratchet red.
       - name: Upload quality reports
         if: always()
         continue-on-error: true
@@ -97,9 +268,3 @@ jobs:
           name: quality-reports
           path: reports/
           retention-days: 30
-
-      - name: Fail on blocking regression
-        if: steps.gate.outcome == 'failure'
-        run: |
-          echo "Quality gate falhou: regressão bloqueante. Veja a tabela no comentário do PR / no relatório."
-          exit 1
