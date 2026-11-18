@@ -121,6 +121,12 @@ func (s *Server) montarOrderings(ctx context.Context, ent sqlcgen.Entity) *resol
 			temAbsoluto = true
 		}
 	}
+	// The OWNER order (ADR-0033) is not in the episodes' numbering: it lives in the
+	// override, and when it exists it is both available and the DEFAULT — it is the
+	// numbering the owner actually sees in their release.
+	if ordemDono := s.carregarOrdemDoDono(ctx, ent.ID); !ordemDono.Vazia() {
+		chaves[tvext.ChaveOrdemDono] = true
+	}
 	available := ordensDisponiveis(chaves, temAbsoluto, defaultSeasonType(ent))
 	if len(available) == 0 {
 		return nil
@@ -135,6 +141,11 @@ func (s *Server) montarOrderings(ctx context.Context, ent sqlcgen.Entity) *resol
 // with the tree). Empty list when there is no order at all (a series without
 // numbering).
 func ordensDisponiveis(chaves map[string]bool, temAbsoluto bool, def string) []string {
+	// The owner order, when present, is the default: it is the numbering of the
+	// release the owner owns (ADR-0033).
+	if chaves[tvext.ChaveOrdemDono] {
+		def = tvext.ChaveOrdemDono
+	}
 	ordens := make([]string, 0, len(chaves)+1)
 	for k := range chaves {
 		// `numbering.absolute` (TheTVDB) and the `absolute_number` field are the SAME
@@ -249,6 +260,13 @@ func (s *Server) agruparEpisodios(ctx context.Context, ent sqlcgen.Entity, order
 		return nil, err
 	}
 	absoluto := ordering == orderingAbsoluto
+	// In the owner order the numbering comes from the DECLARED UNITS, not from the
+	// episodes: a unit may merge several episodes, and then all of them carry the same
+	// (season, number) — the merge is visible and the order of the unit is the ordinal.
+	var numerosDoDono map[string]tvext.NumeroDono
+	if ordering == tvext.ChaveOrdemDono {
+		numerosDoDono = s.carregarOrdemDoDono(ctx, ent.ID).NumeroDeEpisodio()
+	}
 	var comNum []episodioProjetado
 	var semNum []entityCardDTO
 	for _, ep := range eps {
@@ -264,6 +282,9 @@ func (s *Server) agruparEpisodios(ctx context.Context, ent sqlcgen.Entity, order
 		ns := tvext.Namespace(ep.ExtensionDataJson, nsTVCore)
 		card.StillURL = stillDoNS(ns)
 		num := projetarParaOrdem(ns, ordering)
+		if numerosDoDono != nil {
+			num = numeracaoDoDono(numerosDoDono, ep.ID)
+		}
 		card.Numbering = num
 		if num == nil {
 			semNum = append(semNum, card)
