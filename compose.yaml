@@ -30,14 +30,16 @@ services:
       PORT: "8080"
       MYMEDIADB_DB_PATH: /data/mymediadb.sqlite
       MYMEDIADB_ASSETS_DIR: /data/assets
+      # User the app runs as, and the owner ./data is set to on start. Set these to
+      # `id -u` / `id -g` on your host so the files stay yours.
+      PUID: "99"
+      PGID: "100"
     volumes:
-      # Database and downloaded artwork. Back it up with a tar of this folder.
+      # Database, downloaded artwork and the pre-migration copies. Back it up with a
+      # tar of this folder.
       #
-      # The container runs as uid 100, gid 101, and Compose creates ./data owned by
-      # you, so a fresh clone fails on the first start with "unable to open
-      # database file" until you hand the folder over once:
-      #
-      #   sudo chown -R 100:101 ./data
+      # No manual chown: the entrypoint adopts this folder to PUID:PGID on start
+      # (recursively only when the owner differs), so a fresh clone just works.
       - ./data:/data
       # Your media library. Read and write, because the NFO and artwork export
       # writes next to the files. It never renames or moves them.

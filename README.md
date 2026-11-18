@@ -79,9 +79,9 @@ curl -o .env https://raw.githubusercontent.com/rafaelvieiras/my-media-db/master/
 
 # 2. Point the media volume in compose.yaml to your library folder.
 
-# 3. Give the data folder to the container user (uid 100, gid 101). Compose creates
-#    ./data owned by you, and the app writes the database as its own user.
-mkdir -p data && sudo chown -R 100:101 data
+# 3. Create the data folder. The container fixes its ownership on start: it runs as
+#    PUID:PGID (99:100 by default, the Unraid convention) and adopts ./data.
+mkdir -p data
 
 # 4. Start it.
 docker compose up -d
@@ -106,6 +106,9 @@ environment.
 | Variable                        | Default                               | Meaning                             |
 | ------------------------------- | ------------------------------------- | ----------------------------------- |
 | `PORT`                          | `8080`                                | HTTP port inside the container      |
+| `PUID` / `PGID`                 | `99` / `100`                          | User the app runs as, and the owner `/data` is set to |
+| `MYMEDIADB_PRE_MIGRATION_BACKUPS` | `3`                                 | How many pre-migration database copies to keep |
+| `MYMEDIADB_SKIP_PRE_MIGRATION_BACKUP` | _(off)_                        | `1` migrates without the safety copy |
 | `MYMEDIADB_DB_PATH`             | `/data/mymediadb.sqlite` in the image | Database file                       |
 | `MYMEDIADB_ASSETS_DIR`          | `/data/assets` in the image           | Downloaded artwork                  |
 | `MYMEDIADB_TMDB_TOKEN`          | _(empty)_                             | TMDB API read token (v4, preferred) |
@@ -118,6 +121,26 @@ Both paths live under the `/data` volume, so `docker run -v mydata:/data` (or th
 `./data` bind mount in `compose.yaml`) is all you need to keep the database and
 the artwork. Running the binary without Docker keeps its development default,
 `tmp/mymediadb.sqlite`.
+
+Set `PUID`/`PGID` to the owner of your media and data folders (`id -u` / `id -g`).
+Starting the container with an explicit `--user` also works: the entrypoint then leaves
+the ownership alone and runs as that user.
+
+## Updating
+
+The image follows a moving `latest` tag, so a NAS that upgrades containers on a schedule
+does it unattended. Two guarantees make that safe:
+
+- **The database is copied before any schema migration.** The copy lands in
+  `/data/backups/pre-migration-schema-<old>-<timestamp>.sqlite`, made with `VACUUM INTO`
+  (a consistent snapshot while the app runs). The three newest are kept; rolling back is
+  copying one file back over `/data/mymediadb.sqlite`.
+- **A database newer than the binary refuses to boot.** If you roll the image back after
+  an automatic upgrade, the old binary stops with a message naming both versions instead
+  of writing to a schema it does not know. Nothing is modified in that case.
+
+Migrating without the copy is possible (`MYMEDIADB_SKIP_PRE_MIGRATION_BACKUP=1`) and it is
+logged as a warning, because the upgrade then has no way back.
 
 MusicBrainz and Cover Art Archive need no key. See
 [`docs/07`](docs/07-enrichment-and-providers.md) for provider precedence and cache

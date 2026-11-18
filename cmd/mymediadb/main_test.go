@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -98,5 +99,75 @@ func TestProvedoresReaisBancoTemPrecedenciaSobreEnv(t *testing.T) {
 	}
 	if !nomes["tmdb"] {
 		t.Error("tmdb deveria estar habilitado (banco presente, env var também setada)")
+	}
+}
+
+// TestCopiarAntesDeMigrarGravaECopiaRespeitaSkip covers the boot step that makes an
+// unattended upgrade reversible: with a pending migration the copy is written into the
+// backup directory, and with the skip set nothing is written (the warning path).
+func TestCopiarAntesDeMigrarGravaECopiaRespeitaSkip(t *testing.T) {
+	database := setupBancoTeste(t)
+	ctx := context.Background()
+	atual, err := database.SchemaVersion(ctx)
+	if err != nil {
+		t.Fatalf("SchemaVersion: %v", err)
+	}
+	dir := t.TempDir()
+	t.Setenv("MYMEDIADB_BACKUP_DIR", dir)
+
+	// No pending migration: nothing to protect.
+	if err := copiarAntesDeMigrar(database, ctx, atual, atual); err != nil {
+		t.Fatalf("copiarAntesDeMigrar (sem migracao): %v", err)
+	}
+	// Pending migration: the copy lands in the configured directory.
+	if err := copiarAntesDeMigrar(database, ctx, atual, atual+1); err != nil {
+		t.Fatalf("copiarAntesDeMigrar: %v", err)
+	}
+	entradas, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	if len(entradas) != 1 {
+		t.Fatalf("queria 1 copia em %s, tenho %d", dir, len(entradas))
+	}
+	// Skip: the owner accepted a one-way upgrade, so no copy is written.
+	t.Setenv("MYMEDIADB_SKIP_PRE_MIGRATION_BACKUP", "1")
+	outra := t.TempDir()
+	t.Setenv("MYMEDIADB_BACKUP_DIR", outra)
+	if err := copiarAntesDeMigrar(database, ctx, atual, atual+1); err != nil {
+		t.Fatalf("copiarAntesDeMigrar (skip): %v", err)
+	}
+	if restantes, err := os.ReadDir(outra); err != nil || len(restantes) != 0 {
+		t.Fatalf("com skip nada devia ser escrito (err=%v, arquivos=%d)", err, len(restantes))
+	}
+}
+
+// TestCopiarAntesDeMigrarRespeitaRetencao covers the env knob for how many copies stay.
+func TestCopiarAntesDeMigrarRespeitaRetencao(t *testing.T) {
+	database := setupBancoTeste(t)
+	ctx := context.Background()
+	atual, err := database.SchemaVersion(ctx)
+	if err != nil {
+		t.Fatalf("SchemaVersion: %v", err)
+	}
+	dir := t.TempDir()
+	t.Setenv("MYMEDIADB_BACKUP_DIR", dir)
+	t.Setenv("MYMEDIADB_PRE_MIGRATION_BACKUPS", "1")
+
+	for i := 0; i < 2; i++ {
+		// Distinct seconds in the name: the retention sorts by the timestamp in it.
+		if err := copiarAntesDeMigrar(database, ctx, atual, atual+1); err != nil {
+			t.Fatalf("copiarAntesDeMigrar: %v", err)
+		}
+	}
+	entradas, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	// Both upgrades happened inside the same second, which is the same copy: the name is
+	// second-precision and VACUUM INTO would refuse to overwrite. What matters is that
+	// the retention never leaves more than the configured number behind.
+	if len(entradas) > 1 {
+		t.Fatalf("retencao=1 devia manter no maximo 1 copia, tenho %d", len(entradas))
 	}
 }

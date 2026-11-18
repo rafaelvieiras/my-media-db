@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -157,8 +158,12 @@ func run() error {
 	}
 }
 
-// openAndMigrate opens the database at the configured path and applies the
-// pending migrations. On success, it logs the schema version. An error aborts the boot.
+// openAndMigrate opens the database at the configured path and applies the pending
+// migrations. On success, it logs the schema version. An error aborts the boot.
+//
+// The order matters and is the whole point of an unattended host (a NAS upgrading the
+// image on a schedule): read the plan, REFUSE a database newer than this binary, copy
+// the database, and only then migrate. The copy is what makes an upgrade reversible.
 func openAndMigrate() (*db.DB, error) {
 	database, err := db.Open(db.Config{Path: resolveDBPath()})
 	if err != nil {
@@ -167,6 +172,24 @@ func openAndMigrate() (*db.DB, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), migrateTimeout)
 	defer cancel()
+
+	atual, alvo, err := database.PlanoDeMigracao(ctx)
+	if err != nil {
+		_ = database.Close()
+		return nil, err
+	}
+	// Downgrade: the owner rolled the image back after an automatic upgrade. Refusing to
+	// start is the only safe answer -- code from before the migration does not know the
+	// columns it would now read and write.
+	if err := db.VerificarDowngrade(atual, alvo); err != nil {
+		_ = database.Close()
+		return nil, err
+	}
+	if err := copiarAntesDeMigrar(database, ctx, atual, alvo); err != nil {
+		_ = database.Close()
+		return nil, err
+	}
+
 	if err := database.Migrate(ctx); err != nil {
 		_ = database.Close()
 		return nil, err
@@ -175,6 +198,38 @@ func openAndMigrate() (*db.DB, error) {
 		log.Printf("mymediadb: banco aberto e migrado (schema=%d)", v)
 	}
 	return database, nil
+}
+
+// copiarAntesDeMigrar writes the pre-migration copy and logs where it went. Skipping is
+// allowed through MYMEDIADB_SKIP_PRE_MIGRATION_BACKUP=1 (a disk with no room, or a
+// throwaway instance), but it is LOUD: the migration is then irreversible.
+func copiarAntesDeMigrar(database *db.DB, ctx context.Context, atual, alvo int64) error {
+	if atual == 0 || atual >= alvo {
+		return nil
+	}
+	if os.Getenv("MYMEDIADB_SKIP_PRE_MIGRATION_BACKUP") == "1" {
+		log.Printf("mymediadb: AVISO banco sera migrado de %d para %d SEM copia de seguranca (MYMEDIADB_SKIP_PRE_MIGRATION_BACKUP=1)", atual, alvo)
+		return nil
+	}
+	dir, err := resolveBackupDir()
+	if err != nil {
+		return err
+	}
+	manter := 0
+	if v := os.Getenv("MYMEDIADB_PRE_MIGRATION_BACKUPS"); v != "" {
+		if n, convErr := strconv.Atoi(v); convErr == nil {
+			manter = n
+		}
+	}
+	caminho, err := database.BackupAntesDeMigrar(ctx, dir, atual, alvo, manter)
+	if err != nil {
+		// No copy, no migration: an upgrade nobody is watching must be reversible.
+		return err
+	}
+	if caminho != "" {
+		log.Printf("mymediadb: copia do banco antes da migracao (%d -> %d) em %q", atual, alvo, caminho)
+	}
+	return nil
 }
 
 // opcoesServer assembles the server options: the external search/enrich, the
