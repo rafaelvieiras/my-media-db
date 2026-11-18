@@ -135,33 +135,39 @@ func OrdemDoDono(ns map[string]any) *OrdemDono {
 	}
 	unidades, _ := bruto["units"].([]any)
 	for _, u := range unidades {
-		uni, ok := u.(map[string]any)
-		if !ok {
-			continue
+		if ud, ok := lerUnidade(u); ok {
+			ordem.Units = append(ordem.Units, ud)
 		}
-		season, sOK := AsInt(uni["season"])
-		number, nOK := AsInt(uni["number"])
-		if !sOK || !nOK {
-			continue
-		}
-		ud := UnidadeDono{Season: season, Number: number}
-		if s, ok := uni["title"].(string); ok {
-			ud.Title = s
-		}
-		if eps, ok := uni["episodes"].([]any); ok {
-			for _, e := range eps {
-				if s, ok := e.(string); ok && s != "" {
-					ud.Episodes = append(ud.Episodes, s)
-				}
-			}
-		}
-		if len(ud.Episodes) == 0 {
-			continue // a unit without episodes numbers nothing
-		}
-		ordem.Units = append(ordem.Units, ud)
 	}
 	if len(ordem.Units) == 0 {
 		return nil
 	}
 	return ordem
+}
+
+// lerUnidade reads one unit of the order. ok=false when the unit is unusable: it is not
+// an object, it has no integer (season, number) pair, or it numbers no episode — a unit
+// without episodes would occupy a number that no file could ever match.
+func lerUnidade(bruto any) (UnidadeDono, bool) {
+	uni, ok := bruto.(map[string]any)
+	if !ok {
+		return UnidadeDono{}, false
+	}
+	season, sOK := AsInt(uni["season"])
+	number, nOK := AsInt(uni["number"])
+	if !sOK || !nOK {
+		return UnidadeDono{}, false
+	}
+	ud := UnidadeDono{Season: season, Number: number}
+	if s, ok := uni["title"].(string); ok {
+		ud.Title = s
+	}
+	if eps, ok := uni["episodes"].([]any); ok {
+		for _, e := range eps {
+			if s, ok := e.(string); ok && s != "" {
+				ud.Episodes = append(ud.Episodes, s)
+			}
+		}
+	}
+	return ud, len(ud.Episodes) > 0
 }

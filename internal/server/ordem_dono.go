@@ -169,7 +169,7 @@ func (s *Server) deleteOrdemDoDono(w http.ResponseWriter, r *http.Request) {
 
 // validarOrdemDoDono checks the body against the series and returns the CLEAN order
 // (trimmed ids/titles, the name defaulting to "owner"). It writes the error and returns
-// ok=false on the first violation.
+// ok=false on the first violation — nothing is written until the whole body passes.
 func (s *Server) validarOrdemDoDono(w http.ResponseWriter, ctx context.Context, serieID string, body ordemDonoDTO) (*tvext.OrdemDono, bool) {
 	if len(body.Units) == 0 {
 		writeError(w, http.StatusUnprocessableEntity, "empty_units", "a ordem precisa de ao menos uma unidade")
@@ -190,44 +190,62 @@ func (s *Server) validarOrdemDoDono(w http.ResponseWriter, ctx context.Context, 
 		daSerie[ep.ID] = true
 	}
 
+	validador := &validadorDeOrdem{daSerie: daSerie, vistos: map[string]bool{}, pares: map[[2]int]bool{}}
 	ordem := &tvext.OrdemDono{Name: body.Name, BasedOn: body.BasedOn}
-	vistos := map[string]bool{}
-	pares := map[[2]int]bool{}
 	for _, u := range body.Units {
-		if u.Season < 0 || u.Number < 1 {
-			writeError(w, http.StatusUnprocessableEntity, "invalid_number", "temporada inválida ou número menor que 1")
+		unidade, ok := validador.unidade(w, u)
+		if !ok {
 			return nil, false
-		}
-		par := [2]int{u.Season, u.Number}
-		if pares[par] {
-			writeError(w, http.StatusUnprocessableEntity, "duplicate_number", "duas unidades com a mesma temporada e número")
-			return nil, false
-		}
-		pares[par] = true
-		if len(u.Episodes) == 0 {
-			writeError(w, http.StatusUnprocessableEntity, "empty_unit", "unidade sem episódio")
-			return nil, false
-		}
-		if len(u.Episodes) > maxEpisodiosPorUnidade {
-			writeError(w, http.StatusUnprocessableEntity, "too_many_episodes", "episódios demais numa unidade")
-			return nil, false
-		}
-		unidade := tvext.UnidadeDono{Season: u.Season, Number: u.Number, Title: u.Title}
-		for _, epID := range u.Episodes {
-			if !daSerie[epID] {
-				writeError(w, http.StatusUnprocessableEntity, "episode_not_in_series", "episódio não pertence a esta série")
-				return nil, false
-			}
-			if vistos[epID] {
-				writeError(w, http.StatusUnprocessableEntity, "duplicate_episode", "episódio repetido na ordem")
-				return nil, false
-			}
-			vistos[epID] = true
-			unidade.Episodes = append(unidade.Episodes, epID)
 		}
 		ordem.Units = append(ordem.Units, unidade)
 	}
 	return ordem, true
+}
+
+// validadorDeOrdem carries the three sets that make a repeated (season, number),
+// episode or unit detectable while the body is walked — state that would otherwise be
+// four maps threaded through one long function.
+type validadorDeOrdem struct {
+	daSerie map[string]bool
+	vistos  map[string]bool
+	pares   map[[2]int]bool
+}
+
+// unidade validates ONE unit and returns it clean. It writes the error and returns
+// ok=false on the first violation.
+func (v *validadorDeOrdem) unidade(w http.ResponseWriter, u unidadeDonoDTO) (tvext.UnidadeDono, bool) {
+	if u.Season < 0 || u.Number < 1 {
+		writeError(w, http.StatusUnprocessableEntity, "invalid_number", "temporada inválida ou número menor que 1")
+		return tvext.UnidadeDono{}, false
+	}
+	par := [2]int{u.Season, u.Number}
+	if v.pares[par] {
+		writeError(w, http.StatusUnprocessableEntity, "duplicate_number", "duas unidades com a mesma temporada e número")
+		return tvext.UnidadeDono{}, false
+	}
+	v.pares[par] = true
+	if len(u.Episodes) == 0 {
+		writeError(w, http.StatusUnprocessableEntity, "empty_unit", "unidade sem episódio")
+		return tvext.UnidadeDono{}, false
+	}
+	if len(u.Episodes) > maxEpisodiosPorUnidade {
+		writeError(w, http.StatusUnprocessableEntity, "too_many_episodes", "episódios demais numa unidade")
+		return tvext.UnidadeDono{}, false
+	}
+	unidade := tvext.UnidadeDono{Season: u.Season, Number: u.Number, Title: u.Title}
+	for _, epID := range u.Episodes {
+		if !v.daSerie[epID] {
+			writeError(w, http.StatusUnprocessableEntity, "episode_not_in_series", "episódio não pertence a esta série")
+			return tvext.UnidadeDono{}, false
+		}
+		if v.vistos[epID] {
+			writeError(w, http.StatusUnprocessableEntity, "duplicate_episode", "episódio repetido na ordem")
+			return tvext.UnidadeDono{}, false
+		}
+		v.vistos[epID] = true
+		unidade.Episodes = append(unidade.Episodes, epID)
+	}
+	return unidade, true
 }
 
 // carregarOrdemDoDono reads the owner order of the series from the override layer. A
