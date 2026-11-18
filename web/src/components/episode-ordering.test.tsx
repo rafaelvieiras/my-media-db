@@ -30,7 +30,7 @@ describe('SeletorOrdenacao', () => {
     renderWithClient(
       <SeletorOrdenacao
         value="official"
-        options={['official', 'dvd', 'absolute', 'regional']}
+        options={['official', 'dvd', 'absolute', 'regional', 'blu-ray-order']}
         onChange={onChange}
       />,
     )
@@ -42,6 +42,9 @@ describe('SeletorOrdenacao', () => {
     expect(screen.getByRole('option', { name: 'DVD' })).toBeTruthy()
     expect(screen.getByRole('option', { name: 'Absolute' })).toBeTruthy()
     expect(screen.getByRole('option', { name: 'Regional' })).toBeTruthy()
+    // A key that comes from a source with a name of its own (a TMDB episode group)
+    // keeps no hyphens in the label.
+    expect(screen.getByRole('option', { name: 'Blu Ray Order' })).toBeTruthy()
     // Switching emits the RAW value (dvd), not the label.
     fireEvent.change(select, { target: { value: 'dvd' } })
     expect(onChange).toHaveBeenCalledWith('dvd')
