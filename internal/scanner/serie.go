@@ -192,6 +192,9 @@ func (r *scanRun) resolverSerieMiss(ctx context.Context, serieNome string, folde
 		return res
 	}
 
+	// The name found nothing anywhere. The item goes to review as before; the "did you mean
+	// this?" hint is computed LATER, when the owner opens the item (server side), so a scan
+	// with hundreds of drafts never fires the cheaper-variant queries in a burst.
 	return serieResolvida{serieID: r.acharOuCriarDraftSerie(ctx, serieNome), conf: confRevisaoSerie, emRevisao: true}
 }
 

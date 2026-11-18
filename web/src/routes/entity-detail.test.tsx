@@ -314,3 +314,39 @@ describe('EntityDetailScreen — cataloging completeness (0058)', () => {
     expect(screen.queryByText('Incomplete cataloging')).not.toBeInTheDocument()
   })
 })
+
+describe('EntityDetailScreen — suggested match warning', () => {
+  it('shows "is this the right item?" in the hero when the backend kept a hint', async () => {
+    renderDetail(
+      baseEntity({
+        type: 'tv',
+        title: '2 Broken Girls',
+        status: 'draft',
+        match_suggestion: {
+          source: 'tmdb',
+          source_id: '39340',
+          title: 'Duas Garotas em Apuros',
+          year: '2011',
+          poster_url: null,
+          score: 95,
+          query: '2 Brok',
+        },
+      }),
+    )
+
+    const aviso = await screen.findByTestId('suggested-match-warning')
+    expect(aviso).toBeInTheDocument()
+    expect(screen.getByText('Duas Garotas em Apuros')).toBeInTheDocument()
+  })
+
+  it('shows no warning when the item has no hint', async () => {
+    renderDetail(baseEntity({ type: 'tv', title: 'Serie Qualquer' }))
+
+    await waitFor(() =>
+      expect(screen.getByText('Serie Qualquer')).toBeInTheDocument(),
+    )
+    expect(
+      screen.queryByTestId('suggested-match-warning'),
+    ).not.toBeInTheDocument()
+  })
+})

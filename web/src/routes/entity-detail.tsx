@@ -5,6 +5,7 @@ import { TriangleAlert } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { OwnerOrderEditor } from '@/components/owner-order-editor'
+import { SuggestedMatchWarning } from '@/components/suggested-match-warning'
 import type { OrderingsInfo } from '@/lib/api'
 import {
   artworkQueryOptions,
@@ -347,16 +348,28 @@ export function EntityDetailScreen() {
           />
         }
         descriptionExtra={
-          <div className="flex flex-wrap items-center gap-1.5">
-            <SeloFallback
-              resolved={data.resolved_languages}
-              campo="description"
-              lang={lang}
-            />
-            <SeloEditado
-              ativo={temOverrideEditado(blob, 'description', lang, fields)}
-            />
-          </div>
+          <>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <SeloFallback
+                resolved={data.resolved_languages}
+                campo="description"
+                lang={lang}
+              />
+              <SeloEditado
+                ativo={temOverrideEditado(blob, 'description', lang, fields)}
+              />
+            </div>
+            {/* "Did you mean this?" — the scanner could not resolve the name on disk, but a
+                cheaper variant of it found a candidate. It sits in the hero, under the
+                synopsis, because it is the first thing the owner needs to know about the
+                item; nothing was applied. */}
+            {data.match_suggestion ? (
+              <SuggestedMatchWarning
+                entityId={id}
+                suggestion={data.match_suggestion}
+              />
+            ) : null}
+          </>
         }
         genresExtra={
           <>

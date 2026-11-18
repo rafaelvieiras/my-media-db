@@ -958,6 +958,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/entities/{id}/match-suggestion': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /**
+     * Dismisses the "did you mean this?" hint of an item.
+     * @description The item screen offers the hint the backend computed for a name it could not resolve (see `ResolvedEntity.match_suggestion`). This endpoint says the owner is not interested. The row is KEPT with `dismissed = 1`, so opening the item again neither queries the sources again nor brings the warning back -- dismissing must cost nothing and must not be undone by a page reload. Always `204` (idempotent, like the other DELETEs of the API); `404` only when the ENTITY does not exist.
+     */
+    delete: operations['dismissMatchSuggestion']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/entities/{id}/match-preview': {
     parameters: {
       query?: never
@@ -2207,8 +2227,27 @@ export interface components {
       /** @description Caminho absoluto do tema musical gravado na pasta real da biblioteca. */
       local_path: string
     }
+    /** @description A candidate the scanner could not apply on its own, kept for the owner to accept or ignore (migration 0028). `source`/`source_id` identify the CANDIDATE -- the item itself still has no identity. */
+    MatchSuggestion: {
+      /** @description Source of the candidate (e.g. `tmdb`). */
+      source: string
+      /** @description Id of the candidate IN that source. */
+      source_id: string
+      /** @description Title of the candidate, in the source's reading language. */
+      title: string
+      /** @description Release year of the candidate when the source reports one. */
+      year?: string | null
+      /** @description Poster of the candidate (direct source URL). */
+      poster_url?: string | null
+      /** @description Similarity (0-100) between the name ON DISK (the misspelled one) and the candidate -- it says how plausible the hint is. */
+      score: number
+      /** @description The variant that found it (one token dropped, or a character cut that became a prefix of the real title). It explains the guess. */
+      query: string
+    }
     /** @description Visão resolvida — shape FINAL. Hoje reflete a camada arquivo/núcleo; a Fase 3 preenche os mesmos campos com override/externo sem mudar o shape. Os campos RICOS (tagline, keywords, runtime, certification, vote_average, backdrop_url, videos, collection, similar, external_links) dão PARIDADE com o detalhe do externo (0022/0023): vêm da camada externa já enriquecida e usam o MESMO shape (componentes ExternalVideo/Collection/Similar). Os gêneros NÃO têm campo próprio — são as `tags` (que já os carregam). */
     ResolvedEntity: {
+      /** @description The "did you mean this?" hint for an item that is still unidentified: the name on disk found nothing, but a cheaper variant of it did. It is a HINT, never an identity -- the owner decides, and the action behind it is `POST /confirm-candidate` with `method=external`. Absent when there is no hint, which is the normal case. Computed on the first open of the item (never during a scan, to avoid a burst of source queries) and persisted, so the next open is a single row read. */
+      match_suggestion?: components['schemas']['MatchSuggestion'] | null
       id: string
       /**
        * @description Tipo canonico da entity. `season`/`episode` (0031) sao os nos internos da arvore de series (mesmo shape resolvido; navegados por GET /members). `album`/`artista`/`faixa` (0105-0107) sao a vertical de musica -- mesmo enum de EntityCard.type (nomes em portugues, nao `artist`/`track`).
@@ -4466,6 +4505,28 @@ export interface operations {
         content: {
           'application/json': components['schemas']['AutoMatchResult']
         }
+      }
+      404: components['responses']['Error']
+    }
+  }
+  dismissMatchSuggestion: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description The hint is dismissed (or there was none). */
+      204: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
       }
       404: components['responses']['Error']
     }

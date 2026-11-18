@@ -1679,6 +1679,27 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
 
+  /api/v1/entities/{id}/match-suggestion:
+    delete:
+      operationId: dismissMatchSuggestion
+      summary: Dismisses the "did you mean this?" hint of an item.
+      description: >
+        The item screen offers the hint the backend computed for a name it could
+        not resolve (see `ResolvedEntity.match_suggestion`). This endpoint says
+        the owner is not interested. The row is KEPT with `dismissed = 1`, so
+        opening the item again neither queries the sources again nor brings the
+        warning back -- dismissing must cost nothing and must not be undone by a
+        page reload. Always `204` (idempotent, like the other DELETEs of the
+        API); `404` only when the ENTITY does not exist.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "204":
+          description: "The hint is dismissed (or there was none)."
+        "404":
+          $ref: "#/components/responses/Error"
+
   /api/v1/entities/{id}/match-preview:
     get:
       operationId: matchPreview
@@ -3979,6 +4000,42 @@ components:
         local_path:
           type: string
           description: Caminho absoluto do tema musical gravado na pasta real da biblioteca.
+    MatchSuggestion:
+      type: object
+      description: >
+        A candidate the scanner could not apply on its own, kept for the owner to
+        accept or ignore (migration 0028). `source`/`source_id` identify the
+        CANDIDATE -- the item itself still has no identity.
+      required: [source, source_id, title, score, query]
+      properties:
+        source:
+          type: string
+          description: Source of the candidate (e.g. `tmdb`).
+        source_id:
+          type: string
+          description: Id of the candidate IN that source.
+        title:
+          type: string
+          description: Title of the candidate, in the source's reading language.
+        year:
+          type: string
+          nullable: true
+          description: Release year of the candidate when the source reports one.
+        poster_url:
+          type: string
+          nullable: true
+          description: Poster of the candidate (direct source URL).
+        score:
+          type: integer
+          description: >
+            Similarity (0-100) between the name ON DISK (the misspelled one) and
+            the candidate -- it says how plausible the hint is.
+        query:
+          type: string
+          description: >
+            The variant that found it (one token dropped, or a character cut that
+            became a prefix of the real title). It explains the guess.
+
     ResolvedEntity:
       type: object
       description: >
@@ -3997,6 +4054,18 @@ components:
          ratings, backdrop_url, videos, collection, similar, external_links,
          ancestors, ownership, catalog_completeness]
       properties:
+        match_suggestion:
+          description: >
+            The "did you mean this?" hint for an item that is still unidentified:
+            the name on disk found nothing, but a cheaper variant of it did. It is
+            a HINT, never an identity -- the owner decides, and the action behind it
+            is `POST /confirm-candidate` with `method=external`. Absent when there
+            is no hint, which is the normal case. Computed on the first open of the
+            item (never during a scan, to avoid a burst of source queries) and
+            persisted, so the next open is a single row read.
+          allOf:
+            - $ref: "#/components/schemas/MatchSuggestion"
+          nullable: true
         id: { type: string }
         type:
           type: string

@@ -90,8 +90,12 @@ func TestMigrationNucleoCriaTabelas(t *testing.T) {
 	d, q := setupNucleo(t)
 	ctx := context.Background()
 
-	if v := mustSchemaVersion(t, d); v != 27 {
-		t.Fatalf("versão de schema = %d, quero 27", v)
+	alvo, err := versaoEmbarcada()
+	if err != nil {
+		t.Fatalf("versaoEmbarcada: %v", err)
+	}
+	if v := mustSchemaVersion(t, d); v != alvo {
+		t.Fatalf("versão de schema = %d, quero %d (última migration embarcada)", v, alvo)
 	}
 	assertTabelasExistem(t, d,
 		"entity", "media_file", "library_source", "asset", "entity_relation", "entity_fts",
@@ -132,7 +136,7 @@ func TestMigrationNucleoCriaTabelas(t *testing.T) {
 	// (external/override layers), 0003 (library_source_id column) and then
 	// 0002 (core schema, back to 0001). Each step must leave the version at
 	// the expected value.
-	for _, esperada := range []int64{26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1} {
+	for esperada := alvo - 1; esperada >= 1; esperada-- {
 		downEChecaVersao(t, d, esperada)
 	}
 	if _, err := d.Read.QueryContext(ctx, "SELECT 1 FROM entity"); err == nil {

@@ -22,6 +22,21 @@ import (
 // visible in the queue/orphans stays there).
 const LimiarAutoMatch = 92.0
 
+// LimiarSugestao is the score cut (0-100 scale) above which a candidate found by a
+// CHEAPER VARIANT of the name (one token dropped of "2 Broken Girls" -> "2 Broke") is worth
+// proposing to the owner as a suggested match.
+//
+// It is deliberately BELOW LimiarAutoMatch, because the two answer different questions:
+// auto-match asks "is this certainly the item?", the suggestion asks "is this worth
+// showing the human?". A suggestion is never applied on its own (it only feeds the
+// "did you mean this?" warning), so the cost of a miss is one dismissed hint.
+//
+// Calibrated with this package's own scorer (Jaro-Winkler on 0-100): a real typo scores
+// 95-100 ("2 Broken Girls"/"2 Broke Girls", "The Offce"/"The Office"), a DROPPED token
+// scores 86-89 ("Broke Girls", "Simpsons" against "The Simpsons") -- and dropping a token
+// is exactly the variant the fallback generates, so the cut has to sit under 86.
+const LimiarSugestao = 80.0
+
 // ToleranciaDuracaoSegundos is the slack (in seconds) used as an additional
 // CONFIRMATION of a music track match when two durations (local file
 // vs. external candidate) are compared. MusicBrainz

@@ -163,6 +163,19 @@ type LibrarySource struct {
 	RetroactiveEnrichmentDays sql.NullInt64
 }
 
+type MatchSuggestion struct {
+	EntityID  string
+	Source    string
+	SourceID  string
+	Title     string
+	Year      sql.NullString
+	PosterUrl sql.NullString
+	Score     int64
+	Query     string
+	Dismissed int64
+	CreatedAt string
+}
+
 type MediaExternal struct {
 	ID          string
 	EntityID    string

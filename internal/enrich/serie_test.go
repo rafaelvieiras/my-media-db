@@ -8,6 +8,7 @@ import (
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/matching"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 )
@@ -422,5 +423,119 @@ func TestImportarSeriePorIDInexistente(t *testing.T) {
 	svc, _ := svcSerieFake(t)
 	if _, err := svc.ImportarSeriePorID(context.Background(), "tmdb", "999999", []string{"en"}); !errors.Is(err, ErrSerieNaoEncontrada) {
 		t.Fatalf("err = %v, quero ErrSerieNaoEncontrada", err)
+	}
+}
+
+// provedorVariante only answers the CHEAPER VARIANT of a name: the literal query returns
+// nothing, exactly like TMDb with a typo ("2 Broken Girls" -> 0 results).
+type provedorVariante struct {
+	// variante is the only query that finds something; vazio makes every query empty.
+	variante string
+	achado   provider.ResultadoExterno
+}
+
+func (provedorVariante) Nome() string { return "tmdb" }
+
+func (p provedorVariante) Buscar(_ context.Context, q, tipo, _ string) ([]provider.ResultadoExterno, error) {
+	if tipo == tipoSerie && q == p.variante {
+		return []provider.ResultadoExterno{p.achado}, nil
+	}
+	return nil, nil
+}
+
+func (provedorVariante) BuscarDetalhe(context.Context, string, string, []string) (json.RawMessage, error) {
+	return json.RawMessage(`{}`), nil
+}
+
+func (provedorVariante) MapearDetalhe(json.RawMessage) (map[string]any, error) {
+	return map[string]any{}, nil
+}
+
+func (provedorVariante) BuscarSerieArvore(context.Context, string, []string) (provider.SerieArvore, error) {
+	return provider.SerieArvore{}, nil
+}
+
+// serieBrokeGirls is the candidate the variant finds, with the ORIGINAL title (the folder
+// name carries the original, the source answers localized).
+func serieBrokeGirls() provider.ResultadoExterno {
+	return provider.ResultadoExterno{
+		Source: "tmdb", SourceID: "39340", Type: "tv",
+		Title: "Duas Garotas em Apuros", TituloOriginal: "2 Broke Girls",
+	}
+}
+
+// TestSugerirSerieAchaPelaVariante: the literal name finds nothing, the variant with one
+// token less finds the right series, and the score is measured against the name ON DISK
+// (the misspelled one) -- that is what makes it a plausible "did you mean".
+func TestSugerirSerieAchaPelaVariante(t *testing.T) {
+	database := setupDB(t)
+	svc := New(database, provider.NovaRegistry(provedorVariante{variante: "2 Brok", achado: serieBrokeGirls()}), t.TempDir())
+
+	sug, ok := svc.SugerirSerie(context.Background(), "2 Broken Girls", []string{"en"})
+	if !ok {
+		t.Fatal("ok = false, quero uma sugestão")
+	}
+	if sug.Resultado.SourceID != "39340" {
+		t.Errorf("source_id = %q, quero 39340", sug.Resultado.SourceID)
+	}
+	if sug.Consulta != "2 Brok" {
+		t.Errorf("consulta = %q, quero \"2 Brok\" (o corte que o TMDb responde)", sug.Consulta)
+	}
+	if sug.Score < matching.LimiarSugestao {
+		t.Errorf("score = %.1f, quero >= %.0f", sug.Score, matching.LimiarSugestao)
+	}
+}
+
+// TestSugerirSerieIgnoraCandidatoFraco: a variant that finds something UNRELATED must not
+// become a hint -- a weak suggestion teaches the owner to ignore the warning.
+func TestSugerirSerieIgnoraCandidatoFraco(t *testing.T) {
+	database := setupDB(t)
+	achado := provedorVariante{variante: "2 Brok", achado: provider.ResultadoExterno{
+		Source: "tmdb", SourceID: "999", Type: "tv", Title: "Uma Serie Completamente Diferente",
+	}}
+	svc := New(database, provider.NovaRegistry(achado), t.TempDir())
+
+	if _, ok := svc.SugerirSerie(context.Background(), "2 Broken Girls", []string{"en"}); ok {
+		t.Fatal("ok = true para um candidato sem relação, quero false")
+	}
+}
+
+// TestSugerirSerieNomeDeUmToken: with a single token there is nothing to drop, so there is
+// no variant to try (and no request to make).
+func TestSugerirSerieNomeDeUmToken(t *testing.T) {
+	database := setupDB(t)
+	svc := New(database, provider.NovaRegistry(provedorVariante{variante: "Broken", achado: serieBrokeGirls()}), t.TempDir())
+
+	if _, ok := svc.SugerirSerie(context.Background(), "Broken", []string{"en"}); ok {
+		t.Fatal("ok = true para um nome de um token, quero false")
+	}
+}
+
+// TestVariantesDeNome is the pure core of the fallback: drop the first, drop the last,
+// deduped, and nothing when there is only one token.
+func TestVariantesDeNome(t *testing.T) {
+	got := variantesDeNome("2 Broken Girls")
+	if len(got) == 0 || len(got) > 4 {
+		t.Fatalf("variantes = %v, quero entre 1 e 4", got)
+	}
+	temCorte := false
+	for _, v := range got {
+		if v == "2 Brok" {
+			temCorte = true
+		}
+		if v == "2 Broken Girls" {
+			t.Errorf("a variante repete a consulta original: %v", got)
+		}
+	}
+	if !temCorte {
+		t.Errorf("variantes = %v, quero o corte 2 Brok (o unico que o TMDb responde)", got)
+	}
+
+	// Um token nao tem o que descartar nem o que cortar: nenhuma variante, nenhuma request.
+	if v := variantesDeNome("Broken"); v != nil {
+		t.Errorf("variantes de um token = %v, quero nil", v)
+	}
+	if v := variantesDeNome("   "); v != nil {
+		t.Errorf("variantes de vazio = %v, quero nil", v)
 	}
 }

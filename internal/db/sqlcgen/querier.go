@@ -306,6 +306,13 @@ type Querier interface {
 	// file only updates the ordinal, never duplicates the link. Same pattern of
 	// ON CONFLICT ... DO UPDATE SET used in app_settings/media_external.
 	CriarVinculoEntidade(ctx context.Context, arg CriarVinculoEntidadeParams) error
+	// Idempotent removal: called whenever the entity gets a real identity (correct, confirm,
+	// candidate applied, import) -- the hint described a state that no longer exists.
+	DeletarMatchSuggestion(ctx context.Context, entityID string) error
+	// The owner ignored the hint. The row is KEPT with dismissed=1: it tells the next screen
+	// open that the question was already answered, so the sources are not queried again (and
+	// the warning does not come back).
+	DescartarMatchSuggestion(ctx context.Context, entityID string) error
 	// Zeroes is_principal on ALL assets of the (entity,kind) -- enforces the
 	// invariant "at most one principal per kind" in code:
 	// always called BEFORE MarcarAssetPrincipal, in the same write
@@ -862,6 +869,8 @@ type Querier interface {
 	// Used by the POST handler to detect a duplicate path (already normalized) before
 	// the INSERT and answer 409 with a clear message instead of blowing up on the UNIQUE.
 	ObterLibrarySourcePorPath(ctx context.Context, path string) (LibrarySource, error)
+	// The hint of ONE entity (the detail screen). sql.ErrNoRows when there is none.
+	ObterMatchSuggestion(ctx context.Context, entityID string) (MatchSuggestion, error)
 	// Reads the cache of ONE specific source of the entity (the logical cache key).
 	ObterMediaExternalPorFonte(ctx context.Context, arg ObterMediaExternalPorFonteParams) (MediaExternal, error)
 	ObterMediaFile(ctx context.Context, id string) (MediaFile, error)
@@ -958,6 +967,16 @@ type Querier interface {
 	// value, merges it in memory and calls this upsert with the object already
 	// complete.
 	UpsertIntegrationConfig(ctx context.Context, arg UpsertIntegrationConfigParams) (IntegrationConfig, error)
+	// Queries for the SUGGESTED MATCH (migration 0028): the "did you mean this?" hint the
+	// scanner persists when the literal title search finds nothing and a cheaper variant of
+	// the name (one token dropped) does. It is NEVER applied automatically -- it only feeds
+	// the warning on the item screen, whose action is the existing
+	// POST /entities/{id}/confirm-candidate.
+	//
+	// Comments in ASCII and explicit columns -- see the note in entity.sql.
+	// One row per entity: a new attempt REPLACES the hint (the latest query round is the only
+	// one that says anything about the name currently on disk).
+	UpsertMatchSuggestion(ctx context.Context, arg UpsertMatchSuggestionParams) error
 	// Access to the cache of the EXTERNAL layer (media_external): one raw payload row per
 	// (entity_id, source). Re-enrichment does an UPSERT on that key (ADR-0011).
 	// Comments in ASCII and explicit columns -- see the note in entity.sql.

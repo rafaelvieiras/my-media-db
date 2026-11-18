@@ -52,3 +52,4 @@ replaces the flat list of "open decisions" with a traceable record, one file per
 | [0032](0032-ui-i18n-dependency-free-catalogs.md) | UI internationalization: dependency-free typed catalogs, English as the source | — | Accepted |
 | [0033](0033-alternate-and-owner-orderings.md) | Alternate and owner orderings: provider groups, plus a numbering the owner declares | EP-ORD | Accepted |
 | [0034](0034-reversible-unattended-upgrades.md) | An unattended upgrade has to be reversible: pre-migration copy, downgrade guard, PUID/PGID | — | Accepted |
+| [0035](0035-suggested-match-hint.md) | A cheaper variant of a misspelled name is a suggestion the owner accepts, never an automatic fix | — | Accepted |
