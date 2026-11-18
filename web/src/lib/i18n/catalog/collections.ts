@@ -64,10 +64,10 @@ export const collections = defineDomain({
       screenDescription:
         'Look through your catalog and external sources; import what is missing.',
       ariaLabel: 'Search title',
-      placeholder: 'Search for a movie or series…',
+      placeholder: 'Search by title, or paste a TMDb ID or URL…',
       initialTitle: 'Search your catalog and external sources',
       initialDescription:
-        'Type the title of a movie or series to see what is already in your library and what you can import.',
+        'Type the title of a movie or series to see what is already in your library and what you can import. If the title on disk is misspelled, paste the ID or the item URL instead (TMDB:39340, tvdb:248741, tt1845307 or themoviedb.org/tv/39340) — an ID is not affected by typos.',
       searching: 'Searching…',
       searchError: 'Could not search',
       catalog: 'Catalog',
@@ -145,10 +145,10 @@ export const collections = defineDomain({
       screenDescription:
         'Procure no seu catálogo e em fontes externas; importe o que faltar.',
       ariaLabel: 'Buscar título',
-      placeholder: 'Buscar um filme ou série…',
+      placeholder: 'Buscar por título, ou colar um ID ou URL do TMDb…',
       initialTitle: 'Busque no seu catálogo e em fontes externas',
       initialDescription:
-        'Digite o título de um filme ou série para ver o que já está na sua biblioteca e o que pode importar.',
+        'Digite o título de um filme ou série para ver o que já está na sua biblioteca e o que pode importar. Se o título no disco estiver com erro de digitação, cole o ID ou a URL do item (TMDB:39340, tvdb:248741, tt1845307 ou themoviedb.org/tv/39340) — ID não erra por typo.',
       searching: 'Buscando…',
       searchError: 'Não foi possível buscar',
       catalog: 'Catálogo',
@@ -226,10 +226,10 @@ export const collections = defineDomain({
       screenDescription:
         'Busca en tu catálogo y en fuentes externas; importa lo que falte.',
       ariaLabel: 'Buscar título',
-      placeholder: 'Busca una película o una serie…',
+      placeholder: 'Buscar por título, o pegar un ID o URL de TMDb…',
       initialTitle: 'Busca en tu catálogo y en fuentes externas',
       initialDescription:
-        'Escribe el título de una película o una serie para ver qué ya está en tu biblioteca y qué puedes importar.',
+        'Escribe el título de una película o una serie para ver qué ya está en tu biblioteca y qué puedes importar. Si el título en el disco tiene un error de escritura, pega el ID o la URL del ítem (TMDB:39340, tvdb:248741, tt1845307 o themoviedb.org/tv/39340) — un ID no falla por un error de escritura.',
       searching: 'Buscando…',
       searchError: 'No se pudo buscar',
       catalog: 'Catálogo',
