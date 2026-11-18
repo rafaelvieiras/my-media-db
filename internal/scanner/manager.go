@@ -97,6 +97,11 @@ type FingerprintCalculador interface {
 // resolved by `idiomas`).
 type SerieImporter interface {
 	ImportarSeriePorNome(ctx context.Context, nome string, langs []string, preferredLang string) (string, error)
+	// ImportarSeriePorID imports the series that the FOLDER NAMES by id -- the
+	// Jellyfin convention ("Series (2011) [tmdbid-39340]"). It is the answer to a
+	// typo in the folder name: the title search is never asked, so a misspelled
+	// name cannot make the import fail. fonte is "tmdb", "tvdb" or "imdb".
+	ImportarSeriePorID(ctx context.Context, fonte, id string, langs []string) (string, error)
 }
 
 // FilmeImportador is the AUTO-MATCH point that the movie scanner consumes right

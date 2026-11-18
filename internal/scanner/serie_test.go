@@ -3,6 +3,7 @@ package scanner
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -101,12 +102,23 @@ func managerSerieAutoImport(t *testing.T, d *db.DB) *Manager {
 // importerStub is a test SerieImporter that returns a fixed result (to exercise the
 // routing to review without depending on the real provider).
 type importerStub struct {
-	id  string
-	err error
+	id      string
+	idPorID string
+	err     error
 }
 
 func (s importerStub) ImportarSeriePorNome(context.Context, string, []string, string) (string, error) {
 	return s.id, s.err
+}
+
+// ImportarSeriePorID keeps the stub satisfying SerieImporter. The zero value reports "not
+// found", so a test that does not care about the id door keeps the old chain (import by
+// name). Tests that DO care set idPorID.
+func (s importerStub) ImportarSeriePorID(context.Context, string, string, []string) (string, error) {
+	if s.idPorID == "" {
+		return "", errors.New("id desconhecido no stub")
+	}
+	return s.idPorID, nil
 }
 
 // contarVinculos counts the media_file_entity rows (optionally by kind).
@@ -242,6 +254,10 @@ type capturingImporterStub struct {
 func (s *capturingImporterStub) ImportarSeriePorNome(_ context.Context, _ string, _ []string, preferredLang string) (string, error) {
 	s.preferredLang = preferredLang
 	return "", s.err
+}
+
+func (s *capturingImporterStub) ImportarSeriePorID(context.Context, string, string, []string) (string, error) {
+	return "", errors.New("id desconhecido no stub")
 }
 
 // TestScanSerieUsaPreferredLanguageDaFonteNoAutoImport covers the priority of the source
@@ -704,4 +720,100 @@ func idDoProvisorio(t *testing.T, d *db.DB) string {
 		t.Fatalf("idDoProvisorio: %v", err)
 	}
 	return id
+}
+
+// criarSerieResolvida inserts a series entity already resolved (status cataloged), so the
+// scan has a real target to link the file to.
+func criarSerieResolvida(t *testing.T, d *db.DB, id, titulo string) {
+	t.Helper()
+	if _, err := sqlcgen.New(d.Write).CriarEntity(context.Background(), sqlcgen.CriarEntityParams{
+		ID: id, Type: tipoSerieTV, Title: titulo,
+	}); err != nil {
+		t.Fatalf("criar série %s: %v", id, err)
+	}
+}
+
+// importerPorIDStub resolves ONLY through the folder id: ImportarSeriePorNome always
+// fails. It proves the scanner reaches the id door FIRST and never needs the name.
+type importerPorIDStub struct {
+	fonte      string
+	id         string
+	nomeChamou int
+}
+
+func (s *importerPorIDStub) ImportarSeriePorNome(context.Context, string, []string, string) (string, error) {
+	s.nomeChamou++
+	return "", enrich.ErrSerieNaoEncontrada
+}
+
+func (s *importerPorIDStub) ImportarSeriePorID(_ context.Context, fonte, id string, _ []string) (string, error) {
+	s.fonte, s.id = fonte, id
+	return "serie-do-id", nil
+}
+
+// TestScanSerieImportaPeloIDDaPasta is the crown case of the id door: a MISSPELLED folder
+// name that carries the id must resolve by the id, without ever searching the name. TMDb
+// answers zero results for "2 Broken Girls", so the name path cannot work -- the id can.
+func TestScanSerieImportaPeloIDDaPasta(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	escrever(t, filepath.Join(root, "2 Broken Girls (2011) [tmdbid-39340]", "Season 01", "S01E01.mkv"))
+
+	stub := &importerPorIDStub{}
+	m := managerFake(t, d)
+	m.ConfigurarSeries(stub, func(context.Context) []string { return []string{"en"} })
+	// O import por id devolve uma série que já existe: o arquivo é vinculado a ela.
+	criarSerieResolvida(t, d, "serie-do-id", "2 Broke Girls")
+
+	if err := scanSync(t, m, criarSourceSerie(t, d, root)); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if stub.fonte != "tmdb" || stub.id != "39340" {
+		t.Fatalf("import por id recebeu (%q, %q), quero (tmdb, 39340)", stub.fonte, stub.id)
+	}
+	if stub.nomeChamou != 0 {
+		t.Errorf("busca por nome rodou %d vez(es), quero 0 (o id da pasta basta)", stub.nomeChamou)
+	}
+}
+
+// TestScanSerieImportaPeloTVDBDaPasta covers the other id the folder may carry: with
+// [tvdbid-N] the scanner crosses the TVDB id, in the same way.
+func TestScanSerieImportaPeloTVDBDaPasta(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	escrever(t, filepath.Join(root, "2 Broke Girls (2011) [tvdbid-248741]", "Season 01", "S01E01.mkv"))
+
+	stub := &importerPorIDStub{}
+	m := managerFake(t, d)
+	m.ConfigurarSeries(stub, func(context.Context) []string { return []string{"en"} })
+	criarSerieResolvida(t, d, "serie-do-id", "2 Broke Girls")
+
+	if err := scanSync(t, m, criarSourceSerie(t, d, root)); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if stub.fonte != "tvdb" || stub.id != "248741" {
+		t.Fatalf("import por id recebeu (%q, %q), quero (tvdb, 248741)", stub.fonte, stub.id)
+	}
+}
+
+// TestScanSerieSemIDNaPastaSeguiePeloNome: without an id on disk the old chain runs (import
+// by name) -- the id door must not change the behavior of a normal folder.
+func TestScanSerieSemIDNaPastaSeguiePeloNome(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	escrever(t, filepath.Join(root, "Mystery Show", "Season 01", "Mystery Show S01E01.mkv"))
+
+	stub := &importerPorIDStub{}
+	m := managerFake(t, d)
+	m.ConfigurarSeries(stub, func(context.Context) []string { return []string{"en"} })
+
+	if err := scanSync(t, m, criarSourceSerie(t, d, root)); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if stub.fonte != "" {
+		t.Errorf("import por id rodou sem id na pasta (fonte=%q)", stub.fonte)
+	}
+	if stub.nomeChamou != 1 {
+		t.Errorf("busca por nome rodou %d vez(es), quero 1", stub.nomeChamou)
+	}
 }

@@ -32,6 +32,8 @@ type Info struct {
 	TMDBID string
 	// IMDBID is the embedded IMDb id ("tt0133093", with or without brackets); "" if absent.
 	IMDBID string
+	// TVDBID is the embedded TVDB id ("[tvdbid-248741]" or "{tvdb-248741}"); "" if absent.
+	TVDBID string
 	// Edition is the edition label ("Directors Cut", "Extended"...); "" if absent.
 	Edition string
 	// PartNo is the part in the stacking (-cd1/-part1/-disc1); 0 if absent.
@@ -41,6 +43,9 @@ type Info struct {
 var (
 	// TMDB id, Jellyfin style ("[tmdbid-N]") and Kodi style ("{tmdb-N}").
 	reTMDB = regexp.MustCompile(`(?i)[\[{]tmdb(?:id)?-(\d+)[\]}]`)
+	// TVDB id, same two styles ("[tvdbid-N]"/"{tvdb-N}") -- TheTVDB is the source that
+	// models the series tree, so a folder carrying it is the strongest hint there is.
+	reTVDB = regexp.MustCompile(`(?i)[\[{]tvdb(?:id)?-(\d+)[\]}]`)
 	// IMDb id between brackets/braces ("[imdbid-tt...]"/"{imdb-tt...}").
 	reIMDBBracket = regexp.MustCompile(`(?i)[\[{]imdb(?:id)?-(tt\d+)[\]}]`)
 	// "Bare" IMDb id in the name ("tt0133093").
@@ -89,6 +94,9 @@ func Parse(name string) Info {
 
 	if m := reTMDB.FindStringSubmatch(name); m != nil {
 		info.TMDBID = m[1]
+	}
+	if m := reTVDB.FindStringSubmatch(name); m != nil {
+		info.TVDBID = m[1]
 	}
 	info.IMDBID = extrairIMDB(name)
 	if m := reYearParen.FindStringSubmatch(name); m != nil {

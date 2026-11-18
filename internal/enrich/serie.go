@@ -494,6 +494,55 @@ func (s *Servico) ImportarSeriePorNome(ctx context.Context, nome string, langs [
 	return "", ErrSerieNaoEncontrada
 }
 
+// ImportarSeriePorID imports the series that the folder NAMES by id ("Series (2011)
+// [tmdbid-39340]", or a tvdb/imdb id) -- the Jellyfin convention, and the answer to a
+// MISSPELLED folder name: the title search never runs, so a typo cannot make the import
+// fail. It reuses the id door of the search (provider.ResolvedorDeID), so the same id
+// syntax that works in the search box also works on disk.
+//
+// A source that does not exist or does not resolve the id is a real failure
+// (ErrSerieNaoEncontrada) -- unlike the search, there is no "try the next source": the
+// user wrote THAT id, and importing a different series would be worse than a draft.
+func (s *Servico) ImportarSeriePorID(ctx context.Context, fonte, id string, langs []string) (string, error) {
+	ref, ok := provider.InterpretarReferencia(fonte + ":" + id)
+	if !ok {
+		return "", ErrSerieNaoEncontrada
+	}
+	prov, ok := s.providers.Get(ref.Fonte)
+	if !ok {
+		return "", ErrSerieNaoEncontrada
+	}
+	resolvedor, ok := prov.(provider.ResolvedorDeID)
+	if !ok {
+		return "", ErrSerieNaoEncontrada
+	}
+	res, err := resolvedor.ResolverID(ctx, ref, langPrincipal(langs))
+	if err != nil {
+		return "", err // network/source failure: the scanner degrades to the name path
+	}
+	if len(res) == 0 {
+		return "", ErrSerieNaoEncontrada
+	}
+	// A numeric TMDb id can belong to a film AND a series; the folder names a SERIES, so
+	// pick the tv result and never import the film by mistake.
+	alvo, ok := primeiroDoTipo(res, tipoSerie)
+	if !ok {
+		return "", ErrSerieNaoEncontrada
+	}
+	return s.importarSeriePorFonte(ctx, alvo.Source, alvo.SourceID, langs)
+}
+
+// primeiroDoTipo returns the first result of the requested type. Without a match, ok=false
+// -- a folder that names a film through a series scanner is a draft, not an import.
+func primeiroDoTipo(res []provider.ResultadoExterno, tipo string) (provider.ResultadoExterno, bool) {
+	for _, r := range res {
+		if r.Type == tipo {
+			return r, true
+		}
+	}
+	return provider.ResultadoExterno{}, false
+}
+
 // importarSeriePorFonte imports the tree of the chosen series (source, sourceID), reusing
 // the importarSerie from Phase 1. It returns only the id (the `criada` flag is of no
 // interest to the scanner: an idempotent call reuses the existing series).
