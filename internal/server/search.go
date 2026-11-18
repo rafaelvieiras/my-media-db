@@ -174,7 +174,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tipoStr, _ := tipo.(string)
-	externos, disponivel := s.buscarExterno(ctx, termo, tipoStr, lang)
+	externos, disponivel := s.buscarExternoOuReferencia(ctx, termo, tipoStr, lang)
 
 	writeJSON(w, http.StatusOK, searchResponseDTO{
 		Query:             termo,
@@ -255,6 +255,60 @@ func (s *Server) buscarLocal(ctx context.Context, termo string, tipo any, inclui
 		s.anotarPosseCard(ctx, &items[i])
 	}
 	return items, nil
+}
+
+// buscarExternoOuReferencia is the external search with the ID DOOR in front: when the
+// term names an item directly (`TMDB:39340`, `TVDB:248741`, a bare `tt...`, or the item
+// URL) the sources are not asked to match a title at all -- the id resolves the item, and
+// a typo in the folder name stops mattering (internal/provider/idref.go explains why this
+// is the door Jellyfin and tinyMediaManager use).
+//
+// Everything else keeps the literal search. A reference that no registered source can
+// resolve falls THROUGH to the literal search instead of erroring: the user typed
+// something odd, and the old behavior is still the best answer.
+func (s *Server) buscarExternoOuReferencia(ctx context.Context, termo, tipo, lang string) ([]provider.ResultadoExterno, bool) {
+	if ref, ok := provider.InterpretarReferencia(termo); ok {
+		if res, disponivel, tratado := s.resolverReferencia(ctx, ref, tipo, lang); tratado {
+			return res, disponivel
+		}
+	}
+	return s.buscarExterno(ctx, termo, tipo, lang)
+}
+
+// resolverReferencia asks the provider that owns the id to resolve it.
+//
+// `tratado` says whether the reference was OURS to handle: false only when no registered
+// source can do it (no provider for that source, or none implements
+// provider.ResolvedorDeID) -- the caller then falls back to the literal search. Once a
+// provider takes it, its failure is a DEGRADATION (available:false), not a reason to run a
+// title search for the literal text "TMDB:39340", which could only add noise.
+//
+// The type hint from the input (?type=) is only applied when the reference does not carry
+// one of its own (a themoviedb.org URL is more specific than the filter).
+func (s *Server) resolverReferencia(ctx context.Context, ref provider.ReferenciaDeID, tipo, lang string) ([]provider.ResultadoExterno, bool, bool) {
+	if ref.Tipo == "" {
+		ref.Tipo = tipo // may stay empty: the provider then decides
+	}
+	p, ok := s.providers.Get(ref.Fonte)
+	if !ok {
+		return nil, false, false
+	}
+	resolvedor, ok := p.(provider.ResolvedorDeID)
+	if !ok {
+		return nil, false, false
+	}
+	chave := ref.Fonte + ":" + ref.ID + "\x00" + ref.Tipo + "\x00" + lang
+	if res, acerto := s.cacheExterno.obter(chave); acerto {
+		return res, true, true
+	}
+	res, err := resolvedor.ResolverID(ctx, ref, lang)
+	if err != nil {
+		// The source failed: same degradation as a failed search (external:[],
+		// available:false), never a 5xx.
+		return nil, false, true
+	}
+	s.cacheExterno.guardar(chave, res)
+	return res, true, true
 }
 
 // buscarExterno queries ALL the sources of the registry with a short TTL cache and MERGES

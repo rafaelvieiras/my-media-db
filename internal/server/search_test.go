@@ -426,3 +426,115 @@ func TestSearchExternoErroDegrada(t *testing.T) {
 func encodeQuery(v string) string {
 	return url.QueryEscape(v)
 }
+
+// provComPorta is a provider named "tmdb" that implements the OPTIONAL id door
+// (provider.ResolvedorDeID): the search tests need to prove the handler prefers the id
+// over a title search, without any network.
+type provComPorta struct {
+	fakeProvider
+	refs     []provider.ReferenciaDeID
+	idiomas  []string
+	resolver []provider.ResultadoExterno
+	err      error
+}
+
+func (p *provComPorta) Nome() string { return "tmdb" }
+
+func (p *provComPorta) ResolverID(_ context.Context, ref provider.ReferenciaDeID, lang string) ([]provider.ResultadoExterno, error) {
+	p.refs = append(p.refs, ref)
+	p.idiomas = append(p.idiomas, lang)
+	return p.resolver, p.err
+}
+
+// TestSearchPortaDoID proves the id door: typing `TMDB:39340` resolves by id and NEVER
+// runs the literal title search (the whole point -- a typo cannot defeat an id).
+func TestSearchPortaDoID(t *testing.T) {
+	prov := &provComPorta{resolver: []provider.ResultadoExterno{{
+		Source: "tmdb", SourceID: "39340", Type: "tv", Title: "Duas Garotas em Apuros",
+	}}}
+	h, _ := setupSearchServer(t, WithSearchProvider(prov), WithAssetsDir(t.TempDir()))
+
+	rec := do(t, h, http.MethodGet, "/api/v1/search?q=TMDB:39340", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (%s)", rec.Code, rec.Body.String())
+	}
+	out := decodeSearch(t, rec.Body.Bytes())
+	if len(out.External) != 1 || out.External[0].SourceID != "39340" || out.External[0].Source != "tmdb" {
+		t.Fatalf("external = %+v, quero o item 39340 do tmdb", out.External)
+	}
+	if len(prov.refs) != 1 || prov.refs[0].ID != "39340" || prov.refs[0].Fonte != "tmdb" {
+		t.Fatalf("resolver chamado com %+v", prov.refs)
+	}
+	if prov.chamadas != 0 {
+		t.Errorf("busca literal rodou %d vez(es); quero 0 com uma referência válida", prov.chamadas)
+	}
+	if !out.ExternalAvailable {
+		t.Error("external_available = false, quero true (a fonte respondeu)")
+	}
+}
+
+// TestSearchPortaDoIDUsaFiltroDeTipo proves that ?type= feeds the reference when the input
+// does not carry a type (a bare `tmdb:` id).
+func TestSearchPortaDoIDUsaFiltroDeTipo(t *testing.T) {
+	prov := &provComPorta{resolver: []provider.ResultadoExterno{{Source: "tmdb", SourceID: "39340", Type: "tv", Title: "X"}}}
+	h, _ := setupSearchServer(t, WithSearchProvider(prov), WithAssetsDir(t.TempDir()))
+
+	rec := do(t, h, http.MethodGet, "/api/v1/search?q=tmdb:39340&type=tv", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if len(prov.refs) != 1 || prov.refs[0].Tipo != "tv" {
+		t.Fatalf("referência = %+v, quero tipo tv herdado do filtro", prov.refs)
+	}
+}
+
+// TestSearchSemPortaCaiNaBuscaLiteral proves the door is OPTIONAL: a provider that does not
+// implement it keeps the old behavior, and nothing breaks for a normal title.
+func TestSearchSemPortaCaiNaBuscaLiteral(t *testing.T) {
+	prov := &fakeProvider{resultados: []provider.ResultadoExterno{{Source: "fake", SourceID: "1", Type: "tv", Title: "Achado"}}}
+	h, _ := setupSearchServer(t, WithSearchProvider(prov), WithAssetsDir(t.TempDir()))
+
+	rec := do(t, h, http.MethodGet, "/api/v1/search?q=2%20Broke%20Girls", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	out := decodeSearch(t, rec.Body.Bytes())
+	if len(out.External) != 1 || out.External[0].Title != "Achado" {
+		t.Fatalf("external = %+v, quero o resultado da busca literal", out.External)
+	}
+	if prov.chamadas != 1 {
+		t.Errorf("busca literal rodou %d vez(es), quero 1", prov.chamadas)
+	}
+}
+
+// TestSearchPortaDoIDFonteAusenteCaiNaBuscaLiteral proves that a reference to a source that
+// is not registered degrades to the literal search instead of an empty screen.
+func TestSearchPortaDoIDFonteAusenteCaiNaBuscaLiteral(t *testing.T) {
+	prov := &fakeProvider{resultados: []provider.ResultadoExterno{{Source: "fake", SourceID: "1", Type: "tv", Title: "Achado"}}}
+	h, _ := setupSearchServer(t, WithSearchProvider(prov), WithAssetsDir(t.TempDir()))
+
+	rec := do(t, h, http.MethodGet, "/api/v1/search?q=tvdb:248741", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	out := decodeSearch(t, rec.Body.Bytes())
+	if len(out.External) != 1 || out.External[0].Title != "Achado" {
+		t.Fatalf("external = %+v, quero degradar para a busca literal", out.External)
+	}
+}
+
+// TestSearchPortaDoIDErroDegrada proves a failing resolver degrades the external block
+// (available:false) instead of turning the search into a 5xx.
+func TestSearchPortaDoIDErroDegrada(t *testing.T) {
+	prov := &provComPorta{err: errors.New("tmdb fora do ar")}
+	h, _ := setupSearchServer(t, WithSearchProvider(prov), WithAssetsDir(t.TempDir()))
+
+	rec := do(t, h, http.MethodGet, "/api/v1/search?q=TMDB:39340", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (degradação)", rec.Code)
+	}
+	out := decodeSearch(t, rec.Body.Bytes())
+	if out.ExternalAvailable {
+		t.Error("external_available = true com a fonte falhando")
+	}
+}
