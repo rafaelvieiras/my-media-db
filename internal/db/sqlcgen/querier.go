@@ -367,6 +367,20 @@ type Querier interface {
 	// bring the file row. Orders by ordinal and then by creation, stable.
 	ListarArquivosDaEntidade(ctx context.Context, arg ListarArquivosDaEntidadeParams) ([]ListarArquivosDaEntidadeRow, error)
 	ListarAssetsPorEntity(ctx context.Context, entityID string) ([]Asset, error)
+	// CARDS of ALL episodes of a series in ONE query, for GET /entities/{id}/episodes and
+	// for the ordering annotation of the detail page (ADR-0021/0033).
+	//
+	// Why it exists: ObterEntityCard is meant for small N and recomputes the transitive
+	// closure of the relation tree ON EVERY CALL (the recursive CTE of `arvore`). A series
+	// with 430 episodes therefore paid 430 closures plus 430 single-row reads, which took
+	// MINUTES on a library served from a network share. The cards come whole, with the
+	// extension_data the projection needs, so the server does not walk the episodes again.
+	//
+	// Tree ownership (the recursive arm of ObterEntityCard) is deliberately ABSENT: an
+	// episode has no descendants, so that arm could only ever match its own files, and the
+	// junction arm below already covers them (media_file_entity is how an episode owns a
+	// file, see ADR-0006). The other columns mirror ObterEntityCard.
+	ListarCardsDeEpisodiosDaSerie(ctx context.Context, parentID string) ([]ListarCardsDeEpisodiosDaSerieRow, error)
 	// All credits of a work, for the detail. Orders by kind, billing order and
 	// id (stable).
 	ListarCreditosDaEntity(ctx context.Context, entityID string) ([]Credit, error)

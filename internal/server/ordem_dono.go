@@ -180,7 +180,7 @@ func (s *Server) validarOrdemDoDono(w http.ResponseWriter, ctx context.Context, 
 		return nil, false
 	}
 	// The episodes of THIS series, to refuse an id from another work (or another type).
-	eps, err := s.episodiosDaSerie(ctx, serieID)
+	eps, err := s.cardsDeEpisodiosDaSerie(ctx, serieID)
 	if err != nil {
 		respondErroInterno(w)
 		return nil, false

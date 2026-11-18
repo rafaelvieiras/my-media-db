@@ -488,6 +488,95 @@ func (q *Queries) CriarEntity(ctx context.Context, arg CriarEntityParams) (Entit
 	return i, err
 }
 
+const listarCardsDeEpisodiosDaSerie = `-- name: ListarCardsDeEpisodiosDaSerie :many
+SELECT
+    e.id, e.type, e.title, e.status, e.release_date, e.extension_data_json,
+    EXISTS (
+        SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present'
+        UNION ALL
+        SELECT 1 FROM media_file_entity mfe JOIN media_file mf ON mf.id = mfe.media_file_id
+            WHERE mfe.entity_id = e.id AND mf.state = 'present'
+    ) AS owned,
+    (SELECT COUNT(*) FROM (
+        SELECT m.id FROM media_file m WHERE m.entity_id = e.id
+        UNION ALL
+        SELECT DISTINCT mfe.media_file_id FROM media_file_entity mfe WHERE mfe.entity_id = e.id
+    )) AS file_count,
+    (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
+    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster,
+    ecc.complete AS completeness_complete,
+    ecc.missing_json AS completeness_missing_json
+FROM entity e
+JOIN entity_relation ep ON ep.child_id = e.id AND ep.kind = 'tv_episode'
+JOIN entity_relation se ON se.child_id = ep.parent_id AND se.kind = 'tv_season'
+LEFT JOIN entity_catalog_completeness ecc ON ecc.entity_id = e.id
+WHERE se.parent_id = ?
+`
+
+type ListarCardsDeEpisodiosDaSerieRow struct {
+	ID                      string
+	Type                    string
+	Title                   string
+	Status                  string
+	ReleaseDate             sql.NullString
+	ExtensionDataJson       sql.NullString
+	Owned                   bool
+	FileCount               int64
+	MatchConfidence         interface{}
+	HasPoster               bool
+	CompletenessComplete    sql.NullInt64
+	CompletenessMissingJson sql.NullString
+}
+
+// CARDS of ALL episodes of a series in ONE query, for GET /entities/{id}/episodes and
+// for the ordering annotation of the detail page (ADR-0021/0033).
+//
+// Why it exists: ObterEntityCard is meant for small N and recomputes the transitive
+// closure of the relation tree ON EVERY CALL (the recursive CTE of `arvore`). A series
+// with 430 episodes therefore paid 430 closures plus 430 single-row reads, which took
+// MINUTES on a library served from a network share. The cards come whole, with the
+// extension_data the projection needs, so the server does not walk the episodes again.
+//
+// Tree ownership (the recursive arm of ObterEntityCard) is deliberately ABSENT: an
+// episode has no descendants, so that arm could only ever match its own files, and the
+// junction arm below already covers them (media_file_entity is how an episode owns a
+// file, see ADR-0006). The other columns mirror ObterEntityCard.
+func (q *Queries) ListarCardsDeEpisodiosDaSerie(ctx context.Context, parentID string) ([]ListarCardsDeEpisodiosDaSerieRow, error) {
+	rows, err := q.db.QueryContext(ctx, listarCardsDeEpisodiosDaSerie, parentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListarCardsDeEpisodiosDaSerieRow{}
+	for rows.Next() {
+		var i ListarCardsDeEpisodiosDaSerieRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.Title,
+			&i.Status,
+			&i.ReleaseDate,
+			&i.ExtensionDataJson,
+			&i.Owned,
+			&i.FileCount,
+			&i.MatchConfidence,
+			&i.HasPoster,
+			&i.CompletenessComplete,
+			&i.CompletenessMissingJson,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listarEntities = `-- name: ListarEntities :many
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
