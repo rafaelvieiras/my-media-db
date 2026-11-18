@@ -16,8 +16,8 @@ import { entityEpisodesQueryOptions } from '@/lib/queries'
 // search param of the route; this module only consumes/fires the switch.
 
 // rotuloOrdem gives the friendly name of an order: it maps the known ones (through the
-// catalog) and capitalizes the others (a new order from the source appears readable
-// without touching here). Internal to the module (react-refresh: the component file only
+// catalog) and prettifies the others (a new order from the source — e.g. a TMDB episode
+// group — appears readable without touching here). Internal to the module (react-refresh: the component file only
 // exports components) — exercised by the labels of the options of SeletorOrdenacao.
 function rotuloOrdem(ordem: string, t: Translate): string {
   switch (ordem) {
@@ -28,7 +28,14 @@ function rotuloOrdem(ordem: string, t: Translate): string {
     case 'absolute':
       return t('media.ordering.absolute')
     default:
-      return ordem.charAt(0).toUpperCase() + ordem.slice(1)
+      // An order that comes from a source with a name of its own (a TMDB episode
+      // group key such as "blu-ray-order") reads better without the hyphens: the
+      // key is an identifier, not a label.
+      return ordem
+        .split('-')
+        .filter(Boolean)
+        .map((parte) => parte.charAt(0).toUpperCase() + parte.slice(1))
+        .join(' ')
   }
 }
 

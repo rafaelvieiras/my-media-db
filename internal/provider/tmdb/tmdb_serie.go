@@ -37,10 +37,11 @@ const (
 )
 
 // BuscarSerieArvore satisfies provider.SerieProvider: it returns the tree of the
-// series `sourceID` in the `langs` languages (with fallback). TMDB only has the
-// "official" order, so DefaultSeasonType/SeasonTypes reflect only that one; ALL the
-// seasons of /tv (including season 0/specials) become TemporadaExterna.
-// ErrNaoEncontrado (404) and network errors propagate.
+// series `sourceID` in the `langs` languages (with fallback). The DEFAULT order is the
+// official one — it is the only one that becomes season entities; the alternative
+// orders (episode groups, tmdb_grupos.go) come as extra `numbering` per episode, as
+// ADR-0021 prescribes. ALL the seasons of /tv (including season 0/specials) become
+// TemporadaExterna. ErrNaoEncontrado (404) and network errors propagate.
 func (c *Client) BuscarSerieArvore(ctx context.Context, sourceID string, langs []string) (provider.SerieArvore, error) {
 	if sourceID == "" {
 		return provider.SerieArvore{}, fmt.Errorf("tmdb: sourceID vazio")
@@ -57,9 +58,14 @@ func (c *Client) BuscarSerieArvore(ctx context.Context, sourceID string, langs [
 		}
 		temporadas = append(temporadas, temp)
 	}
+	// Alternative orderings (TMDB episode groups) are merged into the numbering of
+	// the episodes already built: the tree stays anchored on the official structure
+	// and each group adds one more entry in `numbering` (tmdb_grupos.go).
+	ordens := []string{ordemOficial}
+	ordens = append(ordens, c.mesclarGruposTMDB(ctx, sourceID, temporadas)...)
 	return provider.SerieArvore{
 		DefaultSeasonType: ordemOficial,
-		SeasonTypes:       []string{ordemOficial},
+		SeasonTypes:       ordens,
 		Temporadas:        temporadas,
 	}, nil
 }
