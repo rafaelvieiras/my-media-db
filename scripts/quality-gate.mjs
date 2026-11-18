@@ -52,6 +52,29 @@ const isGenBaseline  = process.argv.includes('--generate-baseline');
 const isE2E          = process.argv.includes('--e2e');
 const isCI           = !isLocal && !isGenBaseline;
 
+// ─── Split mode (CI) ─────────────────────────────────────────────────────────
+// The gate measures two independent sides (Go at the root, Web in web/). They ran
+// one after the other in a single job, which cost the SUM of the two. In CI each
+// side now runs in its OWN job, on its own runner, and a third job merges the two
+// partial reports — so the wall time is the MAXIMUM, not the sum.
+//
+//   --side=go|web      measure only that side, write the partial report with --out
+//   --out=<file>       write the partial metrics JSON (consumed by the merge job)
+//   --report=a,b       MERGE mode: read the partials, compare with the baseline,
+//                      print the combined table and exit by the blocking verdict
+const sideFlag = process.argv.find((a) => a.startsWith('--side='));
+const onlySide = sideFlag ? sideFlag.slice('--side='.length) : null;
+if (onlySide !== null && onlySide !== 'go' && onlySide !== 'web') {
+  console.error(`--side inválido: ${onlySide} (use go ou web)`);
+  process.exit(2);
+}
+const outFlag = process.argv.find((a) => a.startsWith('--out='));
+const outFile = outFlag ? outFlag.slice('--out='.length) : null;
+const reportFlag = process.argv.find((a) => a.startsWith('--report='));
+const reportFiles = reportFlag
+  ? reportFlag.slice('--report='.length).split(',').map((s) => s.trim()).filter(Boolean)
+  : null;
+
 // ─── ANSI helpers (only with --local) ────────────────────────────────────────
 const c = {
   reset:  isLocal ? '\x1b[0m'  : '',
@@ -589,14 +612,21 @@ const SIDE_SKIP_REASONS = {
 // leaves the metric null) — reusing the null handling that already exists in
 // compareMetrics/printLocal/printMarkdown.
 function collectMetrics(touches = { touchesGo: true, touchesWeb: true }, opts = {}) {
-  const { fast = false } = opts;
+  const { fast = false, side = null } = opts;
   mkdirSync(REPORTS, { recursive: true });
   const metrics = {};
   const touchedBySide = { go: touches.touchesGo, web: touches.touchesWeb, e2e: true };
 
   // --e2e mode: only reads the artifacts of the 'e2e' side (it does not run
   // Go/Web); outside this mode, behavior identical to before (['go','web']).
-  const sides = isE2E ? ['e2e'] : ['go', 'web'];
+  // `side` is the CI split: one job per side, the other side stays null here and
+  // is filled by the other job in the merge report.
+  // In split mode the other side's keys are simply ABSENT from the partial report
+  // (the merge job supplies them). They are NOT pre-filled with null: a null from
+  // the other job would overwrite a real value, and 'side' is not enough to tell
+  // which keys belong together (e2e_coverage_lines belongs to the go side, while
+  // e2e_binary/front belong to the browser side).
+  const sides = isE2E ? ['e2e'] : (side ? [side] : ['go', 'web']);
 
   for (const side of sides) {
     if (!touchedBySide[side]) {
@@ -833,6 +863,37 @@ function printMarkdown(current, result) {
   return passed;
 }
 
+// ─── Merge of the two CI partial reports ─────────────────────────────────────
+// The Go job and the Web job each measured ONE side and wrote a partial JSON. This
+// runs in the final (cheap) job: it reuses the SAME comparison and the SAME Markdown
+// renderer as a single-run gate, so the PR gets one table and one verdict — the split
+// changes WHERE the work runs, never what the ratchet means.
+function mergedReport(baseline) {
+  const current = {};
+  for (const file of reportFiles) {
+    let partial;
+    try {
+      partial = JSON.parse(readFileSync(file, 'utf8'));
+    } catch (e) {
+      warn(`não foi possível ler o relatório parcial ${file}: ${e.message}`);
+      process.exit(1);
+    }
+    Object.assign(current, partial.metrics ?? partial);
+  }
+
+  // A side whose job never delivered a number stays null, exactly like a collector
+  // that could not measure — the existing null handling applies unchanged.
+  // The two browser metrics belong to the E2E workflow, which runs separately and is
+  // merged by its own `--e2e` pass — their absence here is expected, not a hole.
+  const missing = Object.keys(METRIC_DEFS).filter((k) => !(k in current) && METRIC_DEFS[k].side !== 'e2e');
+  if (missing.length > 0) {
+    warn(`métricas ausentes nos relatórios parciais: ${missing.join(', ')}`);
+    for (const k of missing) current[k] = null;
+  }
+
+  return printMarkdown(current, compareMetrics(current, baseline));
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 function main() {
   if (isGenBaseline) { generateBaseline(); return; }
@@ -867,7 +928,19 @@ function main() {
     warn('Modo --fast: só coletores baratos (go_coverage_lines, go_gofmt_unformatted, web_coverage_lines, web_typecheck_errors). Não substitui a rodada completa antes do push.');
   }
 
-  const current = collectMetrics(touches, { fast: isFast });
+  if (reportFiles) {
+    // Merge mode: the two sides were measured in their own jobs.
+    if (!mergedReport(baseline)) process.exit(1);
+    return;
+  }
+
+  const current = collectMetrics(touches, { fast: isFast, side: onlySide });
+  if (outFile) {
+    // Partial report consumed by the merge job (see mergedReport).
+    mkdirSync(dirname(outFile), { recursive: true });
+    writeFileSync(outFile, JSON.stringify({ side: onlySide, metrics: current }, null, 2) + '\n', 'utf8');
+    log(`${c.dim}métricas parciais em ${outFile}${c.reset}`);
+  }
   const result  = compareMetrics(current, baseline);
 
   const passed = isLocal ? printLocal(current, result) : printMarkdown(current, result);

@@ -27,6 +27,12 @@ permissions:
   # step failed with "Resource not accessible by integration".
   pull-requests: write
 
+# Uma nova push no mesmo PR torna a rodada anterior inútil: cancelar em vez de pagar
+# duas execuções completas (o job leva ~8 min).
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   e2e:
     name: E2E de navegador (Camada 2)
@@ -38,7 +44,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           # EXACT patch (= go.mod toolchain), same as the ratchet. Do not use
           # '1.26.x' (the runner may land on an earlier patch through the cache).
@@ -46,7 +52,7 @@ jobs:
           cache: true
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: 'npm'
@@ -55,25 +61,47 @@ jobs:
 
       # The e2e global-setup runs `npm run build` in web/, so the web deps
       # must exist. `npm ci` respects the strict lockfile (same as Docker).
+      #
+      # The installed tree is cached (same as the gate): `npm ci` unpacks everything on
+      # every run, and the npm cache only saves the download, not the extraction.
+      # `--prefer-offline` uses the cache without revalidating each tarball.
+      - name: Cache web/node_modules
+        id: nodemodules
+        uses: actions/cache@v6
+        with:
+          path: web/node_modules
+          key: nodemodules-${{ runner.os }}-24-${{ hashFiles('web/package-lock.json', 'web/package.json') }}
+
       - name: Install web dependencies
+        if: steps.nodemodules.outputs.cache-hit != 'true'
         working-directory: web
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit --no-fund
 
       # ISOLATED e2e/ project: `npm install` (NEVER `npm ci`) so as not to touch the
       # strict lockfile of web/ (rule of this npm version).
       - name: Install e2e dependencies
         working-directory: e2e
-        run: npm install
+        run: npm install --no-audit --no-fund
 
       - name: Cache Playwright browsers
+        id: pw
         uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('e2e/package.json') }}
 
+      # System libraries only when the browser cache is cold: with the browser already
+      # unpacked, `--with-deps` still runs a full apt pass on every run (~20 s) just to
+      # re-check packages the runner image usually already carries (it ships Chrome,
+      # which pulls the same libnss3/libatk/libgbm family).
+      - name: Install Playwright system dependencies
+        if: steps.pw.outputs.cache-hit != 'true'
+        working-directory: e2e
+        run: npx playwright install-deps chromium
+
       - name: Install Playwright Chromium
         working-directory: e2e
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
 
       # make e2e-cov = cd e2e && E2E_COVERAGE=1 npm run e2e: builds front end+binary,
       # brings it up with the fake, runs the journeys and extracts the browser coverage.
