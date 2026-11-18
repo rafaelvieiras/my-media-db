@@ -123,13 +123,43 @@ jobs:
       # baseline and exercise the integration.
       # --no-install-recommends: the recommends of ffmpeg are not needed by a CLI
       # test and pull in a pile of GUI libraries that only cost download time.
-      - name: Install ffmpeg (real ffprobe test)
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends ffmpeg
+      # ffmpeg is the slowest and most erratic step of this job: no hosted image ships
+      # it, so every run downloads 87 packages — 22 s on a good day, 12 min when the
+      # mirror crawls (both measured). The .deb files are cached; a cold cache behaves
+      # exactly like before.
+      - name: Cache the ffmpeg packages
+        id: ffmpeg-debs
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ffmpeg-debs
+          key: ffmpeg-debs-${{ runner.os }}-noble-v1
 
-      # Only the `node` runtime: the gate script uses node: builtins and never
-      # imports a package, so this job does not install web dependencies at all.
+      - name: Download the ffmpeg packages
+        if: steps.ffmpeg-debs.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          mkdir -p ~/.cache/ffmpeg-debs
+          cd ~/.cache/ffmpeg-debs
+          # apt itself resolves the closure and prints the URL of every package
+          apt-get install --print-uris -y --no-install-recommends ffmpeg \
+            | sed -n "s/^'\([^']*\.deb\)'.*/\1/p" > urls.txt
+          echo "pacotes a baixar: $(wc -l < urls.txt)"
+          xargs -a urls.txt -n1 -P8 curl -fsSLO
+
+      # The internal/mediainfo package has an integration test that runs ffprobe FOR
+      # REAL (it generates a clip with ffmpeg); it skips itself when the binaries are
+      # missing, which would silently drop coverage — hence the install and the check.
+      - name: Install ffmpeg (from the cache when warm)
+        run: |
+          set -euo pipefail
+          # dpkg does not order dependencies; the fallback repairs it from the network
+          # if the cached set is ever incomplete.
+          sudo dpkg -i ~/.cache/ffmpeg-debs/*.deb \
+            || sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -version | head -1
+          ffprobe -version | head -1
+
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
