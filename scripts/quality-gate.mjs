@@ -660,14 +660,14 @@ const FAST_METRIC_KEYS = new Set([
 
 // Which collectors may run AT THE SAME TIME, per side.
 //
-// Not a single wave with everything. The Go side is compile-bound: starting
-// golangci-lint (which saturates every core by itself) while two `go test` builds are
-// also compiling does not divide the work, it multiplies it — measured on a 4-vCPU CI
-// runner, one wave of six took over 6 minutes where the sequential run took 64 s.
+// The Go side is compile-bound and shares one build cache: the first collector runs
+// alone so it warms that cache, then the rest run together over it. Measured on a CI
+// runner: 64 s sequential → 28 s in this shape. The web side is dominated by vitest and
+// its four other tools are single-threaded, so splitting it into waves only added time
+// (108 s in waves vs 105 s all-parallel); it runs as one wave.
 //
-// So the first collector of a side runs alone (it warms the shared build cache) and the
-// rest run together over that warm cache. Keys not listed here fall into the last wave,
-// so adding a metric never needs a change in this table.
+// Keys not listed here fall into the last wave, so adding a metric never needs a change
+// in this table.
 const ONDAS = {
   go: [
     ['go_coverage_lines'],
