@@ -920,6 +920,15 @@ func (s *Server) Handler() (http.Handler, error) {
 				// the write pool (ADR-0010).
 				ent.Put("/{id}/external-ids", s.updateExternalIds)
 
+				// OWNER ORDER (ADR-0033): the numbering the owner declares when the
+				// release follows no provider order -- including a unit that merges
+				// several aired episodes, which no provider models. Stored in the
+				// OVERRIDE layer (survives a re-enrich) and consumed by the scanner
+				// index, by the order discovery and by the grouping.
+				ent.Get("/{id}/owner-order", s.getOrdemDoDono)
+				ent.Put("/{id}/owner-order", s.putOrdemDoDono)
+				ent.Delete("/{id}/owner-order", s.deleteOrdemDoDono)
+
 				// PER-LANGUAGE override editor: the owner writes the sparse patch
 				// that wins over everything. PATCH merges per language (?lang=), the
 				// DELETEs clean (field/language or reset), GET returns the raw blob.

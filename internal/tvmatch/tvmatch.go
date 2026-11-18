@@ -23,8 +23,12 @@ import (
 // byAbsolute matches the absolute number (anime). defaultType is the default
 // ordering of the series; orderings are all the orderings it uses.
 type Index struct {
-	byOrdering  map[string]map[[2]int]string
-	byAbsolute  map[int]string
+	byOrdering map[string]map[[2]int]string
+	byAbsolute map[int]string
+	// byDono is the OWNER order (ADR-0033): the pair maps to the ORDERED list of
+	// episode ids, because a merged release entry puts several episodes on the same
+	// (season, number). Nil/empty when the owner declared no order.
+	byDono      map[[2]int][]string
 	defaultType string
 	orderings   []string
 }
@@ -80,11 +84,16 @@ func (idx *Index) IndexarEpisodio(epID string, ns map[string]any) {
 }
 
 // Casar matches the EpisodeInfo of the file against the episode ids, in order.
-// Steps: (1) default ordering; (2) fallback to the other orderings; (3)
-// absolute number against absolute_number. Range → list of ids (ordinal 0,1,2…).
+// Steps: (0) owner order, when the owner declared one; (1) default ordering; (2)
+// fallback to the other orderings; (3) absolute number against absolute_number. Range → list of ids (ordinal 0,1,2…).
 // Ambiguous (different orderings → distinct episodes) or a number without a
 // match → (nil,false) = review/pending.
 func Casar(idx *Index, ep naming.EpisodeInfo) ([]string, bool) {
+	// 0) The owner order wins over every provider order: it exists exactly because
+	// the release the owner has does not follow the provider (ADR-0033).
+	if ids, ok := casarDono(idx, ep); ok {
+		return ids, true
+	}
 	if ep.IsAbsolute {
 		return casarAbsoluto(idx, ep.Absolute)
 	}

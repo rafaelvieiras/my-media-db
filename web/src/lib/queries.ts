@@ -4,6 +4,7 @@ import {
   getCollectionDetail,
   getEntity,
   getEntityEpisodes,
+  getOwnerOrder,
   getEntityFields,
   getEntityFiles,
   getEntityMembers,
@@ -124,6 +125,16 @@ export function entityMembersQueryOptions(id: string, lang?: string) {
 // `(id, ordering, lang)` under the prefix `['entity', id]`: switching the order (selector) is a
 // cache miss = re-fetch; the language re-resolves the titles. It is only queried when the
 // chosen order differs from the default (the default view uses the season cards).
+// Owner order of a series (ADR-0033). A short staleTime: it is written by the owner
+// in this same screen, and the invalidation after a save is what refreshes it.
+export function ownerOrderQueryOptions(id: string) {
+  return queryOptions({
+    queryKey: ['entity', id, 'owner-order'],
+    queryFn: () => getOwnerOrder(id),
+    staleTime: 30_000,
+  })
+}
+
 export function entityEpisodesQueryOptions(
   id: string,
   ordering: string,

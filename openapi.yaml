@@ -699,6 +699,88 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
 
+  /api/v1/entities/{id}/owner-order:
+    get:
+      operationId: getOwnerOrder
+      summary: Ordem do dono da série (ADR-0033).
+      description: >
+        Devolve a ORDEM DO DONO: a numeração que o dono declarou para a série quando o
+        lançamento que ele tem não segue nenhuma ordem do provider. É o único lugar em que
+        VÁRIOS episódios podem compartilhar a mesma temporada/número — a unidade que
+        fundiu vários episódios exibidos numa entrada só (um relançamento em DVD/streaming),
+        que nem o TMDB nem o TheTVDB conseguem modelar. Ordem ausente → `units: []`.
+        Entity que não é série → 422; inexistente → 404.
+      tags: [entities]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Ordem do dono (vazia quando não declarada).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OwnerOrder" }
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: putOwnerOrder
+      summary: Declara (ou substitui) a ordem do dono (ADR-0033).
+      description: >
+        Grava a ordem COMPLETA da série. Valida tudo ANTES de escrever: unidade com pelo
+        menos 1 episódio, temporada >= 0 e número >= 1, nenhum par (temporada, número)
+        repetido, nenhum episódio em duas unidades e todo episódio pertencente a ESTA
+        série. Recusa → 422 com código estável (`empty_units`, `invalid_number`,
+        `duplicate_number`, `empty_unit`, `duplicate_episode`, `episode_not_in_series`,
+        `too_many_units`, `too_many_episodes`) e nada é gravado. A ordem vive na camada de
+        OVERRIDE (`extension_data.core.tv@1.owner_order`), então sobrevive a um
+        re-enriquecimento e não apaga os outros overrides do dono. Quando existe, ela é a
+        ordem PADRÃO da série e o scanner casa os arquivos por ela primeiro.
+      tags: [entities]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OwnerOrder" }
+      responses:
+        "200":
+          description: Ordem gravada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OwnerOrder" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteOwnerOrder
+      summary: Remove a ordem do dono (ADR-0033).
+      description: >
+        Remove APENAS a ordem do dono, preservando os outros overrides do blob (a
+        namespace/`extension_data` desaparecem quando ficam vazios; blob vazio remove a
+        linha de override). Idempotente: 204 mesmo quando não havia ordem.
+      tags: [entities]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Removida (ou já ausente).
+        "404":
+          $ref: "#/components/responses/Error"
+
   /api/v1/entities/{id}/override/{campo}:
     delete:
       operationId: clearOverrideField
@@ -3008,6 +3090,49 @@ components:
         absolute_number:
           type: integer
           description: Número absoluto (contínuo), quando disponível.
+        merged_episodes:
+          type: integer
+          description: >
+            Presente e > 1 quando este número é COMPARTILHADO por vários episódios porque a
+            ORDEM DO DONO declara uma unidade que os funde (ADR-0033). Nenhuma ordem de
+            provider produz isso.
+        merged_ordinal:
+          type: integer
+          description: Posição (1-based) deste episódio dentro da unidade mesclada.
+    OwnerOrder:
+      type: object
+      description: >
+        Ordem do dono (ADR-0033): a numeração declarada pelo dono, ancorada em IDS de
+        episódio (nunca em números) para sobreviver a um re-scrape. `units` vazio significa
+        "não declarada".
+      required: [units]
+      properties:
+        name:
+          type: string
+          description: Rótulo livre da ordem (ex. "HBO 2004").
+        based_on:
+          type: string
+          description: Ordem do provider em que ela se baseia, para comparação (ex. "official").
+        units:
+          type: array
+          items: { $ref: "#/components/schemas/OwnerOrderUnit" }
+    OwnerOrderUnit:
+      type: object
+      description: >
+        Uma unidade numerada da ordem do dono. `episodes` tem 1..N episódios e a ORDEM
+        importa: é o `ordinal` do vínculo arquivo↔episódio.
+      required: [season, number, episodes]
+      properties:
+        season: { type: integer, minimum: 0 }
+        number: { type: integer, minimum: 1 }
+        title:
+          type: string
+          description: Título livre da unidade (opcional).
+        episodes:
+          type: array
+          minItems: 1
+          items: { type: string }
+          description: Ids dos episódios da unidade, na ordem do lançamento.
     EntityList:
       type: object
       required: [items, total, limit, offset]

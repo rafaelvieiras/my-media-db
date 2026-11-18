@@ -116,6 +116,11 @@ export const entidades = new Map<string, ResolvedEntity>()
 export const overridesPorEntidade = new Map<string, OverrideBlob>()
 export const artworkPorEntidade = new Map<string, ArtworkResponse>()
 export const arquivosPorEntidade = new Map<string, FileList>()
+// Owner order per entity (ADR-0033): absent = "not declared".
+export const ordensPorEntidade = new Map<
+  string,
+  { name: string; based_on: string; units: unknown[] }
+>()
 
 export const handlers = [
   // Language config (LanguageProvider, mounted by EVERY route via rootRoute).
@@ -148,6 +153,33 @@ export const handlers = [
       )
     }
     return HttpResponse.json(entidade)
+  }),
+
+  // OWNER ORDER (ADR-0033): `units: []` (not declared) unless the test seeded one, and
+  // the PUT echoes the body it received — the journeys assert the payload they send, not
+  // a server transformation.
+  http.get('/api/v1/entities/:id/owner-order', ({ params }) =>
+    HttpResponse.json(
+      ordensPorEntidade.get(String(params.id)) ?? {
+        name: '',
+        based_on: '',
+        units: [],
+      },
+    ),
+  ),
+  http.put('/api/v1/entities/:id/owner-order', async ({ params, request }) => {
+    const corpo = (await request.json()) as {
+      name: string
+      based_on: string
+      units: unknown[]
+    }
+    const gravada = { ...corpo, units: corpo.units ?? [] }
+    ordensPorEntidade.set(String(params.id), gravada)
+    return HttpResponse.json(gravada)
+  }),
+  http.delete('/api/v1/entities/:id/owner-order', ({ params }) => {
+    ordensPorEntidade.delete(String(params.id))
+    return new HttpResponse(null, { status: 204 })
   }),
 
   // Raw override blob — `{}` (no override) when the test seeded nothing.

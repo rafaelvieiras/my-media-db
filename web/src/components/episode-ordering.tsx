@@ -27,6 +27,8 @@ function rotuloOrdem(ordem: string, t: Translate): string {
       return t('media.ordering.dvd')
     case 'absolute':
       return t('media.ordering.absolute')
+    case 'owner':
+      return t('media.ordering.owner')
     default:
       // An order that comes from a source with a name of its own (a TMDB episode
       // group key such as "blu-ray-order") reads better without the hyphens: the

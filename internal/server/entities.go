@@ -96,6 +96,12 @@ type episodeNumberingDTO struct {
 	Season         int  `json:"season"`
 	Number         int  `json:"number"`
 	AbsoluteNumber *int `json:"absolute_number,omitempty"`
+	// MergedEpisodes (>1) marks a number SHARED by several episodes because the OWNER
+	// order declares one unit that merges them (a re-cut release, ADR-0033) — no
+	// provider order can produce this. MergedOrdinal is the 1-based position of this
+	// episode inside the unit.
+	MergedEpisodes int `json:"merged_episodes,omitempty"`
+	MergedOrdinal  int `json:"merged_ordinal,omitempty"`
 }
 
 // entityListDTO is the paginated response of GET /api/v1/entities.
@@ -377,7 +383,7 @@ const (
 	// stores `numbering` (order→{season,number}) + `absolute_number`. Read here
 	// for the card numbering; the WRITE is born in enrich (same value, distinct
 	// sources).
-	nsTVCore = "core.tv@1"
+	nsTVCore = tvext.NsTVCore
 	// orderingAbsoluto is the VIRTUAL order of the selector that numbers
 	// episodes by `absolute_number` (continuous across seasons, anime), in a
 	// single group — it is not a `numbering` key, it is derived from the presence

@@ -350,6 +350,11 @@ func (m *Manager) carregarIndex(ctx context.Context, serieID string) *tvmatch.In
 		return idx
 	}
 	idx.PreencherOrdenacoes(extrairTVNS(serie.ExtensionDataJson))
+	// The owner order lives in the OVERRIDE layer (ADR-0033): a re-enrich rewrites
+	// extension_data, the owner's numbering must survive it.
+	if ov, err := q.ObterMediaOverride(ctx, serieID); err == nil {
+		idx.AplicarOrdemDoDono(tvext.OrdemDoDonoDoOverride(ov.OverrideJson))
+	}
 
 	temps, err := q.ListarRelacoesFilhas(ctx, serieID)
 	if err != nil {

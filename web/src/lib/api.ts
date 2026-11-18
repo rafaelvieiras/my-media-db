@@ -536,6 +536,64 @@ export async function updateExternalIds(
   return lerEscritaIdentidade(res)
 }
 
+// ── Owner order (ADR-0033) ───────────────────────────────────────────────────
+
+// A numbered unit of the owner's own order. `episodes` has 1..N ids and the ORDER is
+// meaningful: it is the `ordinal` of the file link, so a unit with three episodes is a
+// release entry that merged three aired episodes.
+export interface OwnerOrderUnit {
+  season: number
+  number: number
+  title?: string
+  episodes: string[]
+}
+
+// The order the owner declares for a series. An empty `units` means "not declared".
+// Anchored on episode IDS (never on numbers) so a re-scrape cannot shuffle it.
+export interface OwnerOrder {
+  name: string
+  based_on: string
+  units: OwnerOrderUnit[]
+}
+
+// Reads the owner order of the series (empty units when there is none).
+export async function getOwnerOrder(id: string): Promise<OwnerOrder> {
+  return lerJson<OwnerOrder>(
+    await fetch(
+      `${base}/api/v1/entities/${encodeURIComponent(id)}/owner-order`,
+    ),
+  )
+}
+
+// Writes (replaces) the whole owner order. The backend validates everything before
+// writing: an id from another series, a duplicate episode or a duplicate
+// (season, number) comes back as an `ApiError` and nothing is stored.
+export async function putOwnerOrder(
+  id: string,
+  ordem: OwnerOrder,
+): Promise<OwnerOrder> {
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/owner-order`,
+    {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(ordem),
+    },
+  )
+  return lerJson<OwnerOrder>(res)
+}
+
+// Removes the owner order, keeping every other override of the entity. Idempotent.
+export async function deleteOwnerOrder(id: string): Promise<void> {
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/owner-order`,
+    { method: 'DELETE' },
+  )
+  if (!res.ok) {
+    throw await erroDaResposta(res)
+  }
+}
+
 // ── Language settings ────────────────────────────────────────────────────────
 
 // Current language config (primary, fallback, allowed). When there is no
