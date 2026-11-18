@@ -673,11 +673,11 @@ const ONDAS = {
     ['go_coverage_lines'],
     ['e2e_coverage_lines', 'go_gofmt_unformatted', 'go_lint_issues', 'go_vuln_high', 'go_cyclo_violations'],
   ],
-  web: [
-    ['web_coverage_lines'],
-    ['web_typecheck_errors', 'web_duplicate_percent', 'web_lint_issues', 'web_audit_critical'],
-  ],
-  // Two cheap readers: no reason to serialize.
+  // The web side is single-threaded per tool and dominated by vitest: starting the four
+  // others next to it costs nothing measurable (105 s all-parallel vs 108 s in waves on
+  // the same runner), so they all go together.
+  web: null,
+  // Two cheap readers: no reason to serialize either.
   e2e: null,
 };
 
