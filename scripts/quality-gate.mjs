@@ -28,6 +28,12 @@
  * Robustness: OPTIONAL Go tools (golangci-lint, govulncheck, gocyclo) that are
  * not on the PATH make the metric SKIPPED (with a warning); they never break nor
  * block the gate. gofmt and `go test` come with Go; jscpd and npm come from web.
+ * CI installs all three and VERIFIES them before the collector runs.
+ *
+ * Three outcomes, never confused (see FALHOU):
+ *   number  → measured;
+ *   null    → skipped ON PURPOSE (side untouched, --fast, other workflow) — not a verdict;
+ *   'failed'→ TRIED and could not measure → BLOCKING, because "unknown" is not "fine".
  */
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
@@ -244,30 +250,52 @@ function logFailure(key, stdout, stderr, message) {
   warn(`Saída completa em: ${logPath}`);
 }
 
+// The third outcome of a collector, and the one that used to be invisible.
+//
+// `null` means "there was nothing to measure here" — the side was not touched by
+// the diff, `--fast` excluded the collector, or the metric belongs to another
+// workflow. That is a legitimate skip and must not block.
+//
+// FALHOU means "it ran and could not produce a number": the suite does not
+// compile, the tool is there but writes no report, the JSON has an unexpected
+// shape. Reporting that as `null` — which is what this script did — turned a
+// broken unit suite into a GREEN gate with the metric shown as "pulada". The gate
+// would then block only when a metric that happened to be measured got worse,
+// which is not what a ratchet promises. FALHOU is BLOCKING.
+const FALHOU = 'failed';
+// Why a metric is in the blocking list: "got worse" or "could not be measured".
+// The two need different words, because the fix is different.
+const MOTIVO_NAO_MEDIDO = 'nao-medido';
+
+// Records the failure (full output in reports/<key>-failure.log) and returns the
+// sentinel. Every "could not measure" path goes through here.
+function falhou(key, stdout, stderr, message) {
+  logFailure(key, stdout, stderr, message);
+  return FALHOU;
+}
+
 // ─── Go collectors (run at the root) ─────────────────────────────────────────
 
 // Coverage: go test -coverprofile → go tool cover -func → total %.
 // go test/gofmt always exist (they ship with Go). If the tests fail to
-// compile/run, we warn and the metric becomes null (skipped) — it never crashes.
+// compile/run, the metric becomes FALHOU (blocking) — it never crashes.
 function collectGoCoverage() {
   const profile = join(REPORTS, 'go-coverage.out');
   const t = run(`go test ./... -coverprofile="${profile}" -covermode=set`);
   if (t.code !== 0) {
-    logFailure('go_coverage_lines', t.stdout, t.stderr, 'go test falhou — cobertura não medida (métrica pulada):');
-    return null;
+    return falhou('go_coverage_lines', t.stdout, t.stderr, 'go test falhou — cobertura NÃO MEDIDA (bloqueante):');
   }
   if (!existsSync(profile)) {
-    warn('perfil de cobertura não gerado — métrica pulada');
-    return null;
+    return falhou('go_coverage_lines', t.stdout, t.stderr, 'go test passou mas não gerou o perfil de cobertura — cobertura NÃO MEDIDA:');
   }
   const f = run(`go tool cover -func="${profile}"`);
   if (f.code !== 0) {
-    warn('go tool cover falhou — cobertura pulada');
-    return null;
+    return falhou('go_coverage_lines', f.stdout, f.stderr, 'go tool cover falhou — cobertura NÃO MEDIDA:');
   }
   const line = f.stdout.trim().split('\n').filter((l) => l.startsWith('total:')).pop();
   const m = line && line.match(/(\d+(?:\.\d+)?)%/);
-  return m ? parseFloat(m[1]) : 0;
+  if (!m) return falhou('go_coverage_lines', f.stdout, f.stderr, 'go tool cover não imprimiu a linha "total:" — cobertura NÃO MEDIDA:');
+  return parseFloat(m[1]);
 }
 
 // E2E coverage: how much of the APP code the Layer 1 JOURNEYS (internal/e2e)
@@ -279,45 +307,44 @@ function collectGoCoverage() {
 function collectE2ECoverage() {
   const listed = run('go list ./internal/...');
   if (listed.code !== 0) {
-    warn('go list falhou — cobertura E2E pulada');
-    return null;
+    return falhou('e2e_coverage_lines', listed.stdout, listed.stderr, 'go list falhou — cobertura E2E NÃO MEDIDA:');
   }
   const pkgs = listed.stdout
     .trim()
     .split('\n')
     .filter((p) => p && !p.endsWith('/internal/e2e') && !p.endsWith('/internal/provider/fake'));
   if (pkgs.length === 0) {
-    warn('nenhum pacote para -coverpkg — cobertura E2E pulada');
-    return null;
+    return falhou('e2e_coverage_lines', listed.stdout, listed.stderr, 'nenhum pacote para -coverpkg — cobertura E2E NÃO MEDIDA:');
   }
   const profile = join(REPORTS, 'e2e-coverage.out');
   const t = run(
     `go test ./internal/e2e/... -coverpkg="${pkgs.join(',')}" -covermode=set -coverprofile="${profile}" -count=1`,
   );
   if (t.code !== 0) {
-    logFailure('e2e_coverage_lines', t.stdout, t.stderr, 'go test e2e falhou — cobertura E2E não medida (métrica pulada):');
-    return null;
+    return falhou('e2e_coverage_lines', t.stdout, t.stderr, 'go test das jornadas falhou — cobertura E2E NÃO MEDIDA (bloqueante):');
   }
   if (!existsSync(profile)) {
-    warn('perfil E2E não gerado — métrica pulada');
-    return null;
+    return falhou('e2e_coverage_lines', t.stdout, t.stderr, 'go test das jornadas passou mas não gerou o perfil — cobertura E2E NÃO MEDIDA:');
   }
   const f = run(`go tool cover -func="${profile}"`);
   if (f.code !== 0) {
-    warn('go tool cover (e2e) falhou — cobertura E2E pulada');
-    return null;
+    return falhou('e2e_coverage_lines', f.stdout, f.stderr, 'go tool cover (e2e) falhou — cobertura E2E NÃO MEDIDA:');
   }
   const line = f.stdout.trim().split('\n').filter((l) => l.startsWith('total:')).pop();
   const m = line && line.match(/(\d+(?:\.\d+)?)%/);
-  return m ? parseFloat(m[1]) : 0;
+  if (!m) return falhou('e2e_coverage_lines', f.stdout, f.stderr, 'go tool cover (e2e) não imprimiu "total:" — cobertura E2E NÃO MEDIDA:');
+  return parseFloat(m[1]);
 }
 
 // gofmt -l: number of unformatted .go files. Always available.
 function collectGofmt() {
   // Restricted to the Go code directories so it does not walk node_modules.
   const r = run('gofmt -l cmd internal');
+  // gofmt exits != 0 on a parse error, and it prints nothing to stdout in that
+  // case — counting lines would report "0 files unformatted", i.e. perfect
+  // formatting, for a file it could not even read.
   if (r.code !== 0) {
-    warn('gofmt -l retornou erro: ' + (r.stderr.trim() || 'desconhecido'));
+    return falhou('go_gofmt_unformatted', r.stdout, r.stderr, 'gofmt -l retornou erro — formatação NÃO MEDIDA (bloqueante):');
   }
   return countNonEmptyLines(r.stdout);
 }
@@ -325,6 +352,9 @@ function collectGofmt() {
 // golangci-lint (OPTIONAL): counts the Issues in the JSON. v2 uses --output.json.path.
 function collectGolangciLint() {
   if (!commandExists('golangci-lint')) {
+    // Absent tool = skip BY DESIGN (it is optional; local machines may not have it).
+    // CI installs it and verifies it in its own step, so where the verdict matters
+    // this path cannot be taken.
     warn('golangci-lint não está no PATH — métrica "go_lint_issues" pulada (instale com: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest)');
     return null;
   }
@@ -335,15 +365,16 @@ function collectGolangciLint() {
   // exit 1 = found issues (expected); it is only a real failure if the file does
   // not exist.
   if (!existsSync(out)) {
-    logFailure('go_lint_issues', r.stdout, r.stderr, 'golangci-lint não produziu relatório JSON — métrica pulada:');
-    return null;
+    return falhou('go_lint_issues', r.stdout, r.stderr, 'golangci-lint rodou e não produziu relatório JSON — lint NÃO MEDIDO (bloqueante):');
   }
   try {
     const data = JSON.parse(readFileSync(out, 'utf8'));
-    return Array.isArray(data.Issues) ? data.Issues.length : 0;
+    if (!Array.isArray(data.Issues)) {
+      return falhou('go_lint_issues', r.stdout, r.stderr, 'relatório do golangci-lint sem o campo Issues — lint NÃO MEDIDO:');
+    }
+    return data.Issues.length;
   } catch (e) {
-    warn('não foi possível parsear o JSON do golangci-lint: ' + e.message);
-    return null;
+    return falhou('go_lint_issues', r.stdout, r.stderr, `não foi possível parsear o JSON do golangci-lint (${e.message}) — lint NÃO MEDIDO:`);
   }
 }
 
@@ -357,8 +388,7 @@ function collectGovulncheck() {
   }
   const r = run('govulncheck -json ./...');
   if (r.code !== 0 && !r.stdout.trim()) {
-    logFailure('go_vuln_high', r.stdout, r.stderr, 'govulncheck falhou sem saída — métrica pulada:');
-    return null;
+    return falhou('go_vuln_high', r.stdout, r.stderr, 'govulncheck falhou sem saída — vulnerabilidades NÃO MEDIDAS (bloqueante):');
   }
   const affected = new Set();
   for (const obj of splitJsonStream(r.stdout)) {
@@ -420,16 +450,14 @@ function collectWebDuplication() {
   const r = run(`npx --yes jscpd src --reporters json --output "${outDir}" --silent`, { cwd: WEB });
   const reportPath = join(outDir, 'jscpd-report.json');
   if (!existsSync(reportPath)) {
-    logFailure('web_duplicate_percent', r.stdout, r.stderr, 'jscpd não gerou relatório — duplicação pulada:');
-    return null;
+    return falhou('web_duplicate_percent', r.stdout, r.stderr, 'jscpd rodou e não gerou relatório — duplicação NÃO MEDIDA (bloqueante):');
   }
   try {
     const data = JSON.parse(readFileSync(reportPath, 'utf8'));
     const pct = data?.statistics?.total?.percentage ?? 0;
     return parseFloat(Number(pct).toFixed(2));
   } catch (e) {
-    warn('não foi possível parsear o relatório do jscpd: ' + e.message);
-    return null;
+    return falhou('web_duplicate_percent', r.stdout, r.stderr, `não foi possível parsear o relatório do jscpd (${e.message}) — duplicação NÃO MEDIDA:`);
   }
 }
 
@@ -439,8 +467,7 @@ function collectWebAuditCritical() {
   const r = run('npm audit --json', { cwd: WEB });
   const raw = r.stdout.trim();
   if (!raw) {
-    logFailure('web_audit_critical', r.stdout, r.stderr, 'npm audit não produziu saída — métrica pulada:');
-    return null;
+    return falhou('web_audit_critical', r.stdout, r.stderr, 'npm audit não produziu saída — auditoria NÃO MEDIDA (bloqueante):');
   }
   try {
     const data = JSON.parse(raw);
@@ -455,8 +482,7 @@ function collectWebAuditCritical() {
     }
     return crit;
   } catch (e) {
-    warn('não foi possível parsear o npm audit: ' + e.message);
-    return null;
+    return falhou('web_audit_critical', r.stdout, r.stderr, `não foi possível parsear o npm audit (${e.message}) — auditoria NÃO MEDIDA:`);
   }
 }
 
@@ -473,10 +499,9 @@ function collectWebTypecheck() {
   const saida = `${r.stdout}\n${r.stderr}`;
   const m = saida.match(/error TS\d+/g);
   if (!m) {
-    // exited !=0 but without a recognizable "error TS" (e.g.: tsc missing/setup failure):
-    // it skips instead of blocking improperly.
-    logFailure('web_typecheck_errors', r.stdout, r.stderr, 'tsc -b falhou sem erros TS reconhecíveis — métrica "web_typecheck_errors" pulada:');
-    return null;
+    // exited !=0 but without a recognizable "error TS": tsc itself could not run
+    // (missing binary, bad tsconfig). That is a failed measurement, not zero errors.
+    return falhou('web_typecheck_errors', r.stdout, r.stderr, 'tsc -b falhou sem erros TS reconhecíveis — type-check NÃO MEDIDO (bloqueante):');
   }
   return m.length;
 }
@@ -489,14 +514,12 @@ function collectWebLint() {
   const r = run('npx --yes eslint . -f json', { cwd: WEB });
   const raw = r.stdout.trim();
   if (!raw) {
-    logFailure('web_lint_issues', r.stdout, r.stderr, 'eslint não produziu saída JSON — métrica "web_lint_issues" pulada:');
-    return null;
+    return falhou('web_lint_issues', r.stdout, r.stderr, 'eslint não produziu saída JSON — lint NÃO MEDIDO (bloqueante):');
   }
   try {
     const files = JSON.parse(raw);
     if (!Array.isArray(files)) {
-      warn('saída do eslint não é um array — métrica pulada');
-      return null;
+      return falhou('web_lint_issues', r.stdout, r.stderr, 'saída do eslint não é um array — lint NÃO MEDIDO:');
     }
     let total = 0;
     for (const f of files) {
@@ -504,29 +527,29 @@ function collectWebLint() {
     }
     return total;
   } catch (e) {
-    warn('não foi possível parsear o JSON do eslint: ' + e.message);
-    return null;
+    return falhou('web_lint_issues', r.stdout, r.stderr, `não foi possível parsear o JSON do eslint (${e.message}) — lint NÃO MEDIDO:`);
   }
 }
 
 // Web coverage (vitest + v8): runs `npm run test:coverage` in web/, reads
 // coverage/coverage-summary.json → total.lines.pct. If the file is not generated
-// (or the tests fail to produce the summary), the metric is skipped.
+// (or the tests fail to produce the summary), the metric is FALHOU (blocking).
 function collectWebCoverage() {
   if (!existsSync(WEB)) { warn('web/ não encontrado — cobertura pulada'); return null; }
   const r = run('npm run test:coverage', { cwd: WEB });
   const summary = join(WEB, 'coverage', 'coverage-summary.json');
   if (!existsSync(summary)) {
-    logFailure('web_coverage_lines', r.stdout, r.stderr, 'coverage-summary.json não gerado — métrica "web_coverage_lines" pulada:');
-    return null;
+    return falhou('web_coverage_lines', r.stdout, r.stderr, 'vitest não gerou coverage-summary.json — cobertura web NÃO MEDIDA (bloqueante):');
   }
   try {
     const data = JSON.parse(readFileSync(summary, 'utf8'));
     const pct = data?.total?.lines?.pct;
-    return typeof pct === 'number' ? pct : null;
+    if (typeof pct !== 'number') {
+      return falhou('web_coverage_lines', r.stdout, r.stderr, 'coverage-summary.json sem total.lines.pct — cobertura web NÃO MEDIDA:');
+    }
+    return pct;
   } catch (e) {
-    warn('não foi possível parsear o coverage-summary.json: ' + e.message);
-    return null;
+    return falhou('web_coverage_lines', r.stdout, r.stderr, `não foi possível parsear o coverage-summary.json (${e.message}) — cobertura web NÃO MEDIDA:`);
   }
 }
 
@@ -549,12 +572,12 @@ function collectE2EBinaryCoverage() {
   }
   const f = run(`go tool cover -func="${perfil}"`);
   if (f.code !== 0) {
-    logFailure('e2e_binary_coverage_lines', f.stdout, f.stderr, 'go tool cover falhou sobre o perfil E2E — métrica pulada:');
-    return null;
+    return falhou('e2e_binary_coverage_lines', f.stdout, f.stderr, 'go tool cover falhou sobre o perfil E2E — cobertura do binário NÃO MEDIDA:');
   }
   const line = f.stdout.trim().split('\n').filter((l) => l.startsWith('total:')).pop();
   const m = line && line.match(/(\d+(?:\.\d+)?)%/);
-  return m ? parseFloat(m[1]) : null;
+  if (!m) return falhou('e2e_binary_coverage_lines', f.stdout, f.stderr, 'go tool cover não imprimiu "total:" no perfil E2E — cobertura do binário NÃO MEDIDA:');
+  return parseFloat(m[1]);
 }
 
 // Reads the `{ linesPct }` JSON that `coberturaFront()` (e2e/global-teardown.ts) writes
@@ -567,10 +590,12 @@ function collectE2EFrontCoverage() {
   }
   try {
     const data = JSON.parse(readFileSync(arquivo, 'utf8'));
-    return typeof data?.linesPct === 'number' ? data.linesPct : null;
+    if (typeof data?.linesPct !== 'number') {
+      return falhou('e2e_front_coverage_lines', '', '', 'e2e-front-coverage.json sem linesPct — cobertura do front NÃO MEDIDA:');
+    }
+    return data.linesPct;
   } catch (e) {
-    warn('não foi possível parsear e2e-front-coverage.json: ' + e.message);
-    return null;
+    return falhou('e2e_front_coverage_lines', '', '', `não foi possível parsear e2e-front-coverage.json (${e.message}) — cobertura do front NÃO MEDIDA:`);
   }
 }
 
@@ -668,7 +693,18 @@ function generateBaseline() {
       warn('não foi possível ler o baseline.json existente (será tratado como vazio): ' + e.message);
     }
   }
-  const metrics = { ...anteriores, ...novasMetricas };
+  // Never write FALHOU into baseline.json: the baseline is the reference the
+  // ratchet compares against, and a measurement that failed today says nothing
+  // about the reference. Keep the previous value (and say so).
+  const medidas = {};
+  for (const [key, val] of Object.entries(novasMetricas)) {
+    if (val === FALHOU) {
+      warn(`métrica "${key}" não foi medida nesta rodada — mantendo o valor anterior no baseline`);
+      continue;
+    }
+    medidas[key] = val;
+  }
+  const metrics = { ...anteriores, ...medidas };
 
   const baseline = {
     generatedAt: new Date().toISOString(),
@@ -702,6 +738,9 @@ function compareMetrics(current, baseline) {
     const cur = current[key] ?? null;
     const base = baseline[key] ?? null;
 
+    // Tried and could not measure: blocking, and a DIFFERENT cause from "got worse".
+    // The metric's own policy still decides — a warning-level metric stays a warning.
+    if (cur === FALHOU) { regressions.push({ key, def, cur: FALHOU, base, motivo: MOTIVO_NAO_MEDIDO }); continue; }
     if (cur === null) { unchanged.push({ key, def, cur: 'N/A', base }); continue; }
     if (base === null) { unchanged.push({ key, def, cur, base: 'N/A' }); continue; }
 
@@ -755,7 +794,9 @@ function printLocal(current, result) {
     let tag = `${c.dim}─${c.reset}`;
     if (improvements.some((i) => i.key === key)) tag = `${c.green}✔${c.reset}`;
     else if (regressions.some((r) => r.key === key)) tag = def.blocking !== false ? `${c.red}✘${c.reset}` : `${c.yellow}⚠${c.reset}`;
-    const curStr = cur === 'N/A' ? `${c.dim}pulada${c.reset}` : `${cur} ${def.unit}`;
+    const curStr = cur === 'N/A'
+      ? `${c.dim}pulada${c.reset}`
+      : (cur === FALHOU ? `${c.red}não medido${c.reset}` : `${cur} ${def.unit}`);
     const baseStr = base === 'N/A' ? 'N/A' : `${base} ${def.unit}`;
     log(`  ${tag} ${def.label.padEnd(28)} ${String(curStr).padStart(6)}   base ${baseStr}   ${delta}`);
   }
@@ -766,17 +807,23 @@ function printLocal(current, result) {
 
   if (warnings.length > 0) {
     log(`${c.yellow}Avisos (não bloqueiam):${c.reset}`);
-    for (const { def, cur, base } of warnings) {
-      log(`  ${c.yellow}⚠${c.reset} ${def.label}: ${cur} ${def.unit} (era ${base} ${def.unit}  ${fmtDelta(cur, base)})`);
+    for (const { key, def, cur, base, motivo } of warnings) {
+      const texto = motivo === MOTIVO_NAO_MEDIDO
+        ? `${c.yellow}não medido${c.reset} (veja reports/${key}-failure.log)`
+        : `${cur} ${def.unit} (era ${base} ${def.unit}  ${fmtDelta(cur, base)})`;
+      log(`  ${c.yellow}⚠${c.reset} ${def.label}: ${texto}`);
     }
     log('');
   }
 
   if (blocking.length > 0) {
     log(`${c.red}${c.bold}Regressões (BLOQUEANTES):${c.reset}`);
-    for (const { def, cur, base } of blocking) {
-      const causa = def.blocking === 'zero' ? `deve ser 0 (achou ${cur})` : `piorou vs baseline ${base}`;
-      log(`  ${c.red}✘${c.reset} ${def.label}: ${c.red}${cur} ${def.unit}${c.reset} — ${causa}`);
+    for (const { key, def, cur, base, motivo } of blocking) {
+      const causa = motivo === MOTIVO_NAO_MEDIDO
+        ? `não foi possível medir — saída completa em reports/${key}-failure.log`
+        : (def.blocking === 'zero' ? `deve ser 0 (achou ${cur})` : `piorou vs baseline ${base}`);
+      const valor = motivo === MOTIVO_NAO_MEDIDO ? 'não medido' : `${cur} ${def.unit}`;
+      log(`  ${c.red}✘${c.reset} ${def.label}: ${c.red}${valor}${c.reset} — ${causa}`);
     }
     log('');
     log(`${c.red}${c.bold}Quality gate FALHOU.${c.reset} Corrija as regressões acima e rode de novo:`);
@@ -814,7 +861,9 @@ function printMarkdown(current, result) {
     let icon = '➡️';
     if (improvements.some((i) => i.key === key)) icon = '✅';
     else if (regressions.some((r) => r.key === key)) icon = def.blocking !== false ? '❌' : '⚠️';
-    const curStr = cur === 'N/A' ? '_pulada_' : `${cur} ${def.unit}`;
+    const curStr = cur === 'N/A'
+      ? '_pulada_'
+      : (cur === FALHOU ? '❓ _não medido_' : `${cur} ${def.unit}`);
     const baseStr = base === 'N/A' ? '—' : `${base} ${def.unit}`;
     lines.push(`| ${def.side} | ${def.label} | ${curStr} | ${baseStr} | ${delta} | ${icon} |`);
   }
@@ -823,8 +872,10 @@ function printMarkdown(current, result) {
   if (blocking.length > 0) {
     lines.push('### ❌ Regressões bloqueantes');
     lines.push('');
-    for (const { def, cur, base } of blocking) {
-      const causa = def.blocking === 'zero' ? `deve ser 0 (achou ${cur} ${def.unit})` : `${cur} ${def.unit} ← era ${base} ${def.unit}`;
+    for (const { key, def, cur, base, motivo } of blocking) {
+      const causa = motivo === MOTIVO_NAO_MEDIDO
+        ? `**não foi possível medir** — o coletor rodou e não produziu resultado (saída em \`reports/${key}-failure.log\`)`
+        : (def.blocking === 'zero' ? `deve ser 0 (achou ${cur} ${def.unit})` : `${cur} ${def.unit} ← era ${base} ${def.unit}`);
       lines.push(`- **${def.label}**: ${causa}`);
     }
     lines.push('');
@@ -835,8 +886,11 @@ function printMarkdown(current, result) {
   if (warnings.length > 0) {
     lines.push('### ⚠️ Avisos (não bloqueiam)');
     lines.push('');
-    for (const { def, cur, base } of warnings) {
-      lines.push(`- **${def.label}**: ${cur} ${def.unit} (era ${base} ${def.unit})`);
+    for (const { key, def, cur, base, motivo } of warnings) {
+      const texto = motivo === MOTIVO_NAO_MEDIDO
+        ? `não medido (saída em \`reports/${key}-failure.log\`)`
+        : `${cur} ${def.unit} (era ${base} ${def.unit})`;
+      lines.push(`- **${def.label}**: ${texto}`);
     }
     lines.push('');
   }
@@ -881,14 +935,15 @@ function mergedReport(baseline) {
     Object.assign(current, partial.metrics ?? partial);
   }
 
-  // A side whose job never delivered a number stays null, exactly like a collector
-  // that could not measure — the existing null handling applies unchanged.
-  // The two browser metrics belong to the E2E workflow, which runs separately and is
-  // merged by its own `--e2e` pass — their absence here is expected, not a hole.
+  // A key ABSENT from a partial report is not a skip: a skip arrives as an explicit
+  // null in the JSON (the side was not touched, or --fast excluded the collector).
+  // Absent means the job never got to measure it — so it is FALHOU, and it blocks.
+  // The two browser metrics belong to the E2E workflow, which merges its own pass —
+  // their absence here is expected and is not a hole.
   const missing = Object.keys(METRIC_DEFS).filter((k) => !(k in current) && METRIC_DEFS[k].side !== 'e2e');
   if (missing.length > 0) {
-    warn(`métricas ausentes nos relatórios parciais: ${missing.join(', ')}`);
-    for (const k of missing) current[k] = null;
+    warn(`métricas ausentes nos relatórios parciais (tratadas como NÃO MEDIDAS): ${missing.join(', ')}`);
+    for (const k of missing) current[k] = FALHOU;
   }
 
   return printMarkdown(current, compareMetrics(current, baseline));
