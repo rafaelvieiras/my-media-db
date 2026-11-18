@@ -658,11 +658,46 @@ const FAST_METRIC_KEYS = new Set([
   'web_typecheck_errors',
 ]);
 
+// Which collectors may run AT THE SAME TIME, per side.
+//
+// Not a single wave with everything. The Go side is compile-bound: starting
+// golangci-lint (which saturates every core by itself) while two `go test` builds are
+// also compiling does not divide the work, it multiplies it — measured on a 4-vCPU CI
+// runner, one wave of six took over 6 minutes where the sequential run took 64 s.
+//
+// So the first collector of a side runs alone (it warms the shared build cache) and the
+// rest run together over that warm cache. Keys not listed here fall into the last wave,
+// so adding a metric never needs a change in this table.
+const ONDAS = {
+  go: [
+    ['go_coverage_lines'],
+    ['e2e_coverage_lines', 'go_gofmt_unformatted', 'go_lint_issues', 'go_vuln_high', 'go_cyclo_violations'],
+  ],
+  web: [
+    ['web_coverage_lines'],
+    ['web_typecheck_errors', 'web_duplicate_percent', 'web_lint_issues', 'web_audit_critical'],
+  ],
+  // Two cheap readers: no reason to serialize.
+  e2e: null,
+};
+
 const SIDE_LABELS = { go: 'Go (raiz)', web: 'Web (web/)', e2e: 'E2E (navegador)' };
 const SIDE_SKIP_REASONS = {
   go:  'Go pulado: sem mudanças em cmd/, internal/, go.mod ou go.sum neste diff.',
   web: 'Web pulado: sem mudanças em web/ neste diff.',
 };
+
+// Splits the side's selected keys into the waves defined in ONDAS. Every key not named
+// there goes into the last wave, so a new metric is never silently skipped.
+function ondasDe(side, chaves) {
+  const plano = ONDAS[side];
+  if (!plano) return [chaves];
+  const nomeadas = new Set(plano.flat());
+  const ondas = plano.map((onda) => onda.filter((k) => chaves.includes(k)));
+  const resto = chaves.filter((k) => !nomeadas.has(k));
+  if (resto.length > 0) ondas.push(resto);
+  return ondas.filter((o) => o.length > 0);
+}
 
 // ─── Unified collection ──────────────────────────────────────────────────────
 // `touches` = { touchesGo, touchesWeb }. When a side was not touched, it SKIPS
@@ -694,30 +729,31 @@ async function collectMetrics(touches = { touchesGo: true, touchesWeb: true }, o
       }
       continue;
     }
-    log(`${c.dim}Coletando métricas ${SIDE_LABELS[side]} (em paralelo)...${c.reset}`);
-    const tarefas = [];
+    log(`${c.dim}Coletando métricas ${SIDE_LABELS[side]}...${c.reset}`);
+    const chaves = [];
     for (const [key, def] of Object.entries(METRIC_DEFS)) {
       if (def.side !== side) continue;
       if (fast && !FAST_METRIC_KEYS.has(key)) {
         metrics[key] = null;
         continue;
       }
-      tarefas.push([key, COLLECTORS[key]]);
+      chaves.push(key);
     }
-    // Started together, collected together: the side costs its slowest collector.
-    // The values are assigned AFTER all finish so the report order stays the
-    // METRIC_DEFS order, never the completion order.
-    // A collector that THROWS is a measurement that failed, not a crash of the gate:
-    // one broken collector must not take the other five down with it.
-    const resultados = await Promise.all(tarefas.map(async ([key, coletor]) => {
-      try {
-        return [key, await coletor()];
-      } catch (e) {
-        warn(`coletor de "${key}" lançou exceção (${e?.message ?? e}) — métrica NÃO MEDIDA`);
-        return [key, FALHOU];
-      }
-    }));
-    for (const [key, valor] of resultados) metrics[key] = valor;
+    for (const onda of ondasDe(side, chaves)) {
+      // Values are assigned AFTER the wave finishes, so the report order stays the
+      // METRIC_DEFS order, never the completion order.
+      const resultados = await Promise.all(onda.map(async (key) => {
+        // A collector that THROWS is a measurement that failed, not a crash of the
+        // gate: one broken collector must not take the others down with it.
+        try {
+          return [key, await COLLECTORS[key]()];
+        } catch (e) {
+          warn(`coletor de "${key}" lançou exceção (${e?.message ?? e}) — métrica NÃO MEDIDA`);
+          return [key, FALHOU];
+        }
+      }));
+      for (const [key, valor] of resultados) metrics[key] = valor;
+    }
   }
 
   return metrics;
