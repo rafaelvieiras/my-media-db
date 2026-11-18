@@ -25,6 +25,21 @@ func TestParseFilmesConvencao(t *testing.T) {
 			want: Info{Title: "The Matrix", Year: 1999, TMDBID: "603"},
 		},
 		{
+			nome: "jellyfin com tvdbid",
+			in:   "2 Broke Girls (2011) [tvdbid-248741]",
+			want: Info{Title: "2 Broke Girls", Year: 2011, TVDBID: "248741"},
+		},
+		{
+			nome: "kodi com {tvdb-N}",
+			in:   "2 Broke Girls (2011) {tvdb-248741}",
+			want: Info{Title: "2 Broke Girls", Year: 2011, TVDBID: "248741"},
+		},
+		{
+			nome: "tvdb e tmdb juntos (tmdb tem prioridade no scanner)",
+			in:   "2 Broke Girls (2011) [tmdbid-39340][tvdbid-248741]",
+			want: Info{Title: "2 Broke Girls", Year: 2011, TMDBID: "39340", TVDBID: "248741"},
+		},
+		{
 			nome: "imdb pelado",
 			in:   "Inception (2010) [tt1375666]",
 			want: Info{Title: "Inception", Year: 2010, IMDBID: "tt1375666"},

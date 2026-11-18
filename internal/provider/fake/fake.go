@@ -126,6 +126,17 @@ func (p *Provider) Buscar(_ context.Context, query, tipo, lang string) ([]provid
 	return out, nil
 }
 
+// ResolverID satisfies provider.ResolvedorDeID: it resolves an id of the canned catalog,
+// so tests can exercise the ID DOOR (search and folder-name import) with no network. An
+// id outside the catalog is ErrNaoEncontrado, exactly like the real source answers 404.
+func (p *Provider) ResolverID(_ context.Context, ref provider.ReferenciaDeID, _ string) ([]provider.ResultadoExterno, error) {
+	f, ok := p.filmes[ref.ID]
+	if !ok || (ref.Tipo != "" && ref.Tipo != f.tipo) {
+		return nil, nil
+	}
+	return []provider.ResultadoExterno{p.resultadoDe(f)}, nil
+}
+
 // BuscarDetalhe returns the RAW (self-sufficient) payload of the item, which
 // enrich persists and MapearDetalhe rebuilds. ErrNaoEncontrado when the id does
 // not exist.

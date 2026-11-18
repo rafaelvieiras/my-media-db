@@ -362,3 +362,65 @@ func aStrings(v any) []string {
 	}
 	return out
 }
+
+// TestImportarSeriePorIDIgnoraOTitulo proves the id door of the IMPORT: the folder names
+// the series by id, so the (possibly misspelled) title is never searched. This is the fix
+// for "2 Broken Girls": TMDb answers zero for that name, but the id resolves.
+func TestImportarSeriePorIDIgnoraOTitulo(t *testing.T) {
+	svc, database := svcSerieFake(t)
+	ctx := context.Background()
+
+	id, err := svc.ImportarSeriePorID(ctx, "tmdb", fake.SerieFixtureID, []string{"en"})
+	if err != nil {
+		t.Fatalf("ImportarSeriePorID: %v", err)
+	}
+	serie, err := sqlcgen.New(database.Read).ObterEntity(ctx, id)
+	if err != nil || serie.Type != tipoSerie {
+		t.Fatalf("serie importada invalida: %+v err=%v", serie, err)
+	}
+	if serie.ExternalIDTmdb.String != fake.SerieFixtureID {
+		t.Errorf("external_id_tmdb = %q, quero %s", serie.ExternalIDTmdb.String, fake.SerieFixtureID)
+	}
+	if temps := filhosPorKind(t, database, id, relacaoTemporada); len(temps) != 2 {
+		t.Errorf("temporadas = %d, quero 2 (árvore importada)", len(temps))
+	}
+}
+
+// TestImportarSeriePorIDNaoImportaFilme: the same numeric id can belong to a FILM; the
+// series scanner must never import the film and call it a series.
+func TestImportarSeriePorIDNaoImportaFilme(t *testing.T) {
+	svc, database := svcSerieFake(t)
+	_, err := svc.ImportarSeriePorID(context.Background(), "tmdb", "603", []string{"en"})
+	if !errors.Is(err, ErrSerieNaoEncontrada) {
+		t.Fatalf("err = %v, quero ErrSerieNaoEncontrada", err)
+	}
+	var n int
+	if err := database.Read.QueryRowContext(context.Background(),
+		"SELECT count(*) FROM entity WHERE type = 'tv'").Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("series criadas = %d, quero 0", n)
+	}
+}
+
+// TestImportarSeriePorIDFonteDesconhecida: an id from a source that is not registered is a
+// failure, not a guess (the scanner then falls back to the name path).
+func TestImportarSeriePorIDFonteDesconhecida(t *testing.T) {
+	svc, _ := svcSerieFake(t)
+	if _, err := svc.ImportarSeriePorID(context.Background(), "tvdb", "248741", []string{"en"}); !errors.Is(err, ErrSerieNaoEncontrada) {
+		t.Fatalf("err = %v, quero ErrSerieNaoEncontrada", err)
+	}
+	if _, err := svc.ImportarSeriePorID(context.Background(), "letterboxd", "1", []string{"en"}); !errors.Is(err, ErrSerieNaoEncontrada) {
+		t.Fatalf("err = %v, quero ErrSerieNaoEncontrada", err)
+	}
+}
+
+// TestImportarSeriePorIDInexistente: an id that the source does not know degrades to "not
+// found" (zero results), never to a panic or a wrong import.
+func TestImportarSeriePorIDInexistente(t *testing.T) {
+	svc, _ := svcSerieFake(t)
+	if _, err := svc.ImportarSeriePorID(context.Background(), "tmdb", "999999", []string{"en"}); !errors.Is(err, ErrSerieNaoEncontrada) {
+		t.Fatalf("err = %v, quero ErrSerieNaoEncontrada", err)
+	}
+}

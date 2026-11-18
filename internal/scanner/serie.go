@@ -177,6 +177,13 @@ func (r *scanRun) resolverSerieMiss(ctx context.Context, serieNome string, folde
 	if id, ok := acharSeriePorIDExterno(ctx, q, folderInfo); ok {
 		return serieResolvida{serieID: id, index: r.m.carregarIndex(ctx, id), conf: confIDExterno}
 	}
+	// The folder NAMES the item by id and the catalog has no entity for it yet: import by
+	// THAT id. This is the door that makes a typo in the folder name harmless -- the title
+	// search is never asked, so "2 Broken Girls [tmdbid-39340]" resolves to the right
+	// series even though /search/multi answers zero for the misspelled name.
+	if res, ok := r.m.tentarImportarSeriePorID(ctx, folderInfo, r.langsPermitidos(ctx)); ok {
+		return res
+	}
 	if id, ok := acharSerieResolvidaPorTitulo(ctx, q, serieNome); ok {
 		return serieResolvida{serieID: id, index: r.m.carregarIndex(ctx, id), conf: confSerieEp}
 	}
@@ -221,6 +228,32 @@ func (m *Manager) tentarImportarSerie(ctx context.Context, serieNome string, lan
 	return serieResolvida{serieID: id, index: m.carregarIndex(ctx, id), conf: confSerieEp}, true
 }
 
+// tentarImportarSeriePorID resolves the series BY the id the folder names, asked of the
+// importer directly -- no title search at all (a misspelled folder name is invisible to
+// it). It returns ok=false whenever there is nothing to do or the import failed, so the
+// caller keeps the normal chain (catalog by title, then import by name, then draft).
+//
+// The confidence is confIDExterno: the identity came from an id the owner wrote, the same
+// trust as an id already present in the catalog.
+func (m *Manager) tentarImportarSeriePorID(ctx context.Context, folderInfo naming.Info, langs []string) (serieResolvida, bool) {
+	fonte, idExterno, ok := referenciaDaPasta(folderInfo)
+	if !ok || m.serieImporter == nil {
+		return serieResolvida{}, false
+	}
+	id, err := m.serieImporter.ImportarSeriePorID(ctx, fonte, idExterno, langs)
+	if err != nil {
+		log.Printf("scanner: import da série por id (%s:%s) falhou (%v) — segue pelo nome", fonte, idExterno, err)
+		return serieResolvida{}, false
+	}
+	// Optional automatic materialization (0089): best-effort, same as the import by name.
+	if m.materializador != nil {
+		if merr := m.materializador.MaterializarSeAutoDownloadLigado(ctx, id); merr != nil {
+			log.Printf("scanner: materialização automática da série %s:%s falhou (%v)", fonte, idExterno, merr)
+		}
+	}
+	return serieResolvida{serieID: id, index: m.carregarIndex(ctx, id), conf: confIDExterno}, true
+}
+
 // langsPermitidos returns the allowed languages (settings) for the auto-import, or
 // nil when the scanner runs without that source (the provider falls back to the
 // default language).
@@ -258,6 +291,14 @@ func acharSeriePorIDExterno(ctx context.Context, q *sqlcgen.Queries, info naming
 			return e.ID, true
 		}
 	}
+	if info.TVDBID != "" {
+		e, err := q.ObterEntityPorTvdbTipo(ctx, sqlcgen.ObterEntityPorTvdbTipoParams{
+			ExternalIDTvdb: nsOpt(info.TVDBID), Type: tipoSerieTV,
+		})
+		if err == nil {
+			return e.ID, true
+		}
+	}
 	if info.IMDBID != "" {
 		e, err := q.ObterEntityPorImdbTipo(ctx, sqlcgen.ObterEntityPorImdbTipoParams{
 			ExternalIDImdb: nsOpt(info.IMDBID), Type: tipoSerieTV,
@@ -267,6 +308,21 @@ func acharSeriePorIDExterno(ctx context.Context, q *sqlcgen.Queries, info naming
 		}
 	}
 	return "", false
+}
+
+// referenciaDaPasta returns the id the FOLDER NAMES, in priority order: tmdb, tvdb, imdb.
+// TMDb comes first because it is the source the import goes through (the tree of a TVDB
+// id is crossed to TMDb anyway), so the id the user pastes most is also the cheapest.
+func referenciaDaPasta(info naming.Info) (fonte, id string, ok bool) {
+	switch {
+	case info.TMDBID != "":
+		return "tmdb", info.TMDBID, true
+	case info.TVDBID != "":
+		return "tvdb", info.TVDBID, true
+	case info.IMDBID != "":
+		return "imdb", info.IMDBID, true
+	}
+	return "", "", false
 }
 
 // acharSeriePorTitulo looks the series up in the catalog by the pair (type='tv',

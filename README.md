@@ -160,6 +160,27 @@ rules.
 Steps 2 to 4 also run at the end of every scan, so a new file is processed without
 a second click.
 
+### When a name does not match
+
+The source search is literal, so a typo in a folder name finds nothing. Two doors
+avoid the problem, and neither depends on guessing the title.
+
+- **Put the id in the folder name** (Jellyfin convention). The scan reads it and imports
+  the item by that id, without searching the name:
+
+  ```
+  2 Broke Girls (2011) [tmdbid-39340]/Season 01/...
+  2 Broke Girls (2011) [tvdbid-248741]/...
+  Inception (2010) [imdbid-tt1375666]/...
+  ```
+
+- **Paste the id or the item URL in the search box.** These forms work:
+  `TMDB:39340`, `tvdb:248741`, `tt1845307`, and a `themoviedb.org`, `thetvdb.com` or
+  `imdb.com` address copied from the browser.
+
+A bare number is treated as a title, because the same number can be a film and a
+series in TMDb. Use the prefix to say which one you mean.
+
 ## Status
 
 MyMediaDB is **pre-1.0** and under active development. The database schema is
