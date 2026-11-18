@@ -652,7 +652,7 @@ func (s *Servico) idDoEpisodio(ctx context.Context, source string, ep provider.E
 	if err != nil {
 		return "", err
 	}
-	if existente, ok, err := s.acharPorIDExterno(ctx, source, ep.SourceID); err != nil {
+	if existente, ok, err := s.acharPorIDExterno(ctx, source, ep.SourceID, tipoEpisodio); err != nil {
 		return "", err
 	} else if ok {
 		// Reuse: REWRITES the base with the current provider data — in

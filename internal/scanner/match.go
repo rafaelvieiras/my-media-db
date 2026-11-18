@@ -259,10 +259,14 @@ func (r *scanRun) resolverEntity(ctx context.Context, q *sqlcgen.Queries, f file
 }
 
 // acharPorIDExterno looks the entity up by the id embedded in the name (tmdb has
-// priority over imdb). achou=false when there is no id or it does not exist yet.
+// priority over imdb). achou=false when there is no id or it does not exist yet. The
+// lookup is TYPE-SCOPED: this path resolves a MOVIE, and the external id is only unique
+// within a type (tmdb/imdb episode ids share the numbering space of the titles).
 func acharPorIDExterno(ctx context.Context, q *sqlcgen.Queries, p naming.Info) (string, bool, error) {
 	if p.TMDBID != "" {
-		e, err := q.ObterEntityPorTmdb(ctx, nsOpt(p.TMDBID))
+		e, err := q.ObterEntityPorTmdbTipo(ctx, sqlcgen.ObterEntityPorTmdbTipoParams{
+			ExternalIDTmdb: nsOpt(p.TMDBID), Type: tipoFilme,
+		})
 		if err == nil {
 			return e.ID, true, nil
 		}
@@ -271,7 +275,9 @@ func acharPorIDExterno(ctx context.Context, q *sqlcgen.Queries, p naming.Info) (
 		}
 	}
 	if p.IMDBID != "" {
-		e, err := q.ObterEntityPorImdb(ctx, nsOpt(p.IMDBID))
+		e, err := q.ObterEntityPorImdbTipo(ctx, sqlcgen.ObterEntityPorImdbTipoParams{
+			ExternalIDImdb: nsOpt(p.IMDBID), Type: tipoFilme,
+		})
 		if err == nil {
 			return e.ID, true, nil
 		}

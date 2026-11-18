@@ -249,7 +249,7 @@ func (s *Servico) importarItemSemArvore(ctx context.Context, source, sourceID, t
 // itself, right below (see its comment). It is no longer "harmless" for
 // movie/collection: the parameter now has a real effect for movies too.
 func (s *Servico) importarItemBase(ctx context.Context, source, sourceID, tipo string, langs []string) (string, bool, error) {
-	if existente, ok, err := s.acharPorIDExterno(ctx, source, sourceID); err != nil {
+	if existente, ok, err := s.acharPorIDExterno(ctx, source, sourceID, tipo); err != nil {
 		return "", false, err
 	} else if ok {
 		return existente, false, s.enriquecerBase(ctx, existente, source, sourceID, tipo, langs, false, false)
@@ -411,14 +411,24 @@ func (s *Servico) acharOuCriarColecao(ctx context.Context, source, sourceID, nom
 // generated columns). Sources without a column of their own do not deduplicate yet
 // (find-or-create always creates) — that is the current scope. NoRows is not an error (it
 // does not exist yet).
-func (s *Servico) acharPorIDExterno(ctx context.Context, source, sourceID string) (string, bool, error) {
+//
+// tipo is NOT optional: the external id is only unique WITHIN a type. TMDB episode ids
+// and series ids share the same numeric space (measured in production: series 13943 =
+// Beavis and Butt-Head, episode 13943 = Everybody Hates PSATs of series 252), so an
+// unscoped lookup makes an episode import reuse the series entity -- that is how a series
+// ended up with an episode's title, an episode's numbering and 314 of its own files.
+func (s *Servico) acharPorIDExterno(ctx context.Context, source, sourceID, tipo string) (string, bool, error) {
 	var ent sqlcgen.Entity
 	var err error
 	switch source {
 	case "tmdb":
-		ent, err = s.leitura().ObterEntityPorTmdb(ctx, nsValid(sourceID))
+		ent, err = s.leitura().ObterEntityPorTmdbTipo(ctx, sqlcgen.ObterEntityPorTmdbTipoParams{
+			ExternalIDTmdb: nsValid(sourceID), Type: tipo,
+		})
 	case "tvdb":
-		ent, err = s.leitura().ObterEntityPorTvdb(ctx, nsValid(sourceID))
+		ent, err = s.leitura().ObterEntityPorTvdbTipo(ctx, sqlcgen.ObterEntityPorTvdbTipoParams{
+			ExternalIDTvdb: nsValid(sourceID), Type: tipo,
+		})
 	default:
 		return "", false, nil
 	}

@@ -67,6 +67,38 @@ SELECT id, type, title, original_title, description, release_date,
 FROM entity
 WHERE external_id_mbid = ?;
 
+-- name: ObterEntityPorTmdbTipo :one
+-- TYPE-SCOPED lookup by tmdb id. TMDB episode ids and series ids live in the SAME
+-- numeric space (measured: series 13943 = Beavis and Butt-Head, episode 13943 =
+-- Everybody Hates PSATs of series 252), so an unscoped lookup lets an episode import
+-- reuse the series entity -- exactly the corruption that turned a series into an
+-- episode-shaped entity holding 314 files.
+SELECT id, type, title, original_title, description, release_date,
+    status, tags_json, external_ids_json, extension_data_json,
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at,
+    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds, external_id_mbid
+FROM entity
+WHERE external_id_tmdb = ? AND type = ?;
+
+-- name: ObterEntityPorImdbTipo :one
+-- TYPE-SCOPED lookup by imdb id, same reasoning as ObterEntityPorTmdbTipo: imdb
+-- episodes and titles share the tt space.
+SELECT id, type, title, original_title, description, release_date,
+    status, tags_json, external_ids_json, extension_data_json,
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at,
+    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds, external_id_mbid
+FROM entity
+WHERE external_id_imdb = ? AND type = ?;
+
+-- name: ObterEntityPorTvdbTipo :one
+-- TYPE-SCOPED lookup by tvdb id, same reasoning as ObterEntityPorTmdbTipo.
+SELECT id, type, title, original_title, description, release_date,
+    status, tags_json, external_ids_json, extension_data_json,
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at,
+    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds, external_id_mbid
+FROM entity
+WHERE external_id_tvdb = ? AND type = ?;
+
 -- name: ListarEntitiesPorTmdbExcetoId :many
 -- Mirrors ObterEntityPorTmdb, but returns ALL entities with that id (except
 -- alvo_id) instead of :one -- fixes the bug where already corrupted data

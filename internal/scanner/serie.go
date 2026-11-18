@@ -245,14 +245,24 @@ func (r *scanRun) preferredLangDaFonte() string {
 // acharSeriePorIDExterno looks the series up by the id embedded in the folder name
 // (tmdb has priority over imdb), FILTERING type='tv' — a numeric id equal to that
 // of a movie must not match the series.
+// acharSeriePorIDExterno looks the series up by the id embedded in the folder name
+// (tmdb has priority over imdb), TYPE-SCOPED to 'tv': the external id is only unique
+// within a type, and a numeric tmdb id equal to that of a movie or an episode must not
+// match the series.
 func acharSeriePorIDExterno(ctx context.Context, q *sqlcgen.Queries, info naming.Info) (string, bool) {
 	if info.TMDBID != "" {
-		if e, err := q.ObterEntityPorTmdb(ctx, nsOpt(info.TMDBID)); err == nil && e.Type == tipoSerieTV {
+		e, err := q.ObterEntityPorTmdbTipo(ctx, sqlcgen.ObterEntityPorTmdbTipoParams{
+			ExternalIDTmdb: nsOpt(info.TMDBID), Type: tipoSerieTV,
+		})
+		if err == nil {
 			return e.ID, true
 		}
 	}
 	if info.IMDBID != "" {
-		if e, err := q.ObterEntityPorImdb(ctx, nsOpt(info.IMDBID)); err == nil && e.Type == tipoSerieTV {
+		e, err := q.ObterEntityPorImdbTipo(ctx, sqlcgen.ObterEntityPorImdbTipoParams{
+			ExternalIDImdb: nsOpt(info.IMDBID), Type: tipoSerieTV,
+		})
+		if err == nil {
 			return e.ID, true
 		}
 	}
