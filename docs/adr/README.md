@@ -49,3 +49,6 @@ replaces the flat list of "open decisions" with a traceable record, one file per
 | [0029](0029-local-first-music-import-per-owned-track.md) | Local-first music import: only what the owned track brings | MU1–MU4 | Accepted |
 | [0030](0030-generic-top-types-library-and-search.md) | Top-level types: generic library, search and navigation driven by schema | see [12-roadmap](../12-roadmap.md) | Accepted |
 | [0031](0031-post-scan-per-library.md) | Post-scan per library: the scan closes its own cycle (and no enrichment inside the transaction) | SCAN-POS | Accepted |
+| [0032](0032-ui-i18n-dependency-free-catalogs.md) | UI internationalization: dependency-free typed catalogs, English as the source | — | Accepted |
+| [0033](0033-alternate-and-owner-orderings.md) | Alternate and owner orderings: provider groups, plus a numbering the owner declares | EP-ORD | Accepted |
+| [0034](0034-reversible-unattended-upgrades.md) | An unattended upgrade has to be reversible: pre-migration copy, downgrade guard, PUID/PGID | — | Accepted |

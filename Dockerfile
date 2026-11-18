@@ -109,16 +109,17 @@ FROM alpine:3.22 AS final
 #                 it installs /usr/bin/fpcalc directly, with no separate
 #                 `-tools` package.
 # --no-cache keeps the image lean.
-RUN apk add --no-cache ffmpeg sqlite python3 chromaprint
+RUN apk add --no-cache ffmpeg sqlite python3 chromaprint su-exec
 
-# Dedicated non-root user.
-RUN addgroup -S mymediadb && adduser -S -G mymediadb -H -h /nonexistent mymediadb
+# Dedicated non-root user. The entrypoint may re-id it through PUID/PGID at boot (Unraid
+# convention) and always ends up running the binary through su-exec with those ids.
+RUN addgroup -S -g 101 mymediadb && adduser -S -u 100 -G mymediadb -H -h /nonexistent mymediadb
 
 # Only the compiled binary.
 COPY --from=builder-go /mymediadb /mymediadb
 
-# Persistent data directory (SQLite + downloaded artwork). Created and its
-# ownership set to the non-root user BEFORE `USER`: when a named volume is
+# Persistent data directory (SQLite + downloaded artwork). Created here and its
+# ownership set to the image user: when a named volume is
 # mounted on /data for the first time, Docker copies the owner and permissions
 # of the image directory to the new volume. Without this chown the volume would
 # be born root:root and the non-root process would fail to create the database
@@ -137,7 +138,9 @@ VOLUME /data
 ENV MYMEDIADB_DB_PATH=/data/mymediadb.sqlite \
     MYMEDIADB_ASSETS_DIR=/data/assets
 
-USER mymediadb
+# The entrypoint starts as root ONLY to fix the ownership of /data and drop to PUID:PGID
+# (99:100 by default); with `--user` it skips all of that and execs directly.
+COPY --chmod=755 docker/entrypoint.sh /entrypoint.sh
 
 EXPOSE 8080
 
@@ -149,4 +152,4 @@ EXPOSE 8080
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
     CMD wget -q --spider "http://localhost:${PORT:-8080}/api/v1/health" || exit 1
 
-ENTRYPOINT ["/mymediadb"]
+ENTRYPOINT ["/entrypoint.sh"]
