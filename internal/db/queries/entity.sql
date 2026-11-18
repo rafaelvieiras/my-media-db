@@ -157,6 +157,43 @@ FROM entity
 WHERE type = 'collection' AND external_id_tmdb = ?
 LIMIT 1;
 
+-- name: ListarCardsDeEpisodiosDaSerie :many
+-- CARDS of ALL episodes of a series in ONE query, for GET /entities/{id}/episodes and
+-- for the ordering annotation of the detail page (ADR-0021/0033).
+--
+-- Why it exists: ObterEntityCard is meant for small N and recomputes the transitive
+-- closure of the relation tree ON EVERY CALL (the recursive CTE of `arvore`). A series
+-- with 430 episodes therefore paid 430 closures plus 430 single-row reads, which took
+-- MINUTES on a library served from a network share. The cards come whole, with the
+-- extension_data the projection needs, so the server does not walk the episodes again.
+--
+-- Tree ownership (the recursive arm of ObterEntityCard) is deliberately ABSENT: an
+-- episode has no descendants, so that arm could only ever match its own files, and the
+-- junction arm below already covers them (media_file_entity is how an episode owns a
+-- file, see ADR-0006). The other columns mirror ObterEntityCard.
+SELECT
+    e.id, e.type, e.title, e.status, e.release_date, e.extension_data_json,
+    EXISTS (
+        SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present'
+        UNION ALL
+        SELECT 1 FROM media_file_entity mfe JOIN media_file mf ON mf.id = mfe.media_file_id
+            WHERE mfe.entity_id = e.id AND mf.state = 'present'
+    ) AS owned,
+    (SELECT COUNT(*) FROM (
+        SELECT m.id FROM media_file m WHERE m.entity_id = e.id
+        UNION ALL
+        SELECT DISTINCT mfe.media_file_id FROM media_file_entity mfe WHERE mfe.entity_id = e.id
+    )) AS file_count,
+    (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
+    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster,
+    ecc.complete AS completeness_complete,
+    ecc.missing_json AS completeness_missing_json
+FROM entity e
+JOIN entity_relation ep ON ep.child_id = e.id AND ep.kind = 'tv_episode'
+JOIN entity_relation se ON se.child_id = ep.parent_id AND se.kind = 'tv_season'
+LEFT JOIN entity_catalog_completeness ecc ON ecc.entity_id = e.id
+WHERE se.parent_id = ?;
+
 -- name: ObterEntityCard :one
 -- CARD for ONE entity (same derived columns as ListarEntityCards) + release_date
 -- for ordering. Used by the MEMBERS of a collection and by the episodes

@@ -64,13 +64,14 @@ func (s *Server) getEntityEpisodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	orderings := s.montarOrderings(ctx, ent)
-	ordering := escolherOrdering(r.URL.Query().Get("ordering"), orderings)
-	groups, err := s.agruparEpisodios(ctx, ent, ordering)
+	cards, err := s.cardsDeEpisodiosDaSerie(ctx, ent.ID)
 	if err != nil {
 		respondErroInterno(w)
 		return
 	}
+	orderings := s.montarOrderingsDeCards(ctx, ent, cards)
+	ordering := escolherOrdering(r.URL.Query().Get("ordering"), orderings)
+	groups := s.agruparEpisodiosDeCards(ctx, ent.ID, ordering, cards)
 	writeJSON(w, http.StatusOK, episodeGroupsDTO{Ordering: ordering, Groups: groups})
 }
 
@@ -101,13 +102,22 @@ func (s *Server) montarOrderings(ctx context.Context, ent sqlcgen.Entity) *resol
 	if ent.Type != tipoEntSerie {
 		return nil
 	}
-	eps, err := s.episodiosDaSerie(ctx, ent.ID)
+	cards, err := s.cardsDeEpisodiosDaSerie(ctx, ent.ID)
 	if err != nil {
+		return nil
+	}
+	return s.montarOrderingsDeCards(ctx, ent, cards)
+}
+
+// montarOrderingsDeCards is montarOrderings over already loaded cards: the episode
+// endpoint loads them once and shares them with the grouping.
+func (s *Server) montarOrderingsDeCards(ctx context.Context, ent sqlcgen.Entity, cards []sqlcgen.ListarCardsDeEpisodiosDaSerieRow) *resolver.OrderingsInfo {
+	if ent.Type != tipoEntSerie {
 		return nil
 	}
 	chaves := map[string]bool{}
 	temAbsoluto := false
-	for _, ep := range eps {
+	for _, ep := range cards {
 		ns := tvext.Namespace(ep.ExtensionDataJson, nsTVCore)
 		if ns == nil {
 			continue
@@ -202,44 +212,6 @@ func defaultSeasonType(ent sqlcgen.Entity) string {
 	return ""
 }
 
-// episodiosDaSerie sweeps the series→seasons→episodes tree through the existing
-// relations (ListarRelacoesFilhas) and returns the episode entities (with the
-// extension_data, to project the numbering). It is the N+1 sweep over the relations —
-// acceptable at the current scale (hundreds of episodes/series, self-hosted); TODO: a
-// single aggregate query if the library grows (the same precedent as the earlier
-// episode/* sweeps). Reused by the order discovery and by the grouping. It skips an
-// episode purged in the middle (NoRows).
-func (s *Server) episodiosDaSerie(ctx context.Context, serieID string) ([]sqlcgen.Entity, error) {
-	temporadas, err := s.leitura().ListarRelacoesFilhas(ctx, serieID)
-	if err != nil {
-		return nil, err
-	}
-	var eps []sqlcgen.Entity
-	for _, ts := range temporadas {
-		if ts.Kind != kindTemporada {
-			continue
-		}
-		filhos, err := s.leitura().ListarRelacoesFilhas(ctx, ts.ChildID)
-		if err != nil {
-			return nil, err
-		}
-		for _, fe := range filhos {
-			if fe.Kind != kindEpisodio {
-				continue
-			}
-			ep, err := s.leitura().ObterEntity(ctx, fe.ChildID)
-			if err != nil {
-				if errors.Is(err, sql.ErrNoRows) {
-					continue
-				}
-				return nil, err
-			}
-			eps = append(eps, ep)
-		}
-	}
-	return eps, nil
-}
-
 // episodioProjetado is an episode card already carrying the requested-order numbering,
 // kept together with that numbering to sort by (season, number) before grouping.
 type episodioProjetado struct {
@@ -247,38 +219,27 @@ type episodioProjetado struct {
 	num  *episodeNumberingDTO
 }
 
-// agruparEpisodios builds the episode groups of the series in the requested order: it
+// agruparEpisodiosDeCards builds the episode groups of the series in the requested order: it
 // projects each episode onto the order (strict for official/dvd, absolute for
 // `absolute`), sorts the numbered ones by (season, number) and groups by season. An
 // episode WITHOUT numbering in that order (a draft, or an order the source did not
 // catalog) goes into a "Sem numeração" group at the END — present but separate, so the
 // owner sees that it exists without a made-up position. `absolute` collapses into a
 // single continuous group ("Episódios").
-func (s *Server) agruparEpisodios(ctx context.Context, ent sqlcgen.Entity, ordering string) ([]episodeGroupDTO, error) {
-	eps, err := s.episodiosDaSerie(ctx, ent.ID)
-	if err != nil {
-		return nil, err
-	}
+func (s *Server) agruparEpisodiosDeCards(ctx context.Context, serieID, ordering string, cards []sqlcgen.ListarCardsDeEpisodiosDaSerieRow) []episodeGroupDTO {
 	absoluto := ordering == orderingAbsoluto
 	// In the owner order the numbering comes from the DECLARED UNITS, not from the
 	// episodes: a unit may merge several episodes, and then all of them carry the same
 	// (season, number) — the merge is visible and the order of the unit is the ordinal.
 	var numerosDoDono map[string]tvext.NumeroDono
 	if ordering == tvext.ChaveOrdemDono {
-		numerosDoDono = s.carregarOrdemDoDono(ctx, ent.ID).NumeroDeEpisodio()
+		numerosDoDono = s.carregarOrdemDoDono(ctx, serieID).NumeroDeEpisodio()
 	}
 	var comNum []episodioProjetado
 	var semNum []entityCardDTO
-	for _, ep := range eps {
-		card, ok, err := s.cardDeEpisodio(ctx, ep.ID)
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			continue // episode purged in the middle
-		}
-		// A single read of the namespace serves both numbering and still: the still gets a
-		// ride on the existing walk, without multiplying queries against extension_data.
+	for _, ep := range cards {
+		card := cardDeEpisodioDTO(ep)
+		// A single read of the namespace serves both numbering and the still.
 		ns := tvext.Namespace(ep.ExtensionDataJson, nsTVCore)
 		card.StillURL = stillDoNS(ns)
 		num := projetarParaOrdem(ns, ordering)
@@ -297,7 +258,15 @@ func (s *Server) agruparEpisodios(ctx context.Context, ent sqlcgen.Entity, order
 	if len(semNum) > 0 {
 		groups = append(groups, episodeGroupDTO{Season: 0, Label: "Sem numeração", Episodes: semNum})
 	}
-	return groups, nil
+	return groups
+}
+
+// cardsDeEpisodiosDaSerie loads the cards of every episode of the series in ONE query
+// (ListarCardsDeEpisodiosDaSerie). It replaces the per-episode sweep: the relation walk
+// plus one full row read per episode used to cost minutes on a big series served from a
+// network share.
+func (s *Server) cardsDeEpisodiosDaSerie(ctx context.Context, serieID string) ([]sqlcgen.ListarCardsDeEpisodiosDaSerieRow, error) {
+	return s.leitura().ListarCardsDeEpisodiosDaSerie(ctx, serieID)
 }
 
 // antesNaOrdem sorts by (season, number): season first, then the number. In the absolute
@@ -339,13 +308,3 @@ func labelDoGrupo(season int, absoluto bool) string {
 // ObterEntityCard. ok=false when the episode was purged in the middle (NoRows) — the
 // caller skips it. No aggregate ownership (an episode is a leaf; the ownership comes from
 // the card's own `owned`).
-func (s *Server) cardDeEpisodio(ctx context.Context, id string) (entityCardDTO, bool, error) {
-	row, err := s.leitura().ObterEntityCard(ctx, id)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return entityCardDTO{}, false, nil
-		}
-		return entityCardDTO{}, false, err
-	}
-	return cardDTODeMembro(row), true, nil
-}

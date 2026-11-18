@@ -641,6 +641,23 @@ func kindEOrdemMembros(tipoPai string) (kind string, ordenarPorAno bool) {
 // cardDTODeMembro reuses the list's cardDTO from the ObterEntityCard row (same
 // derived columns + release_date), discarding release_date (used only to
 // sort).
+// cardDeEpisodioDTO maps a card from the BATCH episode query (the same columns as
+// ObterEntityCard, without the tree closure that an episode cannot use).
+func cardDeEpisodioDTO(row sqlcgen.ListarCardsDeEpisodiosDaSerieRow) entityCardDTO {
+	return cardDTO(sqlcgen.ListarEntityCardsRow{
+		ID:                      row.ID,
+		Type:                    row.Type,
+		Title:                   row.Title,
+		Status:                  row.Status,
+		Owned:                   row.Owned,
+		FileCount:               row.FileCount,
+		MatchConfidence:         row.MatchConfidence,
+		HasPoster:               row.HasPoster,
+		CompletenessComplete:    row.CompletenessComplete,
+		CompletenessMissingJson: row.CompletenessMissingJson,
+	})
+}
+
 func cardDTODeMembro(row sqlcgen.ObterEntityCardRow) entityCardDTO {
 	return cardDTO(sqlcgen.ListarEntityCardsRow{
 		ID:                      row.ID,
