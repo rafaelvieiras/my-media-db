@@ -124,15 +124,15 @@ jobs:
       # --no-install-recommends: the recommends of ffmpeg are not needed by a CLI
       # test and pull in a pile of GUI libraries that only cost download time.
       # ffmpeg is the slowest and most erratic step of this job: no hosted image ships
-      # it, so every run downloads 87 packages — 22 s on a good day, 12 min when the
-      # mirror crawls (both measured). The .deb files are cached; a cold cache behaves
-      # exactly like before.
+      # it, so every run had apt fetch 87 packages from the mirror — 18 s to 43 s on a
+      # good day, 12 min 39 s when the mirror crawled (all measured). The .deb files are
+      # cached and installed offline; a cold cache is the old behaviour plus a cache write.
       - name: Cache the ffmpeg packages
         id: ffmpeg-debs
         uses: actions/cache@v6
         with:
           path: ~/.cache/ffmpeg-debs
-          key: ffmpeg-debs-${{ runner.os }}-noble-v1
+          key: ffmpeg-debs-${{ runner.os }}-noble-v2
 
       - name: Download the ffmpeg packages
         if: steps.ffmpeg-debs.outputs.cache-hit != 'true'
@@ -140,23 +140,30 @@ jobs:
           set -euo pipefail
           sudo apt-get update -qq
           mkdir -p ~/.cache/ffmpeg-debs
-          cd ~/.cache/ffmpeg-debs
-          # apt itself resolves the closure and prints the URL of every package
-          apt-get install --print-uris -y --no-install-recommends ffmpeg \
-            | sed -n "s/^'\([^']*\.deb\)'.*/\1/p" > urls.txt
-          echo "pacotes a baixar: $(wc -l < urls.txt)"
-          xargs -a urls.txt -n1 -P8 curl -fsSLO
+          # `-d` = download only: apt resolves the closure and leaves the .deb files in
+          # its own archive directory, so nothing has to be parsed out of --print-uris
+          # (whose URLs are relative to the runner's mirrorlist and cannot be curled).
+          sudo apt-get install -d -y --no-install-recommends ffmpeg
+          sudo cp /var/cache/apt/archives/*.deb ~/.cache/ffmpeg-debs/
+          echo "pacotes no cache: $(ls ~/.cache/ffmpeg-debs | wc -l)"
 
-      # The internal/mediainfo package has an integration test that runs ffprobe FOR
-      # REAL (it generates a clip with ffmpeg); it skips itself when the binaries are
-      # missing, which would silently drop coverage — hence the install and the check.
-      - name: Install ffmpeg (from the cache when warm)
+      # The internal/mediainfo package has an integration test that runs ffprobe FOR REAL
+      # (it generates a clip with ffmpeg); it SKIPS itself when the binaries are missing,
+      # which would drop coverage silently — hence the install and the final check.
+      - name: Install ffmpeg (offline when the cache is warm)
         run: |
           set -euo pipefail
-          # dpkg does not order dependencies; the fallback repairs it from the network
-          # if the cached set is ever incomplete.
-          sudo dpkg -i ~/.cache/ffmpeg-debs/*.deb \
-            || sudo apt-get install -y --no-install-recommends ffmpeg
+          if ls ~/.cache/ffmpeg-debs/*.deb >/dev/null 2>&1; then
+            # dpkg does not order dependencies; --configure -a finishes whatever the
+            # first pass left configured too early.
+            sudo dpkg -i ~/.cache/ffmpeg-debs/*.deb || true
+            sudo dpkg --configure -a || true
+          fi
+          # Reach the network only if the offline attempt did not produce working tools.
+          if ! ffmpeg -version >/dev/null 2>&1 || ! ffprobe -version >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          fi
           ffmpeg -version | head -1
           ffprobe -version | head -1
 
