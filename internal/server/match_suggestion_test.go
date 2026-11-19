@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/enrich"
+	"github.com/rafaelvieiras/my-media-db/internal/resolver"
 )
 
 // gravarSugestaoTeste inserts a hint straight into the table: the tests below are about the
@@ -123,5 +125,33 @@ func TestDescartarSugestaoEntityInexistente(t *testing.T) {
 	rec := do(t, h, http.MethodDelete, "/api/v1/entities/nao-existe/match-suggestion", nil)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, quero 404", rec.Code)
+	}
+}
+
+// TestPodeSugerirCobreFilme: the hint used to be series-only, which left a movie with a
+// distorted folder title (the measured "101 Dálmatas O Filme") with no search result AND no
+// hint. It now covers movies too, and still refuses everything else: a resolved item needs no
+// hint, an episode is not a work, and a server without a source has nothing to ask.
+func TestPodeSugerirCobreFilme(t *testing.T) {
+	comFonte := &Server{enrich: &enrich.Servico{}}
+	semFonte := &Server{}
+
+	casos := []struct {
+		nome string
+		s    *Server
+		ent  resolver.Entidade
+		want bool
+	}{
+		{"filme sem id", comFonte, resolver.Entidade{Type: "movie", Title: "101 Dálmatas O Filme"}, true},
+		{"série sem id continua valendo", comFonte, resolver.Entidade{Type: "tv", Title: "2 Broken Girls"}, true},
+		{"filme já resolvido", comFonte, resolver.Entidade{Type: "movie", Title: "Matrix", ExternalIDs: map[string]string{"tmdb": "603"}}, false},
+		{"episódio", comFonte, resolver.Entidade{Type: "episode", Title: "Genesis Undone"}, false},
+		{"sem fonte configurada", semFonte, resolver.Entidade{Type: "movie", Title: "Toy Story"}, false},
+		{"filme sem título", comFonte, resolver.Entidade{Type: "movie"}, false},
+	}
+	for _, c := range casos {
+		if got := c.s.podeSugerir(c.ent); got != c.want {
+			t.Errorf("%s: podeSugerir = %v, quero %v", c.nome, got, c.want)
+		}
 	}
 }

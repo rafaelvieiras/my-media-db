@@ -47,7 +47,7 @@ threshold ([ADR-0037](adr/0037-search-term-from-the-catalog-too.md)):
 
 | type | attempts, in order |
 |---|---|
-| movie | the **catalog title** (the folder name, with the year of `release_date`), then the **release name** of the file |
+| movie | the **catalog title** (the folder name, with the year of `release_date`), then the **release name** of the file, then each of the two **without a trailing genre tag** ([ADR-0039](adr/0039-release-name-is-not-a-title.md)) |
 | series | the **series folder** (`tituloAnoDaPastaDaSerie`), then the entity title when the file is loose at the library root |
 | artist | the entity title, without a year (an artist has no file of its own, [ADR-0027](adr/0027-music-model-artist-album-track.md)) |
 | any other type with its own file | the release name of the file |
@@ -67,6 +67,15 @@ Attempts whose titles are the same once normalized (`Alligator 2: A Mutação` v
 `Alligator 2 A Mutação`) collapse into one — the provider is not asked twice for the same
 text.
 
+What the attempts are made of matters as much as how many there are. `naming.Parse` treats a
+**release name** as a title that ends where the release section begins: the title stops at the
+first technical token (`WEB-DL`, `1080p`, a glued `BD1080p`, `DualÁudio`) and the year is read
+from the tail of that section, including the 2-digit form older releases use (`Predador.86`).
+Without that cut the search string was the whole tail with year 0 — measured, that was the case
+for **46 of 67** unmatched movies in a production library. The trailing genre tag of the folder
+style gets its own attempt (`101 Dálmatas O Filme` → `101 Dálmatas`), tried **last** so the
+literal title always goes first.
+
 ## When the match is useless
 
 A match can succeed at the source and still be worthless locally. Three reasons reach the
@@ -76,7 +85,7 @@ and none of them is ever applied automatically:
 
 | `reason` | what it means | how it is found |
 |---|---|---|
-| `name` | the name on disk finds nothing; a cheaper variant of it finds a candidate | on the first open of a draft (the cheaper variants cost up to four queries, so a scan never fires them in a burst) |
+| `name` | the name on disk finds nothing; a cheaper variant of it finds a candidate | on the first open of a series or a movie with no identity (the cheaper variants cost up to four queries, so a scan never fires them in a burst) |
 | `empty_tree` | the matched entry **has no episodes** in the source | when the tree is fetched: zero episodes across all seasons |
 | `tree_mismatch` | the tree exists but **does not fit the files** | post-scan census: at least 5 provisional episodes, and at least as many as cataloged ones |
 

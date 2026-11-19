@@ -524,10 +524,15 @@ func (s *Servico) ImportarSeriePorNome(ctx context.Context, nome string, langs [
 	return "", ErrSerieNaoEncontrada
 }
 
-// SugestaoDeSerie is a "did you mean this?" candidate: an item a CHEAPER VARIANT of the
+// SugestaoDeMatch is a "did you mean this?" candidate: an item a CHEAPER VARIANT of the
 // name found after the literal name found nothing. It is never applied automatically --
 // the scanner persists it and the item screen offers the correction to the owner.
-type SugestaoDeSerie struct {
+//
+// It was born series-only (ADR-0035, the misspelled "2 Broken Girls") and is now shared by
+// every type the sources answer by name: a MOVIE needs it for the same reason, and its
+// absence was measured -- "101 Dálmatas O Filme" had no identity, no search result and no
+// hint, because the hint only ever ran for series.
+type SugestaoDeMatch struct {
 	// Resultado is the candidate exactly as the source returned it (the UI shows its
 	// poster/title/year).
 	Resultado provider.ResultadoExterno
@@ -548,38 +553,67 @@ type SugestaoDeSerie struct {
 // matching.LimiarSugestao -- a weak hint is worse than none, because it would teach the
 // owner to ignore the warning. ok=false also when the name has less than 2 tokens: there is
 // nothing to drop.
-func (s *Servico) SugerirSerie(ctx context.Context, nome string, langs []string) (SugestaoDeSerie, bool) {
+func (s *Servico) SugerirSerie(ctx context.Context, nome string, langs []string) (SugestaoDeMatch, bool) {
+	return s.SugerirPorTipo(ctx, nome, tipoSerie, langs)
+}
+
+// SugerirFilme is the movie counterpart of SugerirSerie, over the SAME ladder of variants.
+func (s *Servico) SugerirFilme(ctx context.Context, nome string, langs []string) (SugestaoDeMatch, bool) {
+	return s.SugerirPorTipo(ctx, nome, tipoFilme, langs)
+}
+
+// SugerirPorTipo is the body shared by the two wrappers above: it walks the cheaper
+// variants of `nome` over every source that answers `tipo` and keeps the best-scored
+// candidate, or returns false when nothing reaches matching.LimiarSugestao.
+func (s *Servico) SugerirPorTipo(ctx context.Context, nome, tipo string, langs []string) (SugestaoDeMatch, bool) {
 	alvo := strings.TrimSpace(nome)
 	variantes := variantesDeNome(alvo)
 	if len(variantes) == 0 {
-		return SugestaoDeSerie{}, false
+		return SugestaoDeMatch{}, false
 	}
 	lang := langPrincipal(langs)
-	melhor := SugestaoDeSerie{}
+	melhor := SugestaoDeMatch{}
 	for _, prov := range s.providers.All() {
-		if _, ok := prov.(provider.SerieProvider); !ok {
+		if !fonteServeTipo(prov, tipo) {
 			continue
 		}
 		for _, variante := range variantes {
-			res, err := prov.Buscar(ctx, variante, tipoSerie, lang)
+			res, err := prov.Buscar(ctx, variante, tipo, lang)
 			if err != nil {
 				log.Printf("enrich: sugestao para %q (variante %q) na fonte %q falhou (segue): %v", alvo, variante, prov.Nome(), err)
 				continue
 			}
 			for _, r := range res {
-				if r.Type != tipoSerie {
+				if r.Type != tipo {
 					continue
 				}
 				if score := pontuarSugestao(alvo, r); score > melhor.Score {
-					melhor = SugestaoDeSerie{Resultado: r, Score: score, Consulta: variante}
+					melhor = SugestaoDeMatch{Resultado: r, Score: score, Consulta: variante}
 				}
 			}
 		}
 	}
 	if melhor.Score < matching.LimiarSugestao {
-		return SugestaoDeSerie{}, false
+		return SugestaoDeMatch{}, false
 	}
 	return melhor, true
+}
+
+// fonteServeTipo says whether a source can answer `tipo`. Series needs the series
+// capability (a music source has no series tree to import even if it echoed a title); a
+// MOVIE only needs a source that is not music-only, because the movie search is the plain
+// Buscar() that every catalogue source implements and the results are filtered by type.
+func fonteServeTipo(prov provider.Provider, tipo string) bool {
+	switch tipo {
+	case tipoSerie:
+		_, ok := prov.(provider.SerieProvider)
+		return ok
+	case tipoFilme:
+		_, soMusica := prov.(provider.MusicaProvider)
+		return !soMusica
+	default:
+		return false
+	}
 }
 
 // variantesDeNome builds the cheaper queries to try when the literal name found nothing.

@@ -669,3 +669,31 @@ func TestMelhorCandidatoExternoUsaTituloOriginal(t *testing.T) {
 		t.Fatalf("score %.1f abaixo do limiar %.1f: o show certo tem de passar pelo auto-match", score, float64(LimiarAutoMatch))
 	}
 }
+
+// TestVariantesSemEnfeite: the folder style that appends a genre tag to the title gets one
+// more attempt, and it goes LAST -- the literal title is always tried first. MEASURED on the
+// case that motivated it: "101 Dálmatas O Filme" returns zero results in TMDb, while
+// "101 Dálmatas" returns the right movie as its first result.
+func TestVariantesSemEnfeite(t *testing.T) {
+	entrada := []consultaTituloAno{
+		{Titulo: "101 Dálmatas O Filme", Ano: 1996},
+		{Titulo: "101 Dálmatas", Ano: 1996}, // já sem enfeite: não duplica
+	}
+	got := comVariantesSemEnfeite(entrada)
+	if len(got) != 3 {
+		t.Fatalf("variantes = %+v, quero 3 (a literal, a literal sem enfeite e a que já vinha limpa)", got)
+	}
+	if got[0].Titulo != "101 Dálmatas O Filme" {
+		t.Errorf("primeira variante = %q, quero a literal (o dono procura pelo nome que está na pasta)", got[0].Titulo)
+	}
+	if got[1].Titulo != "101 Dálmatas" || got[1].Ano != 1996 {
+		t.Errorf("segunda variante = %+v, quero \"101 Dálmatas\" mantendo o ano", got[1])
+	}
+	if got[2].Titulo != "101 Dálmatas" {
+		t.Errorf("terceira variante = %q, quero a original limpa", got[2].Titulo)
+	}
+	// A deduplicação roda depois e derruba a repetição: o provedor é consultado uma vez só.
+	if dedup := dedupeConsultas(got); len(dedup) != 2 {
+		t.Errorf("depois do dedupe = %+v, quero 2 consultas distintas", dedup)
+	}
+}
