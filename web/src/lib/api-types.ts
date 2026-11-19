@@ -2227,7 +2227,7 @@ export interface components {
       /** @description Caminho absoluto do tema musical gravado na pasta real da biblioteca. */
       local_path: string
     }
-    /** @description A candidate the scanner could not apply on its own, kept for the owner to accept or ignore (migration 0028). `source`/`source_id` identify the CANDIDATE -- the item itself still has no identity. */
+    /** @description Something the backend refuses to decide alone, kept for the owner to accept or ignore (migrations 0028 and 0029). Three reasons share the shape: `name` (a cheaper variant of the name on disk found this candidate), `empty_tree` (the source answered the current match with zero episodes, so no file can ever be placed) and `tree_mismatch` (the tree exists but does not fit the files). For `name` and `empty_tree` `source`/`source_id` identify a REAL candidate; for `tree_mismatch` they carry the CURRENT identity, which is the thing under suspicion -- that is what `can_apply` is for. */
     MatchSuggestion: {
       /** @description Source of the candidate (e.g. `tmdb`). */
       source: string
@@ -2241,8 +2241,19 @@ export interface components {
       poster_url?: string | null
       /** @description Similarity (0-100) between the name ON DISK (the misspelled one) and the candidate -- it says how plausible the hint is. */
       score: number
-      /** @description The variant that found it (one token dropped, or a character cut that became a prefix of the real title). It explains the guess. */
+      /** @description The variant that found it (one token dropped, or a character cut that became a prefix of the real title). It explains the guess. Empty for `tree_mismatch`, which found nothing. */
       query: string
+      /**
+       * @description Why the owner is being asked. It selects the sentence the screen shows; the actions are the same for every reason. `name` is the typo door (0028), `empty_tree` a match whose source has no episodes, and `tree_mismatch` a tree that does not fit the files.
+       * @enum {string}
+       */
+      reason: 'name' | 'empty_tree' | 'tree_mismatch'
+      /** @description Whether applying the candidate makes sense. False when the candidate IS the identity the item already has -- the `tree_mismatch` case, and the `empty_tree` case when no sibling candidate reached the threshold. The screen hides the apply action in that case. */
+      can_apply: boolean
+      /** @description Episodes of the series that found no place in the tree (the evidence behind `tree_mismatch`). Zero for the other reasons. */
+      files_unmatched: number
+      /** @description Episodes considered by that census (matched plus unmatched). Zero for the reasons that have no census. */
+      files_total: number
     }
     /** @description Visão resolvida — shape FINAL. Hoje reflete a camada arquivo/núcleo; a Fase 3 preenche os mesmos campos com override/externo sem mudar o shape. Os campos RICOS (tagline, keywords, runtime, certification, vote_average, backdrop_url, videos, collection, similar, external_links) dão PARIDADE com o detalhe do externo (0022/0023): vêm da camada externa já enriquecida e usam o MESMO shape (componentes ExternalVideo/Collection/Similar). Os gêneros NÃO têm campo próprio — são as `tags` (que já os carregam). */
     ResolvedEntity: {

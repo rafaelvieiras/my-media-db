@@ -132,11 +132,46 @@ func (s *Server) ProcessarPosScan(ctx context.Context, sourceID string) error {
 		purgados = n
 	}
 
-	if faixasOk+seriesOk+filmesOk > 0 || purgados > 0 {
-		log.Printf("pos-scan: biblioteca %q -- %d faixa(s), %d série(s), %d filme(s) resolvidos depois do scan, %d rascunho(s) vazio(s) purgado(s)",
-			sourceID, faixasOk, seriesOk, filmesOk, purgados)
+	// Match alerts (ADR-0038): series that HAVE an identity but whose tree does not fit the
+	// files. Deliberately LAST and per LIBRARY-SCAN, not per series: it is one query over the
+	// whole catalog (measured: 10 series in a production library with 480k relations, and
+	// loosening the cut would pull in series whose extra files are legitimate specials).
+	// Best-effort -- a failure here never aborts the post-scan.
+	alertas := s.sinalizarArvoresIncompativeis(ctx)
+
+	if faixasOk+seriesOk+filmesOk > 0 || purgados > 0 || alertas > 0 {
+		log.Printf("pos-scan: biblioteca %q -- %d faixa(s), %d série(s), %d filme(s) resolvidos depois do scan, %d rascunho(s) vazio(s) purgado(s), %d alerta(s) de match",
+			sourceID, faixasOk, seriesOk, filmesOk, purgados, alertas)
 	}
 	return nil
+}
+
+// sinalizarArvoresIncompativeis writes the 'tree_mismatch' alert of every series whose files
+// mostly did not fit the tree. It returns how many alerts it wrote (for the summary line).
+//
+// WHY the signal comes from the CENSUS and not from the scan loop: the scanner knows how
+// many files it placed, but not whether the series is "mostly unmatched" -- the ratio needs
+// the whole tree of the series, which the database already has after the scan. Reading it
+// here also covers series scanned by an EARLIER run, so an existing library gets the alert
+// without waiting for a re-scan.
+func (s *Server) sinalizarArvoresIncompativeis(ctx context.Context) int {
+	if s.enrich == nil {
+		return 0
+	}
+	linhas, err := s.leitura().ListarSeriesComArvoreIncompativel(ctx)
+	if err != nil {
+		log.Printf("pos-scan: listar series com arvore incompativel falhou (best-effort, ignorado): %v", err)
+		return 0
+	}
+	escritos := 0
+	for _, row := range linhas {
+		if ctx.Err() != nil {
+			break
+		}
+		s.enrich.SinalizarArvoreIncompativel(ctx, row.EntityID, int(row.Provisional), int(row.Cataloged))
+		escritos++
+	}
+	return escritos
 }
 
 // autoMatchPendentePosScan tries to match+enrich ONE pending movie and, on a match,

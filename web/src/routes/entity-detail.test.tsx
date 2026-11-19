@@ -330,6 +330,10 @@ describe('EntityDetailScreen — suggested match warning', () => {
           poster_url: null,
           score: 95,
           query: '2 Brok',
+          reason: 'name',
+          can_apply: true,
+          files_unmatched: 0,
+          files_total: 0,
         },
       }),
     )

@@ -13,7 +13,21 @@ Problem 1 is data from the providers. Problem 2 is already solved by the file↔
 Problem 3 exists in **no provider**, so it can only come from the owner.
 
 Related: [ADR-0021](adr/0021-series-model-hierarchy-orderings-and-file-link.md) (the model),
+[ADR-0033](adr/0033-alternate-and-owner-orderings.md) (alternate and owner orderings),
 [07](07-enrichment-and-providers.md) (providers), [09](09-nfo-and-export.md) (export).
+
+**Status (19/nov/2026)** — all three problems have a home in the code:
+
+| problem | where | shipped |
+|---|---|---|
+| 1. reorder by the provider | TMDB **episode groups** imported as alternate orderings (`internal/provider/tmdb/tmdb_grupos.go`); TheTVDB reads every `seasonType` when a key exists (`internal/provider/tvdb/tvdb_serie.go`) | v0.4.0 (TMDB groups) |
+| 2. one file, several episodes | N links in `media_file_entity` with `ordinal` | before v0.4.0 |
+| 3. one numbered unit merging N aired episodes (**release units**) | owner order: units of `(season, number)` holding 1..N episode ids, stored in the override layer (`media_override`), tried first by the matcher (`internal/tvext/ordem_dono.go`, `internal/tvmatch/ordem_dono.go`), edited in the series screen | v0.5.0 |
+
+What is **not** done: TheTVDB stays off (no key in production, so every series in the
+catalog is `official`-only in practice), and a file whose name carries no `(season, number)`
+still cannot be placed — the parser has a labelled-episode rule (`Episódio 16 - …`) that is
+not wired into `ParseEpisode`.
 
 ## What the providers offer (measured 2026-11-18)
 
@@ -85,8 +99,9 @@ a gap we can wait out.
 - The TheTVDB adapter is **complete**: it reads `seasonTypes`, pulls every ordering and merges
   them into `Numbering` (`internal/provider/tvdb/tvdb_serie.go`), with pagination and
   per-language titles.
-- The TMDB adapter returns **`official` only** — `SeasonTypes: []string{"official"}`. Episode
-  groups are not consumed at all.
+- The TMDB adapter consumes **episode groups** (v0.4.0): each group becomes an entry in
+  `numbering`, keyed by the group NAME, capped at 8 groups, best-effort
+  (`internal/provider/tmdb/tmdb_grupos.go`). The default ordering stays `official`.
 - Production today has **no TheTVDB key** (`MYMEDIADB_TTDB_API_KEY` is not set), so in practice
   every series in the catalog is `official`-only. That is why the numbering of a DVD box set
   never matches.

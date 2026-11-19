@@ -1349,7 +1349,9 @@ func ehNull(raw json.RawMessage) bool {
 
 // MatchSuggestion is a candidate the scanner found for a name it could not resolve, kept
 // for the owner to accept or ignore. Source/SourceID identify the CANDIDATE (the entity
-// itself has no identity yet).
+// itself has no identity yet) -- with one nuance: for the 'tree_mismatch' reason the
+// candidate IS the current identity, because the suspicion is about it (see Reason and
+// CanApply).
 type MatchSuggestion struct {
 	Source    string  `json:"source"`
 	SourceID  string  `json:"source_id"`
@@ -1361,4 +1363,18 @@ type MatchSuggestion struct {
 	Score int `json:"score"`
 	// Query is the variant that found it (e.g. "2 Broke"), so the hint can explain itself.
 	Query string `json:"query"`
+	// Reason is WHY the owner is being asked: "name" (a cheaper variant of the name on disk
+	// found this candidate), "empty_tree" (the source has no episodes for the current match)
+	// or "tree_mismatch" (the tree exists but does not fit the files). It selects the
+	// sentence the screen shows, nothing else.
+	Reason string `json:"reason"`
+	// CanApply is false when the candidate IS the current identity: offering to "apply" what
+	// is already there would be a button that does nothing (or worse, re-applies the
+	// suspicion). The screen hides the action in that case.
+	CanApply bool `json:"can_apply"`
+	// FilesUnmatched/FilesTotal are the evidence of the 'tree_mismatch' alert: how many
+	// episodes of the series found no place in the tree, out of how many. Zero for the other
+	// reasons (a name hint has no file census).
+	FilesUnmatched int `json:"files_unmatched"`
+	FilesTotal     int `json:"files_total"`
 }

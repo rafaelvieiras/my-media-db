@@ -4003,10 +4003,16 @@ components:
     MatchSuggestion:
       type: object
       description: >
-        A candidate the scanner could not apply on its own, kept for the owner to
-        accept or ignore (migration 0028). `source`/`source_id` identify the
-        CANDIDATE -- the item itself still has no identity.
-      required: [source, source_id, title, score, query]
+        Something the backend refuses to decide alone, kept for the owner to
+        accept or ignore (migrations 0028 and 0029). Three reasons share the
+        shape: `name` (a cheaper variant of the name on disk found this
+        candidate), `empty_tree` (the source answered the current match with zero
+        episodes, so no file can ever be placed) and `tree_mismatch` (the tree
+        exists but does not fit the files). For `name` and `empty_tree`
+        `source`/`source_id` identify a REAL candidate; for `tree_mismatch` they
+        carry the CURRENT identity, which is the thing under suspicion -- that is
+        what `can_apply` is for.
+      required: [source, source_id, title, score, query, reason, can_apply, files_unmatched, files_total]
       properties:
         source:
           type: string
@@ -4034,7 +4040,33 @@ components:
           type: string
           description: >
             The variant that found it (one token dropped, or a character cut that
-            became a prefix of the real title). It explains the guess.
+            became a prefix of the real title). It explains the guess. Empty for
+            `tree_mismatch`, which found nothing.
+        reason:
+          type: string
+          enum: [name, empty_tree, tree_mismatch]
+          description: >
+            Why the owner is being asked. It selects the sentence the screen
+            shows; the actions are the same for every reason. `name` is the typo
+            door (0028), `empty_tree` a match whose source has no episodes, and
+            `tree_mismatch` a tree that does not fit the files.
+        can_apply:
+          type: boolean
+          description: >
+            Whether applying the candidate makes sense. False when the candidate
+            IS the identity the item already has -- the `tree_mismatch` case, and
+            the `empty_tree` case when no sibling candidate reached the
+            threshold. The screen hides the apply action in that case.
+        files_unmatched:
+          type: integer
+          description: >
+            Episodes of the series that found no place in the tree (the evidence
+            behind `tree_mismatch`). Zero for the other reasons.
+        files_total:
+          type: integer
+          description: >
+            Episodes considered by that census (matched plus unmatched). Zero for
+            the reasons that have no census.
 
     ResolvedEntity:
       type: object

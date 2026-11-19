@@ -36,6 +36,12 @@ var (
 	// ErrSerieAmbigua: there were candidates, but no EXACT and UNIQUE title match
 	// (0 exact with candidates present, or 2+ exact). -> review.
 	ErrSerieAmbigua = errors.New("enrich: serie ambigua (sem match de titulo exato e unico)")
+	// ErrArvoreVazia: the source answered the series with ZERO episodes. The identity is
+	// not wrong by itself, but it is USELESS: no file can ever be placed in a tree with no
+	// episodes (measured 19/nov/2026: a phantom TMDb entry with 0 seasons and 0 episodes won
+	// the exact-name comparison; 86 files with a clean S01E01 became provisional drafts).
+	// The caller keeps the identity and persists the alert of ADR-0038.
+	ErrArvoreVazia = errors.New("enrich: a fonte nao tem episodios para esta serie")
 )
 
 const (
@@ -319,7 +325,30 @@ func (s *Servico) sincronizarArvoreSerie(ctx context.Context, serieID, source, s
 	if err != nil {
 		return err
 	}
+	// ZERO episodes is not a tree: it is a source that does not carry this series (a phantom
+	// entry, a duplicate with no data, or a show the source never catalogued episodes for).
+	// Applying it would leave the entity "matched" and every file provisional forever, which
+	// is exactly how 112 items reached the review queue unnoticed. The caller keeps the
+	// identity and writes the alert (ADR-0038): refusing the match outright would make the
+	// next scan pick the same entry again.
+	if episodiosDaArvore(arvore) == 0 {
+		// Art and theme music do NOT depend on the tree (they come from the external ids), so
+		// they still run here: a useless tree must not cost the item its poster. The
+		// re-matching of pending files does not run -- there is no episode to match against.
+		s.enriquecerArtes(ctx, serieID, tipoSerie, langs)
+		s.enriquecerTemaMusical(ctx, serieID, tipoSerie, langs)
+		return ErrArvoreVazia
+	}
 	return s.aplicarArvoreSerie(ctx, serieID, source, sourceID, arvore, langs)
+}
+
+// episodiosDaArvore counts the episodes of the whole tree, across seasons.
+func episodiosDaArvore(arvore provider.SerieArvore) int {
+	total := 0
+	for _, t := range arvore.Temporadas {
+		total += len(t.Episodios)
+	}
+	return total
 }
 
 // importarSerie imports the TREE of a series. It requires the optional SerieProvider
