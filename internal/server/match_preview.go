@@ -87,15 +87,16 @@ func (s *Server) matchPreview(w http.ResponseWriter, r *http.Request) {
 }
 
 // montarMatchPreview derives title/year from the file and searches local-first, then external
-// if local found nothing -- the SAME order as tentarAutoMatch (automatch.go), but using the
-// finders WITHOUT the LimiarAutoMatch cut directly (no duplication of the ranking logic). err
-// is only a real database/infra error; "no candidate" is never err.
+// if local found nothing -- the SAME order AND the same search variants as tentarAutoMatch
+// (automatch.go), but using the finders WITHOUT the LimiarAutoMatch cut directly (no
+// duplication of the ranking logic). err is only a real database/infra error; "no
+// candidate" is never err.
 func (s *Server) montarMatchPreview(ctx context.Context, ent sqlcgen.Entity) (matchPreviewDTO, error) {
-	titulo, ano, ok, err := s.tituloAnoDoArquivo(ctx, ent)
+	variantes, err := s.variantesTituloAno(ctx, ent)
 	if err != nil {
 		return matchPreviewDTO{}, err
 	}
-	if !ok {
+	if len(variantes) == 0 {
 		return matchPreviewNone, nil
 	}
 
@@ -108,11 +109,11 @@ func (s *Server) montarMatchPreview(ctx context.Context, ent sqlcgen.Entity) (ma
 	}
 
 	// 1) Local-first: the same search as the auto-match.
-	candidatosLocais, err := s.buscarLocal(ctx, titulo, ent.Type, nil)
+	alvo, achou, err := s.melhorCandidatoLocalEntre(ctx, ent, variantes)
 	if err != nil {
 		return matchPreviewDTO{}, err
 	}
-	if alvo, achou := s.melhorCandidatoLocal(ctx, candidatosLocais, ent.ID, titulo, ano); achou {
+	if achou {
 		localID := alvo.ID
 		return matchPreviewDTO{
 			Found: true, Method: "local", Score: alvo.Score,
@@ -130,14 +131,14 @@ func (s *Server) montarMatchPreview(ctx context.Context, ent sqlcgen.Entity) (ma
 	if s.enrich == nil {
 		return matchPreviewNone, nil
 	}
-	externos, disponivel := s.buscarExterno(ctx, titulo, ent.Type, lang)
-	if !disponivel {
+	buscado, err := s.melhorCandidatoExternoEntre(ctx, ent, variantes, lang)
+	if err != nil {
+		return matchPreviewDTO{}, err
+	}
+	if !buscado.Disponivel || !buscado.Achou {
 		return matchPreviewNone, nil
 	}
-	cand, score, tituloVencedor, achou := s.melhorCandidatoExterno(ctx, externos, titulo, ano)
-	if !achou {
-		return matchPreviewNone, nil
-	}
+	cand, score, tituloVencedor := buscado.Candidato, buscado.Score, buscado.TituloVencedor
 
 	var anoAlvo *int
 	if a := anoDeStringPtr(cand.Year); a > 0 {

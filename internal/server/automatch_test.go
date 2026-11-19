@@ -548,9 +548,62 @@ func TestAutoMatchDeSerieNaRaizDaFonteUsaTituloDaEntity(t *testing.T) {
 	}
 }
 
-// TestAutoMatchDeFilmeContinuaPeloNomeDoArquivo is the regression: the derivation by
-// folder applies ONLY to tv; a movie keeps using the file name, as always.
-func TestAutoMatchDeFilmeContinuaPeloNomeDoArquivo(t *testing.T) {
+// TestAutoMatchDeFilmeConsultaTituloDoCatalogo is the regression of the bug that left half
+// of a production movie library unmatched. Auto-match used to derive the movie query ONLY
+// from the FILE name, throwing away the catalog title (which comes from the FOLDER, the
+// part the owner curated). With a release name like "Alligator2.91.BD1080p.MemoriadaTV.Maior"
+// the provider returned ZERO candidates, while the catalog title "Alligator 2 A Mutação"
+// returned the right movie as the first result.
+//
+// The catalog title is tried FIRST and, when it reaches LimiarAutoMatch, the release name is
+// never sent -- the assertion on len(termos) is the short-circuit, not decoration.
+func TestAutoMatchDeFilmeConsultaTituloDoCatalogo(t *testing.T) {
+	resultados := []provider.ResultadoExterno{
+		{Source: "tmdb", SourceID: "29680", Type: "movie", Title: "Alligator 2: The Mutation", Year: strp("1991"),
+			TituloOriginal: "Alligator 2: The Mutation"},
+	}
+	h, d, prov := setupAutoMatchServerComBusca(t, resultados)
+	semearEntityComAno(t, d, "e-aligator", "movie", "Alligator 2 A Mutação", "1991-01-01")
+	definirStatus(t, d, "e-aligator", "draft")
+	semearFile(t, d, "f-aligator", "e-aligator",
+		"/lib/Filmes/Alligator 2 - A Mutação (1991)/Alligator2.91.BD1080p.MemoriadaTV.Maior.mkv", "present", 0, "")
+
+	rec := do(t, h, http.MethodPost, "/api/v1/entities/e-aligator/auto-match", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	if len(prov.termos) == 0 {
+		t.Fatal("o provider não foi consultado")
+	}
+	if prov.termos[0] != "Alligator 2 A Mutação" {
+		t.Errorf("primeiro termo consultado = %q, quero %q (título do catálogo, não o nome do release)",
+			prov.termos[0], "Alligator 2 A Mutação")
+	}
+	if len(prov.termos) != 1 {
+		t.Errorf("termos consultados = %v, quero só o título do catálogo (o primeiro já passou do limiar)", prov.termos)
+	}
+
+	got := decodeAutoMatch(t, rec)
+	if !got.Resolved || got.Method != "external" {
+		t.Fatalf("resultado = %+v, quero resolved:true method:external", got)
+	}
+	if got.Score < LimiarAutoMatch {
+		t.Errorf("score = %v, quero >= %v", got.Score, LimiarAutoMatch)
+	}
+	ent, err := escrita(t, d).ObterEntity(context.Background(), "e-aligator")
+	if err != nil {
+		t.Fatalf("ObterEntity: %v", err)
+	}
+	if !ent.ExternalIDTmdb.Valid || ent.ExternalIDTmdb.String != "29680" {
+		t.Errorf("external_id_tmdb = %v, quero 29680", ent.ExternalIDTmdb)
+	}
+}
+
+// TestAutoMatchDeFilmeAindaTentaNomeDoArquivo covers the other half of the contract: the
+// catalog title comes first, but the file name is STILL tried when the first attempt does
+// not reach the threshold -- a draft whose entity title is garbage ("Draft") is resolved by
+// the release name, exactly as before this change.
+func TestAutoMatchDeFilmeAindaTentaNomeDoArquivo(t *testing.T) {
 	ano := "2021"
 	resultados := []provider.ResultadoExterno{
 		{Source: "tmdb", SourceID: "438631", Type: "movie", Title: "Dune", Year: &ano},
@@ -566,11 +619,18 @@ func TestAutoMatchDeFilmeContinuaPeloNomeDoArquivo(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
 	}
-	if len(prov.termos) == 0 {
-		t.Fatal("o provider não foi consultado")
+	if len(prov.termos) != 2 {
+		t.Fatalf("termos consultados = %v, quero 2 (título do catálogo e, depois, nome do arquivo)", prov.termos)
 	}
-	if prov.termos[0] != "Dune" {
-		t.Errorf("termo consultado = %q, quero %q (nome do arquivo, comportamento antigo)", prov.termos[0], "Dune")
+	if prov.termos[0] != "Draft" || prov.termos[1] != "Dune" {
+		t.Errorf("termos consultados = %v, quero [Draft Dune] (ordem: catálogo, arquivo)", prov.termos)
+	}
+	got := decodeMatchPreview(t, rec)
+	if !got.Found || got.Method != "external" {
+		t.Fatalf("preview = %+v, quero found:true method:external", got)
+	}
+	if !got.MeetsAutoThreshold {
+		t.Errorf("meets_auto_threshold = false (score %v), quero true: o nome do arquivo casa", got.Score)
 	}
 }
 

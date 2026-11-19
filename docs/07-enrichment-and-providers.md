@@ -39,6 +39,34 @@ the `Entity`/`extension_data`. Providers are pluggable and declared by
 - **Vision (multi-vertical):** TVDB, IMVDB (music videos), MusicBrainz (music),
   ScreenScraper (games), fanart.tv (art) and others — each one as a provider.
 
+## The search term
+
+What the app sends to the provider is not the raw title of the item: it is a list of
+**attempts**, tried in order, stopping at the first one that reaches the auto-match
+threshold ([ADR-0037](adr/0037-search-term-from-the-catalog-too.md)):
+
+| type | attempts, in order |
+|---|---|
+| movie | the **catalog title** (the folder name, with the year of `release_date`), then the **release name** of the file |
+| series | the **series folder** (`tituloAnoDaPastaDaSerie`), then the entity title when the file is loose at the library root |
+| artist | the entity title, without a year (an artist has no file of its own, [ADR-0027](adr/0027-music-model-artist-album-track.md)) |
+| any other type with its own file | the release name of the file |
+
+The two movie attempts are not redundant. The scan gives a movie two very different
+strings — the folder (`Alligator 2 A Mutação`, `Transformers 2 - A Vingança dos
+Derrotados (2011)`) and the file (`Alligator2.91.BD1080p.MemoriadaTV.Maior.mkv`) — and the
+provider only recognizes the first. Measured on a production library: of 25 random movies
+with no external id, **21 reach the threshold** when searched by the catalog title and
+about **0** when searched by the release name. The release name is still tried second,
+because a draft named `Draft` in the database has nothing better than its file.
+
+An entity with **no file at all** has no attempts: manual drafts and orphans are never
+searched on their own.
+
+Attempts whose titles are the same once normalized (`Alligator 2: A Mutação` vs
+`Alligator 2 A Mutação`) collapse into one — the provider is not asked twice for the same
+text.
+
 ## Credential configuration
 
 **API key** management — never hardcoded in the code (alert in
