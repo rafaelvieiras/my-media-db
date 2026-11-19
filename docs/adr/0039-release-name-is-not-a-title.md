@@ -49,7 +49,23 @@ Guards, because this parser names items:
 | the cut needs a release token AFTER the first field, or a `.`/`_` name | `Death Race 2000` is a title; `Dr. Strangelove` keeps its dot |
 | ambiguous tokens (`web`, `dvd`, `divx`) never open a release section | `Charlotte's Web (2006)` keeps its "Web" — it was losing it before this ADR |
 
-**A trailing genre tag gets its own attempt, and that attempt goes last.**
+**The FOLDER is the authority, not the file.** The Kodi convention — the one this project
+follows and every player reads — puts the work in the folder name; the entity title is only a
+cleaned copy of it, and the copy loses structure the source can use (the subtitle after the
+dash, the brackets). So the attempts of a movie start from the **raw folder name**, guarded
+against the library root (there the folder is the library, and searching "Filmes" matches
+anything):
+
+| order | attempt | example |
+|---|---|---|
+| 1 | folder as the convention writes it | `101 Dálmatas O Filme` |
+| 2 | folder up to the subtitle dash, or without the trailing genre tag | `101 Dálmatas` |
+| 3 | the entity title, i.e. the stored copy of the folder | `101 Dálmatas O Filme` |
+| 4 | the release name of the file, parsed | `101 Dálmatas` (year 1996) |
+
+The release name is still searched, but **last**: it is the name of one file, not of the work.
+
+**A trailing genre tag gets its own attempt, right after its literal.**
 `naming.SemEnfeite` drops a trailing `O Filme` / `A Série` / `The Movie` and the variant is
 appended after the literal ones (`comVariantesSemEnfeite`), so the literal title is still
 searched first and the variant only costs a query when everything before it failed. Unlike the

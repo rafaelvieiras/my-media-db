@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
@@ -600,9 +602,9 @@ func TestAutoMatchDeFilmeConsultaTituloDoCatalogo(t *testing.T) {
 }
 
 // TestAutoMatchDeFilmeAindaTentaNomeDoArquivo covers the other half of the contract: the
-// catalog title comes first, but the file name is STILL tried when the first attempt does
-// not reach the threshold -- a draft whose entity title is garbage ("Draft") is resolved by
-// the release name, exactly as before this change.
+// folder comes first, the catalog title second, but the file name is STILL tried when nothing
+// before it reaches the threshold -- the folder and the entity title here are useless, and the
+// release name resolves the item exactly as before this change.
 func TestAutoMatchDeFilmeAindaTentaNomeDoArquivo(t *testing.T) {
 	ano := "2021"
 	resultados := []provider.ResultadoExterno{
@@ -612,18 +614,19 @@ func TestAutoMatchDeFilmeAindaTentaNomeDoArquivo(t *testing.T) {
 	semearSource(t, d, "src-filmes", "/lib/Filmes")
 	semearEntity(t, d, "e-dune", "movie", "Draft")
 	definirStatus(t, d, "e-dune", "draft")
+	// Pasta sem nada aproveitável ("zzz"): só o nome do arquivo serve.
 	semearFileComFonte(t, d, "f-dune", "e-dune",
-		"/lib/Filmes/Dune (2021)/Dune (2021).mkv", "present", 0, "src-filmes")
+		"/lib/Filmes/zzz/Dune (2021).mkv", "present", 0, "src-filmes")
 
 	rec := do(t, h, http.MethodGet, "/api/v1/entities/e-dune/match-preview", nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
 	}
-	if len(prov.termos) != 2 {
-		t.Fatalf("termos consultados = %v, quero 2 (título do catálogo e, depois, nome do arquivo)", prov.termos)
+	if len(prov.termos) != 3 {
+		t.Fatalf("termos consultados = %v, quero 3 (pasta, título do catálogo e, por último, nome do arquivo)", prov.termos)
 	}
-	if prov.termos[0] != "Draft" || prov.termos[1] != "Dune" {
-		t.Errorf("termos consultados = %v, quero [Draft Dune] (ordem: catálogo, arquivo)", prov.termos)
+	if prov.termos[0] != "zzz" || prov.termos[1] != "Draft" || prov.termos[2] != "Dune" {
+		t.Errorf("termos consultados = %v, quero [zzz Draft Dune] (ordem: pasta, catálogo, arquivo)", prov.termos)
 	}
 	got := decodeMatchPreview(t, rec)
 	if !got.Found || got.Method != "external" {
@@ -696,4 +699,95 @@ func TestVariantesSemEnfeite(t *testing.T) {
 	if dedup := dedupeConsultas(got); len(dedup) != 2 {
 		t.Errorf("depois do dedupe = %+v, quero 2 consultas distintas", dedup)
 	}
+}
+
+// TestVariantesDaPastaDoFilme: per the Kodi convention the FOLDER is the authoritative name of
+// the work, so the search starts from it -- with the folder as written and, when the convention
+// put a subtitle after the dash, with the title alone. The release name of the file comes LAST,
+// and nothing is derived from the library root (its name is the library, not a title).
+func TestVariantesDaPastaDoFilme(t *testing.T) {
+	database := setupAutoMatchDB(t)
+	ctx := context.Background()
+	semearEntityComAno(t, database, "filme-1", "movie", "101 Dálmatas O Filme", "1996-01-01")
+	semearFile(t, database, "arq-1", "filme-1",
+		"/media/filmes/101 Dálmatas - O Filme (1996)/101.Dálmatas.1996.WEB-DL.MAIOR.1080p.mkv",
+		"present", 70, "")
+
+	s := New("v-teste", database)
+	ent, err := s.leitura().ObterEntity(ctx, "filme-1")
+	if err != nil {
+		t.Fatalf("ObterEntity: %v", err)
+	}
+	got, err := s.variantesTituloAno(ctx, ent)
+	if err != nil {
+		t.Fatalf("variantesTituloAno: %v", err)
+	}
+	titulos := make([]string, len(got))
+	for i, c := range got {
+		titulos[i] = c.Titulo
+	}
+	if len(got) == 0 || got[0].Titulo != "101 Dálmatas O Filme" {
+		t.Fatalf("variantes = %v, quero a pasta primeiro", titulos)
+	}
+	// A segunda é a pasta SEM o subtítulo -- a tentativa que o TMDb responde.
+	if got[1].Titulo != "101 Dálmatas" || got[1].Ano != 1996 {
+		t.Errorf("segunda variante = %+v, quero \"101 Dálmatas\" com o ano da pasta", got[1])
+	}
+	// O nome do release do arquivo NÃO pode vir antes da pasta.
+	for i, c := range got {
+		if strings.HasPrefix(c.Titulo, "101 Dálmatas 1996") || strings.Contains(c.Titulo, "WEB") {
+			if i < 2 {
+				t.Errorf("variante do arquivo na posição %d (%q): a pasta vale mais", i, c.Titulo)
+			}
+		}
+	}
+}
+
+// TestVariantesDaPastaNaoUsaRaizDaBiblioteca: a file loose at the root of the library must not
+// be searched by the folder name -- there the folder is the library itself ("Filmes"), which
+// would match anything.
+func TestVariantesDaPastaNaoUsaRaizDaBiblioteca(t *testing.T) {
+	database := setupAutoMatchDB(t)
+	ctx := context.Background()
+	semearEntityComAno(t, database, "filme-1", "movie", "Toy Story", "1995-01-01")
+	semearFile(t, database, "arq-1", "filme-1", "/media/filmes/Toy.Story.1995.1080p.mkv", "present", 70, "")
+	// A biblioteca é /media/filmes, e o arquivo está solto nela.
+	if _, err := escrita(t, database).CriarLibrarySource(ctx, sqlcgen.CriarLibrarySourceParams{
+		ID: "src-1", Path: "/media/filmes", ContentType: "movie",
+	}); err != nil {
+		t.Fatalf("CriarLibrarySource: %v", err)
+	}
+	if _, err := database.Write.ExecContext(ctx,
+		`UPDATE media_file SET library_source_id = 'src-1' WHERE id = 'arq-1'`); err != nil {
+		t.Fatalf("library_source_id: %v", err)
+	}
+
+	s := New("v-teste", database)
+	ent, err := s.leitura().ObterEntity(ctx, "filme-1")
+	if err != nil {
+		t.Fatalf("ObterEntity: %v", err)
+	}
+	got, err := s.variantesTituloAno(ctx, ent)
+	if err != nil {
+		t.Fatalf("variantesTituloAno: %v", err)
+	}
+	for _, c := range got {
+		if strings.EqualFold(c.Titulo, "filmes") {
+			t.Fatalf("variante %q veio da raiz da biblioteca", c.Titulo)
+		}
+	}
+}
+
+// setupAutoMatchDB opens a migrated database for the pure variant tests (no HTTP).
+func setupAutoMatchDB(t *testing.T) *db.DB {
+	t.Helper()
+	database, err := db.Open(db.Config{Path: filepath.Join(t.TempDir(), "variantes.sqlite")})
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := database.Migrate(context.Background()); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	return database
 }

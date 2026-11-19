@@ -285,6 +285,32 @@ func descartarTokensTecnicos(campos []string, estiloRelease bool) string {
 	return strings.TrimSpace(strings.Join(mantidos, " "))
 }
 
+// reSeparadorDeSubtitulo matches the dash that separates the TITLE from a subtitle or an
+// edition tag inside a folder name: "101 Dálmatas - O Filme (1996)" -> the title is
+// "101 Dálmatas". Accepts the hyphen, the en dash and the em dash, with the spaces the
+// convention puts around them.
+var reSeparadorDeSubtitulo = regexp.MustCompile(`\s+[-–—]\s+`)
+
+// TituloSemSubtitulo keeps only the part of a folder name BEFORE the subtitle separator.
+//
+// The Kodi convention (the one every media player follows) puts the WORK in the folder name
+// and there is no other place it lives -- so the folder is the authority, more than the file
+// name inside it. Its shape is "<Title> - <Subtitle or edition> (year)", and sources index
+// the title alone: TMDb answers zero for "101 Dálmatas O Filme" and the right movie for
+// "101 Dálmatas".
+//
+// The input is the RAW folder name (with the year and the brackets still in it): the groups
+// are dropped first, so the separator search never lands inside "(2011-2013)". It returns ""
+// when the cut would leave nothing (" - O Filme" alone).
+func TituloSemSubtitulo(pasta string) string {
+	semGrupos := reBrackets.ReplaceAllString(pasta, " ")
+	partes := reSeparadorDeSubtitulo.Split(semGrupos, 2)
+	if len(partes) < 2 {
+		return ""
+	}
+	return normalizarEspacos(partes[0])
+}
+
 // enfeitesDeTitulo are the trailing phrases a folder or release title carries and the
 // source title usually does NOT ("Mortal Kombat O Filme", "Aladdin A Série", "Space Jam O
 // Jogo"). Compared as a SUFFIX, so a title that merely starts with them is untouched.

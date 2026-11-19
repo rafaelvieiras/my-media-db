@@ -47,7 +47,7 @@ threshold ([ADR-0037](adr/0037-search-term-from-the-catalog-too.md)):
 
 | type | attempts, in order |
 |---|---|
-| movie | the **catalog title** (the folder name, with the year of `release_date`), then the **release name** of the file, then each of the two **without a trailing genre tag** ([ADR-0039](adr/0039-release-name-is-not-a-title.md)) |
+| movie | the **folder name** (the convention writes the work there: as-is, then up to the subtitle dash, then without a trailing genre tag), then the **catalog title**, then the **release name** of the file and its trimmed form ([ADR-0039](adr/0039-release-name-is-not-a-title.md)) |
 | series | the **series folder** (`tituloAnoDaPastaDaSerie`), then the entity title when the file is loose at the library root |
 | artist | the entity title, without a year (an artist has no file of its own, [ADR-0027](adr/0027-music-model-artist-album-track.md)) |
 | any other type with its own file | the release name of the file |
@@ -66,6 +66,10 @@ searched on their own.
 Attempts whose titles are the same once normalized (`Alligator 2: A Mutação` vs
 `Alligator 2 A Mutação`) collapse into one — the provider is not asked twice for the same
 text.
+
+The **folder is the authority**: it is where the Kodi convention puts the work, and the entity
+title is only a cleaned copy of it — so the raw folder name is searched before the stored copy,
+and the release name of one file comes last.
 
 What the attempts are made of matters as much as how many there are. `naming.Parse` treats a
 **release name** as a title that ends where the release section begins: the title stops at the
