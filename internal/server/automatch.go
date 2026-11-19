@@ -355,7 +355,28 @@ func (s *Server) variantesTituloAno(ctx context.Context, ent sqlcgen.Entity) ([]
 	if t, a, ok := s.tituloAnoDoArquivo(ctx, ent, files); ok {
 		out = append(out, consultaTituloAno{Titulo: t, Ano: a})
 	}
-	return dedupeConsultas(out), nil
+	return dedupeConsultas(comVariantesSemEnfeite(out)), nil
+}
+
+// comVariantesSemEnfeite appends, after each attempt, the SAME attempt without the trailing
+// filler of the title ("101 Dálmatas O Filme" -> "101 Dálmatas", "Mortal Kombat O Filme" ->
+// "Mortal Kombat"). They go LAST: the literal title is always tried first, and the variant
+// only costs a provider call when everything before it failed.
+//
+// MEASURED against TMDb, the case that motivated it: "101 Dálmatas O Filme" returns ZERO
+// results while "101 Dálmatas" returns the right movie as its first result. It is the same
+// folder-naming habit as the typo of ADR-0035, only with a genre tag instead of a misspelled
+// word -- and, unlike the typo, the variant is cheap and deterministic, so it can run in the
+// automatic path instead of waiting for the owner to open the item.
+func comVariantesSemEnfeite(consultas []consultaTituloAno) []consultaTituloAno {
+	out := make([]consultaTituloAno, 0, 2*len(consultas))
+	out = append(out, consultas...)
+	for _, c := range consultas {
+		if sem := naming.SemEnfeite(c.Titulo); sem != c.Titulo {
+			out = append(out, consultaTituloAno{Titulo: sem, Ano: c.Ano})
+		}
+	}
+	return out
 }
 
 // dedupeConsultas drops the attempts whose title repeats a previous one once normalized

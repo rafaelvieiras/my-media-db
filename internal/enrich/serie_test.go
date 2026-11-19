@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
@@ -437,7 +438,9 @@ type provedorVariante struct {
 func (provedorVariante) Nome() string { return "tmdb" }
 
 func (p provedorVariante) Buscar(_ context.Context, q, tipo, _ string) ([]provider.ResultadoExterno, error) {
-	if tipo == tipoSerie && q == p.variante {
+	// A fonte de teste responde pelo tipo do candidato que ela carrega: uma série para os
+	// casos de série, um filme para os de filme.
+	if q == p.variante && (tipo == "" || tipo == p.achado.Type) {
 		return []provider.ResultadoExterno{p.achado}, nil
 	}
 	return nil, nil
@@ -538,4 +541,107 @@ func TestVariantesDeNome(t *testing.T) {
 	if v := variantesDeNome("   "); v != nil {
 		t.Errorf("variantes de vazio = %v, quero nil", v)
 	}
+}
+
+// filme101Dalmatas is the case that motivated extending the hint to movies: the folder adds
+// "O Filme" to the catalogue title, the literal name returns nothing, and the 60% cut of the
+// ladder ("101 Dálmatas") is exactly the string TMDb answers.
+func filme101Dalmatas() provider.ResultadoExterno {
+	return provider.ResultadoExterno{
+		Source: "tmdb", SourceID: "11674", Type: "movie",
+		Title: "101 Dálmatas", TituloOriginal: "101 Dalmatians",
+	}
+}
+
+// TestSugerirFilmeAchaPelaVariante covers the movie branch of the same fallback: it is the
+// measured case where a movie had NO identity and NO hint, because the hint only ever ran
+// for series.
+func TestSugerirFilmeAchaPelaVariante(t *testing.T) {
+	database := setupDB(t)
+	svc := New(database, provider.NovaRegistry(provedorPrefixo{achado: filme101Dalmatas()}), t.TempDir())
+
+	sug, ok := svc.SugerirFilme(context.Background(), "101 Dálmatas O Filme", []string{"pt-BR"})
+	if !ok {
+		t.Fatal("ok = false, quero uma sugestão para o filme")
+	}
+	if sug.Resultado.SourceID != "11674" {
+		t.Errorf("source_id = %q, quero 11674", sug.Resultado.SourceID)
+	}
+	if sug.Score < matching.LimiarSugestao {
+		t.Errorf("score = %.1f, quero >= %.0f", sug.Score, matching.LimiarSugestao)
+	}
+}
+
+// provedorPrefixo simula a busca LITERAL do TMDb como ela é: casa por PREFIXO do título, que
+// é a premissa documentada da escada de variantes (cortar até virar prefixo do título real,
+// não remover token solto).
+type provedorPrefixo struct{ achado provider.ResultadoExterno }
+
+func (provedorPrefixo) Nome() string { return "tmdb" }
+
+func (p provedorPrefixo) Buscar(_ context.Context, q, tipo, _ string) ([]provider.ResultadoExterno, error) {
+	if tipo != p.achado.Type {
+		return nil, nil
+	}
+	if strings.HasPrefix(strings.ToLower(p.achado.Title), strings.ToLower(q)) {
+		return []provider.ResultadoExterno{p.achado}, nil
+	}
+	return nil, nil
+}
+
+func (provedorPrefixo) BuscarDetalhe(context.Context, string, string, []string) (json.RawMessage, error) {
+	return json.RawMessage(`{}`), nil
+}
+
+func (provedorPrefixo) MapearDetalhe(json.RawMessage) (map[string]any, error) {
+	return map[string]any{}, nil
+}
+
+// TestSugerirFilmeNaoAceitaSerie garante o filtro por tipo: um resultado de série nunca vira
+// sugestão de filme (é o mesmo cuidado de escopo de tipo do resto do matching).
+func TestSugerirFilmeNaoAceitaSerie(t *testing.T) {
+	database := setupDB(t)
+	serie := serieBrokeGirls() // Type: "tv"
+	svc := New(database, provider.NovaRegistry(provedorVariante{variante: "101 Dálmatas", achado: serie}), t.TempDir())
+
+	if _, ok := svc.SugerirFilme(context.Background(), "101 Dálmatas O Filme", []string{"pt-BR"}); ok {
+		t.Fatal("ok = true com candidato de série, quero false")
+	}
+}
+
+// TestFonteServeTipo locks the source filter: a series needs the series capability (there is
+// a tree to import), a movie only needs a source that is not music-only.
+func TestFonteServeTipo(t *testing.T) {
+	comArvore := provedorVariante{}
+	semArvore := semArvoreProvider{}
+	if !fonteServeTipo(comArvore, tipoSerie) {
+		t.Error("fonte com árvore recusada para série")
+	}
+	if fonteServeTipo(semArvore, tipoSerie) {
+		t.Error("fonte sem árvore aceita para série")
+	}
+	if !fonteServeTipo(semArvore, tipoFilme) {
+		t.Error("fonte de catálogo recusada para filme")
+	}
+	if fonteServeTipo(comArvore, tipoArtista) {
+		t.Error("tipo artista não tem busca por nome aqui")
+	}
+}
+
+// semArvoreProvider is a catalogue source WITHOUT the series capability (only the plain
+// search of the base interface), which is what the movie branch accepts.
+type semArvoreProvider struct{}
+
+func (semArvoreProvider) Nome() string { return "catalogo" }
+
+func (semArvoreProvider) Buscar(context.Context, string, string, string) ([]provider.ResultadoExterno, error) {
+	return nil, nil
+}
+
+func (semArvoreProvider) BuscarDetalhe(context.Context, string, string, []string) (json.RawMessage, error) {
+	return json.RawMessage(`{}`), nil
+}
+
+func (semArvoreProvider) MapearDetalhe(json.RawMessage) (map[string]any, error) {
+	return map[string]any{}, nil
 }

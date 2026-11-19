@@ -63,7 +63,25 @@ var (
 	reBrackets = regexp.MustCompile(`[\[({][^\])}]*[\])}]`)
 	// Collapse of whitespace.
 	reSpaces = regexp.MustCompile(`\s+`)
+	// Resolution glued into a longer token: the release name joins the source and the
+	// resolution ("BD1080p", "TrialBD1080p", "HDTV720p"), so a plain token lookup
+	// misses it.
+	reResolucaoColada = regexp.MustCompile(`(?i)(?:^|[^0-9])(?:480|576|720|1080|1440|2160)p`)
+	// Codec glued the same way ("H264-ACHEIOFILME").
+	reCodecColado = regexp.MustCompile(`(?i)(x26[45]|h26[45]|hevc)`)
 )
+
+// anoMaximoPlausivel is the ceiling of a release year read from the NAME. It is a
+// fixed number on purpose (a clock would make the parser depend on when it runs):
+// anything above it is a title that looks like a year ("Blade Runner 2049").
+const anoMaximoPlausivel = 2029
+
+// tokensTecnicosAmbiguos are the technical tokens that are also ordinary TITLE words.
+// Dropping them from a name that is not release-style breaks the title
+// ("Charlotte's Web"), so they only go when the name is unmistakably a release name.
+var tokensTecnicosAmbiguos = map[string]bool{
+	"web": true, "dv": true, "dvd": true, "divx": true, "xvid": true,
+}
 
 // tokensTecnicos are technical words (resolution, source, codec, audio, HDR) that
 // are not part of the title and are discarded during the cleanup. Compared in
@@ -106,7 +124,7 @@ func Parse(name string) Info {
 	if m := rePart.FindStringSubmatch(name); m != nil {
 		info.PartNo, _ = strconv.Atoi(m[1])
 	}
-	info.Title = extrairTitulo(name)
+	info.Title, info.Year = extrairTitulo(name, info.Year)
 	return info
 }
 
@@ -138,30 +156,207 @@ func extrairEdition(name string) string {
 // is one, removes the groups between brackets/braces/parentheses, normalizes the
 // separators and discards the remaining technical tokens. It returns "" if
 // nothing useful is left.
-func extrairTitulo(name string) string {
+//
+// RELEASE-STYLE NAMES (`The.Matrix.1999.1080p.x264`, how most of a library is named
+// on disk) get the extra treatment: the title ENDS at the first release token, and
+// the token glued right before it is the year. Without it the title kept the whole
+// tail -- "101.Dálmatas.1996.WEB-DL.MAIOR.1080p..." became "101 Dálmatas 1996
+// MAIOR DualÁudio H264-ACHEIOFILME COM-trailer", a string no source answers, and the
+// year stayed 0 so the item could not even use the year to break a tie. MEASURED on a
+// production library: 46 of 67 unmatched movies derived a string like that from the
+// release name, all of them with year 0.
+//
+// The cut only happens when the name really has a release section (a technical token
+// after the title) or is written release-style (`.`/`_` separators). A plain folder
+// title has neither to cut: "Death Race 2000" is the TITLE, and its dots ("Dr.
+// Strangelove") must survive.
+func extrairTitulo(name string, anoDoParen int) (titulo string, ano int) {
 	base := name
 	if loc := reYearParen.FindStringIndex(name); loc != nil {
 		base = name[:loc[0]]
 	}
 	base = reBrackets.ReplaceAllString(base, " ")
+	estiloRelease := strings.ContainsAny(base, "._")
 	base = strings.NewReplacer(".", " ", "_", " ").Replace(base)
-	base = normalizarEspacos(base)
-	return descartarTokensTecnicos(base)
+	campos := strings.Fields(normalizarEspacos(base))
+	ano = anoDoParen
+	fronteira := cortarNaFronteiraDeRelease(campos)
+	if len(fronteira) < len(campos) || estiloRelease {
+		campos = fronteira
+		if ano == 0 {
+			campos, ano = tirarAnoDoFim(campos)
+		}
+	}
+	return descartarTokensTecnicos(campos, estiloRelease), ano
+}
+
+// cortarNaFronteiraDeRelease truncates the fields at the FIRST release token -- the
+// point where the title ends and the release metadata begins. A name with nothing
+// technical keeps every field ("Dr. Strangelove" loses its dot, nothing else).
+func cortarNaFronteiraDeRelease(campos []string) []string {
+	for i, c := range campos {
+		if i > 0 && tokenDeRelease(c) {
+			return campos[:i]
+		}
+	}
+	return campos
+}
+
+// tirarAnoDoFim takes the YEAR out of the tail of the release name -- the place the
+// convention puts it (`101.Dálmatas.1996.WEB-DL`, `Housekeeping.87.BD1080p`,
+// `Quinto.Elemento.1997.Trial.Bluray1080p`). The year does not have to be the VERY last
+// field: noise often follows it (`…1997 Trial`, `…1993 rmz`), which is why the scan walks
+// the last few fields backwards and drops everything from the year onward.
+//
+// It never consumes the whole title (`2012.1080p` is the movie "2012", not a year with an
+// empty title) and it refuses an implausible year, which is what keeps
+// "Blade.Runner.2049.2160p" intact: 2049 is the TITLE, not a release year.
+func tirarAnoDoFim(campos []string) ([]string, int) {
+	const janela = 3
+	inicio := len(campos) - janela
+	if inicio < 1 {
+		inicio = 1 // sempre sobra pelo menos um campo: o título nunca fica vazio
+	}
+	for i := len(campos) - 1; i >= inicio; i-- {
+		if ano := anoDoCampo(campos[i]); ano > 0 {
+			return campos[:i], ano
+		}
+	}
+	return campos, 0
+}
+
+// anoDoCampo reads one field as a release year: 4 digits inside the plausible range, or
+// the 2-digit form older releases use (`Predador.86`). One digit is never a year
+// (`Toy.Story.2`).
+func anoDoCampo(campo string) int {
+	limpo := strings.Trim(strings.TrimSpace(campo), "-_.[](){}")
+	switch len(limpo) {
+	case 4:
+		if n, err := strconv.Atoi(limpo); err == nil && n >= 1900 && n <= anoMaximoPlausivel {
+			return n
+		}
+	case 2:
+		if n, err := strconv.Atoi(limpo); err == nil && n >= 30 {
+			return 1900 + n
+		}
+	}
+	return 0
+}
+
+// tokenDeRelease says whether a field marks the beginning of the release section:
+// a pure technical token, a resolution or codec glued into a longer token
+// ("BD1080p", "TrialBD1080p", "H264-ACHEIOFILME") or an audio marker
+// ("DualÁudio", "Dublado", "Legendado").
+func tokenDeRelease(campo string) bool {
+	limpo := strings.ToLower(strings.Trim(campo, "-_."))
+	if limpo == "" {
+		return false
+	}
+	if tokensTecnicos[limpo] {
+		// The ambiguous ones ("web", "dvd") are ordinary TITLE words far more often than
+		// technical markers, so they never open a release section;
+		// "Charlotte's Web (2006)" keeps its "Web".
+		return !tokensTecnicosAmbiguos[limpo]
+	}
+	switch limpo {
+	case "dualaudio", "dualáudio", "dual", "dublado", "dublada", "legendado", "legendada":
+		return true
+	}
+	return reResolucaoColada.MatchString(limpo) || reCodecColado.MatchString(limpo)
 }
 
 // descartarTokensTecnicos removes, word by word, the purely technical tokens
-// (resolution/codec/source/HDR) and returns the rest joined by spaces.
-func descartarTokensTecnicos(s string) string {
-	campos := strings.Fields(s)
+// (resolution/codec/source/HDR) and returns the rest joined by spaces. For a name
+// that is NOT release-style the AMBIGUOUS tokens survive, because there they are
+// title words: "Charlotte's Web" would become "Charlotte's".
+func descartarTokensTecnicos(campos []string, estiloRelease bool) string {
 	mantidos := make([]string, 0, len(campos))
 	for _, c := range campos {
-		limpo := strings.Trim(c, "-_.")
-		if limpo == "" || tokensTecnicos[strings.ToLower(limpo)] {
+		limpo := strings.Trim(c, "-_.[](){}")
+		if limpo == "" {
+			continue
+		}
+		chave := strings.ToLower(limpo)
+		if tokensTecnicos[chave] && (estiloRelease || !tokensTecnicosAmbiguos[chave]) {
 			continue
 		}
 		mantidos = append(mantidos, limpo)
 	}
 	return strings.TrimSpace(strings.Join(mantidos, " "))
+}
+
+// enfeitesDeTitulo are the trailing phrases a folder or release title carries and the
+// source title usually does NOT ("Mortal Kombat O Filme", "Aladdin A Série", "Space Jam O
+// Jogo"). Compared as a SUFFIX, so a title that merely starts with them is untouched.
+var enfeitesDeTitulo = [][]string{
+	{"o", "filme"}, {"the", "movie"}, {"the", "film"},
+	{"a", "série"}, {"a", "serie"}, {"the", "series"},
+	{"o", "especial"}, {"the", "special"},
+}
+
+// SemEnfeite drops the trailing filler from a title, giving the variant a source is
+// likely to answer. It is the fix for the folder naming style that adds a genre tag after
+// the title: "101 Dálmatas - O Filme" is not a title any catalogue has, while
+// "101 Dálmatas" is (MEASURED: 0 results for the first, the right movie is the first result
+// for the second).
+//
+// It returns the input unchanged when there is nothing to drop or when dropping would
+// leave the title empty ("O Filme" alone is not a title with a filler).
+func SemEnfeite(titulo string) string {
+	campos := strings.Fields(titulo)
+	if len(campos) < 2 {
+		return titulo
+	}
+	norm := make([]string, len(campos))
+	for i, c := range campos {
+		norm[i] = dobrarAcento(c)
+	}
+	for _, enfeite := range enfeitesDeTitulo {
+		if len(campos) <= len(enfeite) {
+			continue
+		}
+		if temSufixo(norm, enfeite) {
+			return strings.Join(campos[:len(campos)-len(enfeite)], " ")
+		}
+	}
+	return titulo
+}
+
+// temSufixo tells whether the last normalized fields equal the filler phrase.
+func temSufixo(norm []string, enfeite []string) bool {
+	deslocamento := len(norm) - len(enfeite)
+	for i, palavra := range enfeite {
+		if norm[deslocamento+i] != palavra {
+			return false
+		}
+	}
+	return true
+}
+
+// dobrarAcento lowercases a word and folds the Portuguese accents onto ASCII, so the
+// comparison does not depend on how the release was typed ("Série"/"Serie").
+func dobrarAcento(palavra string) string {
+	minuscula := strings.ToLower(strings.Trim(palavra, "-_.:!?"))
+	var b strings.Builder
+	b.Grow(len(minuscula))
+	for _, r := range minuscula {
+		if dobrada, ok := acentosDobrados[r]; ok {
+			b.WriteRune(dobrada)
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// acentosDobrados maps the accented letters of Portuguese onto their plain form.
+var acentosDobrados = map[rune]rune{
+	'á': 'a', 'à': 'a', 'â': 'a', 'ã': 'a', 'ä': 'a',
+	'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
+	'í': 'i', 'ì': 'i', 'î': 'i', 'ï': 'i',
+	'ó': 'o', 'ò': 'o', 'ô': 'o', 'õ': 'o', 'ö': 'o',
+	'ú': 'u', 'ù': 'u', 'û': 'u', 'ü': 'u',
+	'ç': 'c', 'ñ': 'n',
 }
 
 // normalizarEspacos collapses whitespace and trims the edges.

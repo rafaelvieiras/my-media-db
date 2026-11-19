@@ -65,9 +65,41 @@ func TestParseFilmesConvencao(t *testing.T) {
 			want: Info{Title: "Nymphomaniac", Year: 2013, PartNo: 2},
 		},
 		{
-			nome: "separadores por ponto",
+			nome: "separadores por ponto: o titulo acaba no release e o ano sai do nome",
 			in:   "The.Matrix.1999.1080p.x264",
-			want: Info{Title: "The Matrix 1999"}, // no "(year)": 1999 stays in the title
+			want: Info{Title: "The Matrix", Year: 1999},
+		},
+		{
+			// O caso real que destravou a correção: pasta com "O Filme" a mais e arquivo
+			// nomeado em ponto com o release colado na resolução.
+			nome: "release em ponto com cauda longa",
+			in:   "101.Dálmatas.1996.WEB-DL.MAIOR.1080p.DualÁudio.AC3.H264-ACHEIOFILME.COM-trailer",
+			want: Info{Title: "101 Dálmatas", Year: 1996},
+		},
+		{
+			nome: "release sem ano nao inventa ano",
+			in:   "Toy.Story.1080p.BluRay.x264",
+			want: Info{Title: "Toy Story"},
+		},
+		{
+			nome: "resolucao colada na fonte tambem corta",
+			in:   "Housekeeping.87.BD1080p.MemoriadaTV.Maior",
+			want: Info{Title: "Housekeeping", Year: 1987},
+		},
+		{
+			nome: "ano do titulo (2049) nao vira ano de release",
+			in:   "Blade.Runner.2049.2160p.BluRay",
+			want: Info{Title: "Blade Runner 2049"},
+		},
+		{
+			nome: "um unico campo com cara de ano continua titulo",
+			in:   "2012.1080p.BluRay",
+			want: Info{Title: "2012"},
+		},
+		{
+			nome: "token ambiguo sobrevive em nome que nao e de release",
+			in:   "Charlotte's Web (2006)",
+			want: Info{Title: "Charlotte's Web", Year: 2006},
 		},
 		{
 			nome: "so token tecnico vira titulo vazio (draft)",
@@ -223,6 +255,27 @@ func TestNumeroEpisodioInicial(t *testing.T) {
 		got, ok := NumeroEpisodioInicial(c.nome)
 		if ok != c.ok || (ok && got != c.want) {
 			t.Errorf("NumeroEpisodioInicial(%q) = (%d,%v), quero (%d,%v)", c.nome, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+// TestSemEnfeite covers the trailing filler that separates the folder style from the
+// catalogue title: the folder says "101 Dálmatas - O Filme", the source knows
+// "101 Dálmatas". Only the trailing phrase goes, and only when something is left.
+func TestSemEnfeite(t *testing.T) {
+	casos := []struct{ in, want string }{
+		{"101 Dálmatas O Filme", "101 Dálmatas"},
+		{"Mortal Kombat O Filme", "Mortal Kombat"},
+		{"Aladdin A Serie", "Aladdin"},
+		{"Aladdin A Série", "Aladdin"},
+		{"Space Jam The Movie", "Space Jam"},
+		{"O Filme", "O Filme"},                       // só o enfeite: não vira título vazio
+		{"Toy Story", "Toy Story"},                   // nada a remover
+		{"O Filme do Meu Pai", "O Filme do Meu Pai"}, // o enfeite está no começo
+	}
+	for _, c := range casos {
+		if got := SemEnfeite(c.in); got != c.want {
+			t.Errorf("SemEnfeite(%q) = %q, quero %q", c.in, got, c.want)
 		}
 	}
 }

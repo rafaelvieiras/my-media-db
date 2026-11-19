@@ -50,7 +50,7 @@ func (s *Server) sugestaoDeMatch(ctx context.Context, ent resolver.Entidade) *re
 	if !s.podeSugerir(ent) {
 		return nil
 	}
-	sug, ok := s.enrich.SugerirSerie(ctx, ent.Title, s.idiomasDaEntity(ctx, ent))
+	sug, ok := s.sugerirCandidato(ctx, ent)
 	if !ok {
 		return nil
 	}
@@ -62,13 +62,38 @@ func (s *Server) sugestaoDeMatch(ctx context.Context, ent resolver.Entidade) *re
 	return sugestaoDTO(criada, ent)
 }
 
-// podeSugerir says whether the fallback is worth running for this item: a SERIES that still
-// has no external id and carries a name to work with. Everything else (a resolved item, a
-// movie, an episode) gets no hint.
+// sugerirCandidato runs the cheaper-variant search for the type of the item: series and
+// movies, the two catalogues a source answers by name and whose titles the folder style
+// distorts.
+//
+// It is a "did you mean this?", never an identity: the caller persists it and the screen
+// offers the correction (ADR-0035, ADR-0038).
+func (s *Server) sugerirCandidato(ctx context.Context, ent resolver.Entidade) (enrich.SugestaoDeMatch, bool) {
+	switch ent.Type {
+	case "tv":
+		return s.enrich.SugerirSerie(ctx, ent.Title, s.idiomasDaEntity(ctx, ent))
+	case "movie":
+		return s.enrich.SugerirFilme(ctx, ent.Title, s.idiomasDaEntity(ctx, ent))
+	default:
+		return enrich.SugestaoDeMatch{}, false
+	}
+}
+
+// podeSugerir says whether the fallback is worth running for this item: a SERIES or a MOVIE
+// that still has no external id and carries a name to work with. Everything else (a resolved
+// item, an episode, a season, music) gets no hint.
+//
+// MOVIE was added after a measured case: "101 Dálmatas O Filme" (a folder that adds "O
+// Filme" to the catalogue title) failed both literal searches and the screen offered no way
+// out -- the hint only ever ran for series, so a movie could not even be told "did you mean
+// this".
 func (s *Server) podeSugerir(ent resolver.Entidade) bool {
 	// s.enrich is nil when the server runs WITHOUT a source configured (a read-only
 	// instance, and several tests): there is nothing to ask, so there is no hint.
-	return s.enrich != nil && ent.Type == "tv" && len(ent.ExternalIDs) == 0 && ent.Title != ""
+	if s.enrich == nil || len(ent.ExternalIDs) != 0 || ent.Title == "" {
+		return false
+	}
+	return ent.Type == "tv" || ent.Type == "movie"
 }
 
 // idiomasDaEntity returns the allowed languages for the query, degrading to the global list
@@ -91,7 +116,7 @@ func (s *Server) idiomasDaEntity(ctx context.Context, _ resolver.Entidade) []str
 
 // gravarSugestao persists the computed hint and returns the stored row, so the DTO the
 // screen receives is exactly what the next open will read.
-func (s *Server) gravarSugestao(ctx context.Context, id string, sug enrich.SugestaoDeSerie) (sqlcgen.MatchSuggestion, error) {
+func (s *Server) gravarSugestao(ctx context.Context, id string, sug enrich.SugestaoDeMatch) (sqlcgen.MatchSuggestion, error) {
 	params := sqlcgen.UpsertMatchSuggestionParams{
 		EntityID:  id,
 		Source:    sug.Resultado.Source,
