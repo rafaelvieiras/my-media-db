@@ -33,8 +33,78 @@ func (q *Queries) DescartarMatchSuggestion(ctx context.Context, entityID string)
 	return err
 }
 
+const listarSeriesComArvoreIncompativel = `-- name: ListarSeriesComArvoreIncompativel :many
+SELECT tv.id AS entity_id, tv.title AS title,
+    CAST(SUM(CASE WHEN ep.status = 'draft' THEN 1 ELSE 0 END) AS INTEGER) AS provisional,
+    CAST(SUM(CASE WHEN ep.status = 'cataloged' THEN 1 ELSE 0 END) AS INTEGER) AS cataloged
+FROM entity tv
+JOIN entity_relation xs ON xs.parent_id = tv.id AND xs.kind = 'tv_season'
+JOIN entity_relation re ON re.parent_id = xs.child_id AND re.kind = 'tv_episode'
+JOIN entity ep ON ep.id = re.child_id
+WHERE tv.type = 'tv'
+  AND tv.external_ids_json IS NOT NULL
+  AND tv.external_ids_json NOT IN ('', '{}')
+  AND NOT EXISTS (SELECT 1 FROM match_suggestion ms WHERE ms.entity_id = tv.id)
+GROUP BY tv.id
+HAVING SUM(CASE WHEN ep.status = 'draft' THEN 1 ELSE 0 END) >= 5
+   AND SUM(CASE WHEN ep.status = 'draft' THEN 1 ELSE 0 END)
+       >= SUM(CASE WHEN ep.status = 'cataloged' THEN 1 ELSE 0 END)
+ORDER BY provisional DESC
+`
+
+type ListarSeriesComArvoreIncompativelRow struct {
+	EntityID    string
+	Title       string
+	Provisional int64
+	Cataloged   int64
+}
+
+// THE CENSUS BEHIND THE 'tree_mismatch' ALERT: series that DO have an identity but whose
+// tree does not fit the files -- at least 5 provisional episodes AND at least as many of
+// them as cataloged ones.
+//
+// Why that cut (measured 19/nov/2026 against a production library): with `>= 5` alone, 10
+// series qualified and all 10 were real problems (a folder of another show, a source that
+// numbers seasons differently); loosening to "provisional >= cataloged/2" pulls in series
+// whose extra files are legitimate specials (430 matched episodes plus 290 specials), which
+// would teach the owner to ignore the warning. A false negative here costs nothing -- the
+// series keeps accumulating drafts in the review queue -- a false positive costs trust.
+//
+// Series whose episodes hang DIRECTLY on the series (no season) are invisible here on
+// purpose: the review queue walks the same shape (series -> season -> episode).
+// Only series WITHOUT a row in match_suggestion are listed: an alert already on screen (or
+// already dismissed) must not be rewritten by every scan.
+func (q *Queries) ListarSeriesComArvoreIncompativel(ctx context.Context) ([]ListarSeriesComArvoreIncompativelRow, error) {
+	rows, err := q.db.QueryContext(ctx, listarSeriesComArvoreIncompativel)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListarSeriesComArvoreIncompativelRow{}
+	for rows.Next() {
+		var i ListarSeriesComArvoreIncompativelRow
+		if err := rows.Scan(
+			&i.EntityID,
+			&i.Title,
+			&i.Provisional,
+			&i.Cataloged,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const obterMatchSuggestion = `-- name: ObterMatchSuggestion :one
-SELECT entity_id, source, source_id, title, year, poster_url, score, query, dismissed, created_at
+SELECT entity_id, source, source_id, title, year, poster_url, score, query, dismissed, created_at,
+    reason, files_unmatched, files_total
 FROM match_suggestion
 WHERE entity_id = ?
 `
@@ -54,14 +124,17 @@ func (q *Queries) ObterMatchSuggestion(ctx context.Context, entityID string) (Ma
 		&i.Query,
 		&i.Dismissed,
 		&i.CreatedAt,
+		&i.Reason,
+		&i.FilesUnmatched,
+		&i.FilesTotal,
 	)
 	return i, err
 }
 
 const upsertMatchSuggestion = `-- name: UpsertMatchSuggestion :exec
 
-INSERT INTO match_suggestion (entity_id, source, source_id, title, year, poster_url, score, query)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO match_suggestion (entity_id, source, source_id, title, year, poster_url, score, query, reason, files_unmatched, files_total)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(entity_id) DO UPDATE SET
     source = excluded.source,
     source_id = excluded.source_id,
@@ -70,18 +143,24 @@ ON CONFLICT(entity_id) DO UPDATE SET
     poster_url = excluded.poster_url,
     score = excluded.score,
     query = excluded.query,
+    reason = excluded.reason,
+    files_unmatched = excluded.files_unmatched,
+    files_total = excluded.files_total,
     created_at = datetime('now')
 `
 
 type UpsertMatchSuggestionParams struct {
-	EntityID  string
-	Source    string
-	SourceID  string
-	Title     string
-	Year      sql.NullString
-	PosterUrl sql.NullString
-	Score     int64
-	Query     string
+	EntityID       string
+	Source         string
+	SourceID       string
+	Title          string
+	Year           sql.NullString
+	PosterUrl      sql.NullString
+	Score          int64
+	Query          string
+	Reason         string
+	FilesUnmatched int64
+	FilesTotal     int64
 }
 
 // Queries for the SUGGESTED MATCH (migration 0028): the "did you mean this?" hint the
@@ -93,6 +172,9 @@ type UpsertMatchSuggestionParams struct {
 // Comments in ASCII and explicit columns -- see the note in entity.sql.
 // One row per entity: a new attempt REPLACES the hint (the latest query round is the only
 // one that says anything about the name currently on disk).
+//
+// `dismissed` is deliberately NOT reset: a hint the owner already answered must not come
+// back as a fresh question on the next scan.
 func (q *Queries) UpsertMatchSuggestion(ctx context.Context, arg UpsertMatchSuggestionParams) error {
 	_, err := q.db.ExecContext(ctx, upsertMatchSuggestion,
 		arg.EntityID,
@@ -103,6 +185,9 @@ func (q *Queries) UpsertMatchSuggestion(ctx context.Context, arg UpsertMatchSugg
 		arg.PosterUrl,
 		arg.Score,
 		arg.Query,
+		arg.Reason,
+		arg.FilesUnmatched,
+		arg.FilesTotal,
 	)
 	return err
 }

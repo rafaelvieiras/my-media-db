@@ -67,6 +67,38 @@ Attempts whose titles are the same once normalized (`Alligator 2: A Mutação` v
 `Alligator 2 A Mutação`) collapse into one — the provider is not asked twice for the same
 text.
 
+## When the match is useless
+
+A match can succeed at the source and still be worthless locally. Three reasons reach the
+owner as the same warning on the item screen
+([ADR-0035](adr/0035-suggested-match-hint.md), [ADR-0038](adr/0038-match-alerts-beyond-the-typo.md)),
+and none of them is ever applied automatically:
+
+| `reason` | what it means | how it is found |
+|---|---|---|
+| `name` | the name on disk finds nothing; a cheaper variant of it finds a candidate | on the first open of a draft (the cheaper variants cost up to four queries, so a scan never fires them in a burst) |
+| `empty_tree` | the matched entry **has no episodes** in the source | when the tree is fetched: zero episodes across all seasons |
+| `tree_mismatch` | the tree exists but **does not fit the files** | post-scan census: at least 5 provisional episodes, and at least as many as cataloged ones |
+
+The two tree signals come from the same component, `internal/enrich/alertas.go`, and share
+the row with the typo hint (migration 0029 adds `reason` and the file counts). The
+difference is what the row points at: `name` and `empty_tree` carry a **real candidate**
+(another item of the same name — measured, the phantom `Aladdin` #14383 with 0 episodes has
+the real `Aladdin: A Série Animada` #2745 next to it), while `tree_mismatch` carries the
+**current identity**, because that is the thing under suspicion. The API reflects that in
+`can_apply`, so the screen never offers to reapply what the item already is.
+
+**The identity is kept when the tree is empty on purpose.** Revoking it would make the next
+scan try the same name, pick the same broken entry and revoke it again — a loop with a tree
+fetch per scan and a series that never leaves draft. The warning is the way out, and it is
+dismissible.
+
+Measured on a production library (19/nov/2026), after enabling the retroactive enrichment:
+1355 items in review, of which 1351 were episode drafts. The census behind the warning
+selected **10 series**, all genuine (a folder of another show, a source that numbers seasons
+differently); loosening the cut to "half as many provisional as cataloged" would pull in
+series whose extra files are legitimate specials — 430 matched episodes and 290 specials.
+
 ## Credential configuration
 
 **API key** management — never hardcoded in the code (alert in

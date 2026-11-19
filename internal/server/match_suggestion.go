@@ -42,7 +42,7 @@ func (s *Server) sugestaoDeMatch(ctx context.Context, ent resolver.Entidade) *re
 		if row.Dismissed != 0 {
 			return nil // the owner already said no: do not ask again, do not query again
 		}
-		return sugestaoDTO(row)
+		return sugestaoDTO(row, ent)
 	case !errors.Is(err, sql.ErrNoRows):
 		log.Printf("server: ler sugestão de match de %s falhou (%v)", ent.ID, err)
 		return nil
@@ -59,7 +59,7 @@ func (s *Server) sugestaoDeMatch(ctx context.Context, ent resolver.Entidade) *re
 		log.Printf("server: gravar sugestão de match de %s falhou (%v)", ent.ID, err)
 		return nil
 	}
-	return sugestaoDTO(criada)
+	return sugestaoDTO(criada, ent)
 }
 
 // podeSugerir says whether the fallback is worth running for this item: a SERIES that still
@@ -101,6 +101,7 @@ func (s *Server) gravarSugestao(ctx context.Context, id string, sug enrich.Suges
 		PosterUrl: nsDeTexto(sug.Resultado.PosterURL),
 		Score:     int64(sug.Score + 0.5),
 		Query:     sug.Consulta,
+		Reason:    enrich.MotivoNome,
 	}
 	if err := sqlcgen.New(s.db.Write).UpsertMatchSuggestion(ctx, params); err != nil {
 		return sqlcgen.MatchSuggestion{}, err
@@ -116,16 +117,23 @@ func nsDeTexto(p *string) sql.NullString {
 	return sql.NullString{String: *p, Valid: true}
 }
 
-// sugestaoDTO maps the stored row to the response shape.
-func sugestaoDTO(row sqlcgen.MatchSuggestion) *resolver.MatchSuggestion {
+// sugestaoDTO maps the stored row to the response shape. The entity is needed only to
+// answer CanApply: a row whose candidate is the identity the entity ALREADY has must not
+// offer an apply button (that is the 'tree_mismatch' case, where the row describes the
+// current match on purpose).
+func sugestaoDTO(row sqlcgen.MatchSuggestion, ent resolver.Entidade) *resolver.MatchSuggestion {
 	return &resolver.MatchSuggestion{
-		Source:    row.Source,
-		SourceID:  row.SourceID,
-		Title:     row.Title,
-		Year:      ptrDeNull(row.Year),
-		PosterURL: ptrDeNull(row.PosterUrl),
-		Score:     int(row.Score),
-		Query:     row.Query,
+		Source:         row.Source,
+		SourceID:       row.SourceID,
+		Title:          row.Title,
+		Year:           ptrDeNull(row.Year),
+		PosterURL:      ptrDeNull(row.PosterUrl),
+		Score:          int(row.Score),
+		Query:          row.Query,
+		Reason:         row.Reason,
+		CanApply:       ent.ExternalIDs[row.Source] != row.SourceID,
+		FilesUnmatched: int(row.FilesUnmatched),
+		FilesTotal:     int(row.FilesTotal),
 	}
 }
 

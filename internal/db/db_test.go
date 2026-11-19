@@ -192,7 +192,11 @@ func TestMigrateDown(t *testing.T) {
 		t.Fatalf("versaoEmbarcada: %v", err)
 	}
 	// Down reverts one migration at a time, from the top down to the base.
-	downPara(t, d, alvo-1) // 0028: removes match_suggestion (the "did you mean this?" hint).
+	downPara(t, d, alvo-1) // 0029: drops the reason/counts columns of the match alert.
+	querFalha(t, d, "SELECT reason FROM match_suggestion",
+		"coluna reason ainda existe após o down do 0029")
+
+	downPara(t, d, alvo-2) // 0028: removes match_suggestion (the "did you mean this?" hint).
 	querFalha(t, d, "SELECT 1 FROM match_suggestion",
 		"tabela match_suggestion ainda existe após o down do 0028")
 

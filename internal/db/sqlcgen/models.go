@@ -164,16 +164,19 @@ type LibrarySource struct {
 }
 
 type MatchSuggestion struct {
-	EntityID  string
-	Source    string
-	SourceID  string
-	Title     string
-	Year      sql.NullString
-	PosterUrl sql.NullString
-	Score     int64
-	Query     string
-	Dismissed int64
-	CreatedAt string
+	EntityID       string
+	Source         string
+	SourceID       string
+	Title          string
+	Year           sql.NullString
+	PosterUrl      sql.NullString
+	Score          int64
+	Query          string
+	Dismissed      int64
+	CreatedAt      string
+	Reason         string
+	FilesUnmatched int64
+	FilesTotal     int64
 }
 
 type MediaExternal struct {

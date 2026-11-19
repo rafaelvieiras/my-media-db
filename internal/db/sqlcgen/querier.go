@@ -692,6 +692,22 @@ type Querier interface {
 	// (stored in gravarNFOSeFaltante) -- this query only enables the job to
 	// materialize the season POSTER (season0N-poster.jpg) at the series root.
 	ListarSeasonIDsComEpisodioPresente(ctx context.Context) ([]string, error)
+	// THE CENSUS BEHIND THE 'tree_mismatch' ALERT: series that DO have an identity but whose
+	// tree does not fit the files -- at least 5 provisional episodes AND at least as many of
+	// them as cataloged ones.
+	//
+	// Why that cut (measured 19/nov/2026 against a production library): with `>= 5` alone, 10
+	// series qualified and all 10 were real problems (a folder of another show, a source that
+	// numbers seasons differently); loosening to "provisional >= cataloged/2" pulls in series
+	// whose extra files are legitimate specials (430 matched episodes plus 290 specials), which
+	// would teach the owner to ignore the warning. A false negative here costs nothing -- the
+	// series keeps accumulating drafts in the review queue -- a false positive costs trust.
+	//
+	// Series whose episodes hang DIRECTLY on the series (no season) are invisible here on
+	// purpose: the review queue walks the same shape (series -> season -> episode).
+	// Only series WITHOUT a row in match_suggestion are listed: an alert already on screen (or
+	// already dismissed) must not be rewritten by every scan.
+	ListarSeriesComArvoreIncompativel(ctx context.Context) ([]ListarSeriesComArvoreIncompativelRow, error)
 	// Complement of ListarFaixasDraftOrfas: series type='tv'
 	// status='draft' with a present media_file pointing directly (entity_id =
 	// serie.id, gravarArquivoSerie always writes it that way, even under review). Same
@@ -976,6 +992,9 @@ type Querier interface {
 	// Comments in ASCII and explicit columns -- see the note in entity.sql.
 	// One row per entity: a new attempt REPLACES the hint (the latest query round is the only
 	// one that says anything about the name currently on disk).
+	//
+	// `dismissed` is deliberately NOT reset: a hint the owner already answered must not come
+	// back as a fresh question on the next scan.
 	UpsertMatchSuggestion(ctx context.Context, arg UpsertMatchSuggestionParams) error
 	// Access to the cache of the EXTERNAL layer (media_external): one raw payload row per
 	// (entity_id, source). Re-enrichment does an UPSERT on that key (ADR-0011).

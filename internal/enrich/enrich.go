@@ -178,7 +178,13 @@ func (s *Servico) enriquecerBase(ctx context.Context, entityID, source, sourceID
 	}
 	if tipo == tipoSerie && sincronizarArvore {
 		if err := s.sincronizarArvoreSerie(ctx, entityID, source, sourceID, langs); err != nil {
-			log.Printf("enrich: sincronizar arvore da serie %s (fonte %s id %s) falhou (segue so-identidade): %v", entityID, source, sourceID, err)
+			if errors.Is(err, ErrArvoreVazia) {
+				// The identity stays (see the sentinel); the owner is told, with the sibling
+				// candidate of the same name when one exists. Best-effort by construction.
+				s.SinalizarArvoreInutil(ctx, entityID, source, sourceID, langs)
+			} else {
+				log.Printf("enrich: sincronizar arvore da serie %s (fonte %s id %s) falhou (segue so-identidade): %v", entityID, source, sourceID, err)
+			}
 		}
 	}
 	return nil

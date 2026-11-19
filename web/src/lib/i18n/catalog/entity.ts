@@ -45,6 +45,14 @@ export const entity = defineDomain({
       title: 'Is this the right item?',
       reason:
         'The name on disk finds nothing in the sources. Searching for "{query}" found this candidate — it is a guess, so nothing was changed.',
+      emptyTreeTitle: 'The source has no episodes for this item',
+      emptyTreeReason:
+        'The matched entry exists, but the source does not list a single episode for it — so no file of this series can be placed. Pick another entry.',
+      treeMismatchTitle: 'This match does not fit the files',
+      treeMismatchReason:
+        '{unmatched} of {total} episodes found no place in the source tree. It usually means the entry is another show of the same name, or the source numbers the seasons differently.',
+      currentMatch: 'Matched to',
+      fixHint: 'Use "Fix match" in the item menu to choose another entry.',
       apply: 'Fix match',
       applying: 'Fixing…',
       dismiss: 'Not this one',
@@ -353,6 +361,15 @@ export const entity = defineDomain({
       title: 'É este o item certo?',
       reason:
         'O nome no disco não retorna nada nas fontes. Buscando por "{query}" apareceu este candidato — é um palpite, então nada foi alterado.',
+      emptyTreeTitle: 'A fonte não tem episódios para este item',
+      emptyTreeReason:
+        'A entrada existe, mas a fonte não lista nenhum episódio dela — então nenhum arquivo desta série consegue ser encaixado. Escolha outra entrada.',
+      treeMismatchTitle: 'Este match não casa com os arquivos',
+      treeMismatchReason:
+        '{unmatched} de {total} episódios não encontraram lugar na árvore da fonte. Normalmente é a entrada de outro programa com o mesmo nome, ou a fonte numerando as temporadas de outro jeito.',
+      currentMatch: 'Casado com',
+      fixHint:
+        'Use "Corrigir Match" no menu do item para escolher outra entrada.',
       apply: 'Corrigir Match',
       applying: 'Corrigindo…',
       dismiss: 'Não é este',
@@ -661,6 +678,15 @@ export const entity = defineDomain({
       title: '¿Es este el ítem correcto?',
       reason:
         'El nombre en el disco no devuelve nada en las fuentes. Buscando «{query}» apareció este candidato — es una suposición, así que no se cambió nada.',
+      emptyTreeTitle: 'La fuente no tiene episodios para este ítem',
+      emptyTreeReason:
+        'La entrada existe, pero la fuente no lista ningún episodio de ella — así que ningún archivo de esta serie se puede ubicar. Elige otra entrada.',
+      treeMismatchTitle: 'Esta coincidencia no encaja con los archivos',
+      treeMismatchReason:
+        '{unmatched} de {total} episodios no encontraron lugar en el árbol de la fuente. Normalmente es la entrada de otro programa con el mismo nombre, o la fuente numerando las temporadas de otra forma.',
+      currentMatch: 'Emparejado con',
+      fixHint:
+        'Usa «Corregir coincidencia» en el menú del ítem para elegir otra entrada.',
       apply: 'Corregir coincidencia',
       applying: 'Corrigiendo…',
       dismiss: 'No es este',

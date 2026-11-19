@@ -19,6 +19,13 @@ import { useT } from '@/lib/i18n'
 //
 // It renders in the hero, right under the synopsis, which is where the "this item is not
 // right" information belongs.
+//
+// TWO MORE REASONS (migration 0029) share this box, because they share its shape: a
+// question the backend refuses to answer alone. `empty_tree` says the matched entry has no
+// episodes in the source (so no file can ever be placed), and `tree_mismatch` says the tree
+// exists but does not fit the files (the counts are the evidence). In both the box is only
+// a WARNING: the correction itself belongs to "Fix match" in the item menu, which already
+// exists -- this component does not duplicate that entry point.
 
 export function SuggestedMatchWarning({
   entityId,
@@ -52,6 +59,28 @@ export function SuggestedMatchWarning({
 
   const ocupado = aplicar.isPending || descartar.isPending
   const ano = suggestion.year ? ` (${suggestion.year})` : ''
+  // The reason picks the sentence, nothing else: the shape is the same box with the same
+  // two ways out. Unknown values (an older backend) fall back to the name hint.
+  const arvoreVazia = suggestion.reason === 'empty_tree'
+  const arvoreIncompativel = suggestion.reason === 'tree_mismatch'
+  const titulo =
+    arvoreVazia || arvoreIncompativel
+      ? t(
+          arvoreVazia
+            ? 'entity.suggestedMatch.emptyTreeTitle'
+            : 'entity.suggestedMatch.treeMismatchTitle',
+        )
+      : t('entity.suggestedMatch.title')
+  const motivo = arvoreVazia
+    ? t('entity.suggestedMatch.emptyTreeReason')
+    : arvoreIncompativel
+      ? t('entity.suggestedMatch.treeMismatchReason', {
+          unmatched: String(suggestion.files_unmatched),
+          total: String(suggestion.files_total),
+        })
+      : t('entity.suggestedMatch.reason', { query: suggestion.query })
+  // Applying only makes sense when the candidate is NOT what the item already is.
+  const podeAplicar = suggestion.can_apply
 
   return (
     <div
@@ -75,28 +104,31 @@ export function SuggestedMatchWarning({
       <div className="flex min-w-0 flex-col gap-2">
         <div className="flex items-center gap-2">
           <CircleHelp className="size-4 shrink-0 text-amber-600" aria-hidden />
-          <p className="text-sm font-medium">
-            {t('entity.suggestedMatch.title')}
-          </p>
+          <p className="text-sm font-medium">{titulo}</p>
         </div>
         <p className="text-sm text-foreground/90">
+          {arvoreIncompativel ? (
+            <span className="text-muted-foreground">
+              {t('entity.suggestedMatch.currentMatch')}{' '}
+            </span>
+          ) : null}
           <span className="font-semibold">{suggestion.title}</span>
           {ano} · {suggestion.source.toUpperCase()}
         </p>
-        <p className="text-xs text-muted-foreground">
-          {t('entity.suggestedMatch.reason', { query: suggestion.query })}
-        </p>
+        <p className="text-xs text-muted-foreground">{motivo}</p>
         <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            onClick={() => aplicar.mutate()}
-            disabled={ocupado}
-            data-testid="suggested-match-apply"
-          >
-            {aplicar.isPending
-              ? t('entity.suggestedMatch.applying')
-              : t('entity.suggestedMatch.apply')}
-          </Button>
+          {podeAplicar ? (
+            <Button
+              size="sm"
+              onClick={() => aplicar.mutate()}
+              disabled={ocupado}
+              data-testid="suggested-match-apply"
+            >
+              {aplicar.isPending
+                ? t('entity.suggestedMatch.applying')
+                : t('entity.suggestedMatch.apply')}
+            </Button>
+          ) : null}
           <Button
             size="sm"
             variant="ghost"
@@ -107,6 +139,11 @@ export function SuggestedMatchWarning({
             {t('entity.suggestedMatch.dismiss')}
           </Button>
         </div>
+        {arvoreVazia || arvoreIncompativel ? (
+          <p className="text-xs text-muted-foreground">
+            {t('entity.suggestedMatch.fixHint')}
+          </p>
+        ) : null}
         {aplicar.isError || descartar.isError ? (
           <p role="alert" className="text-xs text-destructive">
             {t('entity.suggestedMatch.error')}

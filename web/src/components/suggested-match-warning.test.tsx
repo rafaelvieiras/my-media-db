@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SuggestedMatchWarning } from '@/components/suggested-match-warning'
+import type { MatchSuggestion } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 import { erroJson, okJson } from '@/test/detail-harness'
 import { corpoEnviado, stubRotas } from '@/test/stub-fetch'
@@ -10,7 +11,7 @@ import { corpoEnviado, stubRotas } from '@/test/stub-fetch'
 // the name, applies it through the existing confirm-candidate endpoint, or dismisses the
 // question. It never applies anything by itself -- that is the point of the feature.
 
-const sugestao = {
+const sugestao: MatchSuggestion = {
   source: 'tmdb',
   source_id: '39340',
   title: 'Duas Garotas em Apuros',
@@ -18,6 +19,10 @@ const sugestao = {
   poster_url: 'https://image.tmdb.org/t/p/w342/broken.jpg',
   score: 95,
   query: '2 Brok',
+  reason: 'name',
+  can_apply: true,
+  files_unmatched: 0,
+  files_total: 0,
 }
 
 // stubAviso installs the two routes the warning talks to (apply + dismiss).
@@ -134,5 +139,87 @@ describe('SuggestedMatchWarning', () => {
       screen.queryByTestId('suggested-match-poster'),
     ).not.toBeInTheDocument()
     expect(screen.getByTestId('suggested-match-warning')).toBeInTheDocument()
+  })
+  // The two reasons migration 0029 added. They reuse the same box: the difference is the
+  // sentence, the numbers behind it, and whether applying makes sense at all.
+  it('explains the empty tree without offering to apply the same entry again', () => {
+    vi.stubGlobal('fetch', stubAviso())
+    renderWithClient(
+      <SuggestedMatchWarning
+        entityId="s1"
+        suggestion={{
+          ...sugestao,
+          source_id: '14383',
+          title: 'Aladdin',
+          year: null,
+          poster_url: null,
+          score: 0,
+          query: '',
+          reason: 'empty_tree',
+          can_apply: false,
+        }}
+      />,
+    )
+
+    expect(
+      screen.getByText(/source has no episodes for this item/),
+    ).toBeInTheDocument()
+    // Applying would re-apply the entry that has no episodes: the action must be gone.
+    expect(
+      screen.queryByTestId('suggested-match-apply'),
+    ).not.toBeInTheDocument()
+    expect(screen.getByTestId('suggested-match-dismiss')).toBeInTheDocument()
+    expect(screen.getByText(/Fix match/)).toBeInTheDocument()
+  })
+
+  it('offers the sibling candidate when the empty entry has a real one', () => {
+    vi.stubGlobal('fetch', stubAviso())
+    renderWithClient(
+      <SuggestedMatchWarning
+        entityId="s1"
+        suggestion={{
+          ...sugestao,
+          source_id: '2745',
+          title: 'Aladdin: A Série Animada',
+          year: '1994',
+          reason: 'empty_tree',
+          can_apply: true,
+        }}
+      />,
+    )
+
+    expect(screen.getByText('Aladdin: A Série Animada')).toBeInTheDocument()
+    expect(screen.getByTestId('suggested-match-apply')).toBeInTheDocument()
+  })
+
+  it('shows the census of a tree that does not fit the files', () => {
+    vi.stubGlobal('fetch', stubAviso())
+    renderWithClient(
+      <SuggestedMatchWarning
+        entityId="s1"
+        suggestion={{
+          ...sugestao,
+          title: 'Batman',
+          year: '2004',
+          score: 0,
+          query: '',
+          reason: 'tree_mismatch',
+          can_apply: false,
+          files_unmatched: 81,
+          files_total: 159,
+        }}
+      />,
+    )
+
+    expect(
+      screen.getByText(/This match does not fit the files/),
+    ).toBeInTheDocument()
+    // The numbers are the evidence: they justify the warning.
+    expect(screen.getByText(/81 of 159/)).toBeInTheDocument()
+    // The candidate IS the current match -- no apply button, and the line says so.
+    expect(screen.getByText(/Matched to/)).toBeInTheDocument()
+    expect(
+      screen.queryByTestId('suggested-match-apply'),
+    ).not.toBeInTheDocument()
   })
 })

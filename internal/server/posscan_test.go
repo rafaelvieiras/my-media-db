@@ -7,6 +7,8 @@ package server
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,6 +17,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 	"github.com/rafaelvieiras/my-media-db/internal/mediainfo"
+	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 )
 
 // criarSourceTeste registers a real library_source (a real directory, the service validates
@@ -200,5 +203,90 @@ func TestPosScanPulaItemTentadoRecentemente(t *testing.T) {
 	}
 	if got := mediaFileEntityID(t, d, path); got != "fx-recente" {
 		t.Fatalf("faixa tentada agora foi reconciliada de novo (%s): o piso de horas não valeu", got)
+	}
+}
+
+// ── Alertas de match (ADR-0038) ──────────────────────────────────────────────
+
+// TestPosScanSinalizaArvoreIncompativel covers the 'tree_mismatch' signal: the post-scan
+// census (ListarSeriesComArvoreIncompativel) selects the series whose tree does not fit the
+// files -- at least 5 provisional episodes AND at least as many as cataloged ones -- and the
+// alert is persisted with the counts.
+//
+// The healthy series below is the guard against the rule firing everywhere: 12 cataloged
+// episodes and 2 provisional ones is a series with a couple of specials, not a wrong match.
+func TestPosScanSinalizaArvoreIncompativel(t *testing.T) {
+	database, err := db.Open(db.Config{Path: filepath.Join(t.TempDir(), "alerta.sqlite")})
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	ctx := context.Background()
+	if err := database.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	s := New("v-teste", database, WithSearchProvider(fake.New("")), WithAssetsDir(t.TempDir()))
+
+	// Série com árvore incompatível: 6 provisórios, 0 casados (o caso Batman/Aladdin).
+	semearEntity(t, database, "s1", "tv", "Batman")
+	if _, err := database.Write.ExecContext(ctx,
+		`UPDATE entity SET external_ids_json = ? WHERE id = ?`, `{"tmdb":"2022"}`, "s1"); err != nil {
+		t.Fatalf("external_ids da s1: %v", err)
+	}
+	semearEntity(t, database, "se1", "season", "Temporada 1")
+	ligarFilhoOrdenado(t, database, "r-se1", "s1", "se1", "tv_season", 1)
+	for i := 1; i <= 6; i++ {
+		id := fmt.Sprintf("ep%d", i)
+		semearEntity(t, database, id, "episode", fmt.Sprintf("Episódio %d", i))
+		rebaixarParaDraft(t, database, id, "episode", fmt.Sprintf("Episódio %d", i))
+		ligarFilhoOrdenado(t, database, "r-"+id, "se1", id, "tv_episode", int64(i))
+	}
+
+	// Série saudável: 12 casados + 2 provisórios (especiais) -- não pode entrar na lista.
+	semearEntity(t, database, "s2", "tv", "Beavis & Butt-Head")
+	if _, err := database.Write.ExecContext(ctx,
+		`UPDATE entity SET external_ids_json = ? WHERE id = ?`, `{"tmdb":"13943"}`, "s2"); err != nil {
+		t.Fatalf("external_ids da s2: %v", err)
+	}
+	semearEntity(t, database, "se2", "season", "Temporada 1")
+	ligarFilhoOrdenado(t, database, "r-se2", "s2", "se2", "tv_season", 1)
+	for i := 1; i <= 12; i++ {
+		id := fmt.Sprintf("ok%d", i)
+		semearEntity(t, database, id, "episode", fmt.Sprintf("Episódio %d", i))
+		ligarFilhoOrdenado(t, database, "r-"+id, "se2", id, "tv_episode", int64(i))
+	}
+	for i := 1; i <= 2; i++ {
+		id := fmt.Sprintf("esp%d", i)
+		semearEntity(t, database, id, "episode", fmt.Sprintf("Especial %d", i))
+		rebaixarParaDraft(t, database, id, "episode", fmt.Sprintf("Especial %d", i))
+		ligarFilhoOrdenado(t, database, "r-"+id, "se2", id, "tv_episode", int64(i))
+	}
+
+	if n := s.sinalizarArvoresIncompativeis(ctx); n != 1 {
+		t.Fatalf("alertas escritos = %d, quero 1 (só a série com metade dos episódios fora da árvore)", n)
+	}
+
+	alerta, err := s.leitura().ObterMatchSuggestion(ctx, "s1")
+	if err != nil {
+		t.Fatalf("ObterMatchSuggestion(s1): %v", err)
+	}
+	if alerta.Reason != "tree_mismatch" {
+		t.Errorf("reason = %q, quero tree_mismatch", alerta.Reason)
+	}
+	if alerta.SourceID != "2022" {
+		t.Errorf("source_id = %q, quero 2022 (a identidade sob suspeita)", alerta.SourceID)
+	}
+	if alerta.FilesUnmatched != 6 || alerta.FilesTotal != 6 {
+		t.Errorf("censo = %d/%d, quero 6/6", alerta.FilesUnmatched, alerta.FilesTotal)
+	}
+
+	// A série saudável não ganha linha nenhuma.
+	if _, err := s.leitura().ObterMatchSuggestion(ctx, "s2"); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("série saudável ganhou alerta (err = %v): a régua está frouxa", err)
+	}
+
+	// Rodar de novo não duplica nem reescreve: a linha existente tira a série do censo.
+	if n := s.sinalizarArvoresIncompativeis(ctx); n != 0 {
+		t.Errorf("segunda passada escreveu %d alertas, quero 0 (idempotente)", n)
 	}
 }
