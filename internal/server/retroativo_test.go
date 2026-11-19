@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -544,13 +545,14 @@ func TestEnriquecerRetroativoLoteMisto(t *testing.T) {
 	}
 }
 
-// ── termoBuscaRetroativo / music ────────────────────────────────────────────
+// ── variantesBuscaRetroativo / music ────────────────────────────────────────
 
-// TestTermoBuscaRetroativoArtista covers criterion §5.4: an artist returns its own cataloged
-// title, without a year, WITHOUT requiring any media_file (ADR-0027 -- an artist never links
-// directly). movie keeps delegating to tituloAnoDoArquivo unchanged (ok=false when the entity
-// has no file, the same behavior as always).
-func TestTermoBuscaRetroativoArtista(t *testing.T) {
+// TestVariantesBuscaRetroativo covers criterion §5.4 and the per-type dispatch: an artist
+// returns its own cataloged title, without a year, WITHOUT requiring any media_file
+// (ADR-0027 -- an artist never links directly); a movie keeps the old contract that a
+// media_file is required (no file = nothing to search, so manual drafts and orphans are
+// left alone); and a movie WITH a file gets TWO attempts, the CATALOG title first.
+func TestVariantesBuscaRetroativo(t *testing.T) {
 	s, d := setupRetroativoServer(t, nil)
 	ctx := context.Background()
 
@@ -559,12 +561,12 @@ func TestTermoBuscaRetroativoArtista(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ObterEntity: %v", err)
 	}
-	titulo, ano, ok, err := s.termoBuscaRetroativo(ctx, entRow)
+	variantes, err := s.variantesBuscaRetroativo(ctx, entRow)
 	if err != nil {
-		t.Fatalf("termoBuscaRetroativo(artista): %v", err)
+		t.Fatalf("variantesBuscaRetroativo(artista): %v", err)
 	}
-	if !ok || titulo != "Duran Duran" || ano != 0 {
-		t.Errorf("termoBuscaRetroativo(artista) = (%q, %d, %v), quero (\"Duran Duran\", 0, true)", titulo, ano, ok)
+	if len(variantes) != 1 || variantes[0].Titulo != "Duran Duran" || variantes[0].Ano != 0 {
+		t.Errorf("variantesBuscaRetroativo(artista) = %+v, quero um único {Duran Duran, 0}", variantes)
 	}
 
 	semearEntity(t, d, "mv-sem-arquivo", "movie", "Sem Arquivo")
@@ -572,12 +574,57 @@ func TestTermoBuscaRetroativoArtista(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ObterEntity: %v", err)
 	}
-	_, _, ok, err = s.termoBuscaRetroativo(ctx, entMovie)
+	variantes, err = s.variantesBuscaRetroativo(ctx, entMovie)
 	if err != nil {
-		t.Fatalf("termoBuscaRetroativo(movie): %v", err)
+		t.Fatalf("variantesBuscaRetroativo(movie): %v", err)
 	}
-	if ok {
-		t.Error("termoBuscaRetroativo(movie sem media_file) deveria devolver ok=false (delega a tituloAnoDoArquivo)")
+	if len(variantes) != 0 {
+		t.Errorf("variantesBuscaRetroativo(movie sem media_file) = %+v, quero vazio (nada a buscar)", variantes)
+	}
+
+	// Movie WITH a file: the catalog title goes first, with the year of release_date;
+	// the release name (which yields no year at all) comes second.
+	semearEntityComAno(t, d, "mv-aligator", "movie", "Alligator 2 A Mutação", "1991-01-01")
+	semearFile(t, d, "f-aligator", "mv-aligator",
+		"/lib/Filmes/Alligator 2 - A Mutação (1991)/Alligator2.91.BD1080p.MemoriadaTV.Maior.mkv", "present", 70, "")
+	entAligator, err := escrita(t, d).ObterEntity(ctx, "mv-aligator")
+	if err != nil {
+		t.Fatalf("ObterEntity: %v", err)
+	}
+	variantes, err = s.variantesBuscaRetroativo(ctx, entAligator)
+	if err != nil {
+		t.Fatalf("variantesBuscaRetroativo(aligator): %v", err)
+	}
+	if len(variantes) != 2 {
+		t.Fatalf("variantes = %+v, quero 2 (título do catálogo + nome do arquivo)", variantes)
+	}
+	if variantes[0].Titulo != "Alligator 2 A Mutação" || variantes[0].Ano != 1991 {
+		t.Errorf("variante[0] = %+v, quero {Alligator 2 A Mutação, 1991} (título do catálogo, ano do release_date)", variantes[0])
+	}
+	if !strings.Contains(variantes[1].Titulo, "Alligator2") {
+		t.Errorf("variante[1] = %+v, quero o nome do arquivo (Alligator2 91 BD1080p ...)", variantes[1])
+	}
+}
+
+// TestVariantesTituloAnoNaoRepeteBuscaIdêntica covers the dedupe: when the catalog title and
+// the file name are the SAME title (the common case of a well-named release), the second
+// attempt is dropped -- the provider is not queried twice for the same text.
+func TestVariantesTituloAnoNaoRepeteBuscaIdentica(t *testing.T) {
+	s, d := setupRetroativoServer(t, nil)
+	ctx := context.Background()
+
+	semearEntityComAno(t, d, "mv-dune", "movie", "Dune", "2021-01-01")
+	semearFile(t, d, "f-dune", "mv-dune", "/lib/Filmes/Dune (2021)/Dune (2021).mkv", "present", 70, "")
+	ent, err := escrita(t, d).ObterEntity(ctx, "mv-dune")
+	if err != nil {
+		t.Fatalf("ObterEntity: %v", err)
+	}
+	variantes, err := s.variantesTituloAno(ctx, ent)
+	if err != nil {
+		t.Fatalf("variantesTituloAno: %v", err)
+	}
+	if len(variantes) != 1 || variantes[0].Titulo != "Dune" {
+		t.Errorf("variantes = %+v, quero uma única {Dune} (título do catálogo e do arquivo são o mesmo)", variantes)
 	}
 }
 

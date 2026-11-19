@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -30,7 +31,14 @@ const (
 	// (not merely listed) per job run -- throttling of cost/rate-limit of the
 	// external provider in a library that may have a large backlog on the first
 	// time this runs.
-	limiteEnriquecimentoRetroativoPorExecucao = 15
+	//
+	// 15 was too low to ever drain a real backlog: a production library with 625
+	// movies without any external id would need 42 daily runs (six weeks). With the
+	// searches now reaching the catalog title (variantesTituloAno, automatch.go), one
+	// run of 100 applies most of what it checks, so the whole backlog is a matter of
+	// days, not weeks. The cost stays bounded: at most 2 provider searches per item
+	// (the second only when the first misses), and the daily job is the only caller.
+	limiteEnriquecimentoRetroativoPorExecucao = 100
 
 	// limiarSinalizacaoRetroativa is the plausibility floor to write the
 	// item into the Review queue (via AtualizarConfidencePorEntity): below
@@ -171,21 +179,25 @@ func (s *Server) diasReentativaRetroativa(ctx context.Context, entityID string) 
 	return menor, nil
 }
 
-// termoBuscaRetroativo derives the search term (title/year) for ONE eligible
-// entity, dispatched by type: `artista` never has its OWN
-// media_file (ADR-0027, only the track links directly) -- tituloAnoDoArquivo
-// (automatch.go) would always return ok=false for that type, since it depends on
-// a file on disk. An artist is born with a readable title (folder name
-// recognized by the music scanner), so it uses ent.Title directly, without a year
+// variantesBuscaRetroativo lists the search attempts for ONE eligible entity, dispatched
+// by type: `artista` never has its OWN media_file (ADR-0027, only the track links
+// directly) -- variantesTituloAno (automatch.go) would always return empty for that type,
+// since it starts from the files on disk. An artist is born with a readable title (folder
+// name recognized by the music scanner), so it uses ent.Title directly, without a year
 // (0 -- matching.ajustarPorAno already degrades without bonus nor discard when either
 // year is <= 0, existing behavior, now exercised with real music data here).
 // Any other type (movie/tv, and any future top type with its own file) reuses
-// tituloAnoDoArquivo as it always has.
-func (s *Server) termoBuscaRetroativo(ctx context.Context, ent sqlcgen.Entity) (titulo string, ano int, ok bool, err error) {
+// variantesTituloAno -- for a movie that means the CATALOG title first and the release
+// file name second, the same two attempts the auto-match makes (it is the fix for the
+// library that never got matched: the release name alone returns no candidate).
+func (s *Server) variantesBuscaRetroativo(ctx context.Context, ent sqlcgen.Entity) ([]consultaTituloAno, error) {
 	if ent.Type == tipoEntArtista {
-		return ent.Title, 0, ent.Title != "", nil
+		if t := strings.TrimSpace(ent.Title); t != "" {
+			return []consultaTituloAno{{Titulo: t}}, nil
+		}
+		return nil, nil
 	}
-	return s.tituloAnoDoArquivo(ctx, ent)
+	return s.variantesTituloAno(ctx, ent)
 }
 
 // tentarEnriquecerOuSinalizar tries to enrich ONE eligible entity: it derives
@@ -201,11 +213,11 @@ func (s *Server) termoBuscaRetroativo(ctx context.Context, ent sqlcgen.Entity) (
 // interested only in resultado for the aggregated counts. err is ONLY a real
 // database/infrastructure error.
 func (s *Server) tentarEnriquecerOuSinalizar(ctx context.Context, ent sqlcgen.Entity) (resultado, method string, score float64, err error) {
-	titulo, ano, ok, err := s.termoBuscaRetroativo(ctx, ent)
+	variantes, err := s.variantesBuscaRetroativo(ctx, ent)
 	if err != nil {
 		return "", "", 0, err
 	}
-	if !ok {
+	if len(variantes) == 0 {
 		return "none", "", 0, nil
 	}
 
@@ -219,11 +231,10 @@ func (s *Server) tentarEnriquecerOuSinalizar(ctx context.Context, ent sqlcgen.En
 
 	// 1) Local-first (same order as tentarAutoMatch): it never duplicates an entity
 	// already cataloged.
-	candidatosLocais, err := s.buscarLocal(ctx, titulo, ent.Type, nil)
+	melhorLocal, achouLocal, err := s.melhorCandidatoLocalEntre(ctx, ent, variantes)
 	if err != nil {
 		return "", "", 0, err
 	}
-	melhorLocal, achouLocal := s.melhorCandidatoLocal(ctx, candidatosLocais, ent.ID, titulo, ano)
 	if achouLocal && melhorLocal.Score >= LimiarAutoMatch {
 		if err := s.fundirEntities(ctx, melhorLocal.ID, ent.ID); err != nil {
 			return "", "", 0, err
@@ -235,26 +246,27 @@ func (s *Server) tentarEnriquecerOuSinalizar(ctx context.Context, ent sqlcgen.En
 	melhorExternoScore := -1.0
 	achouExterno := false
 	if s.enrich != nil {
-		externos, disponivel := s.buscarExterno(ctx, titulo, ent.Type, lang)
-		if disponivel {
-			cand, scoreExterno, _, achou := s.melhorCandidatoExterno(ctx, externos, titulo, ano)
-			if achou {
-				melhorExternoScore, achouExterno = scoreExterno, true
-				if scoreExterno >= LimiarAutoMatch {
-					aplicado, err := s.aplicarCandidatoExterno(ctx, ent, cand, scoreExterno)
-					if err != nil {
-						return "", "", 0, err
-					}
-					if aplicado.Resolved {
-						return "applied", "external", scoreExterno, nil
-					}
-					// aplicarCandidatoExterno degraded (collision with
-					// the owner's investment in the other entity, or the source
-					// failed to deliver the detail): there is no way to apply it
-					// blindly -- it falls back to the flagging decision below, with the
-					// same score already calculated (the candidate remains
-					// plausible, it just could not be applied on its own).
+		buscado, err := s.melhorCandidatoExternoEntre(ctx, ent, variantes, lang)
+		if err != nil {
+			return "", "", 0, err
+		}
+		if buscado.Achou {
+			cand, scoreExterno := buscado.Candidato, buscado.Score
+			melhorExternoScore, achouExterno = scoreExterno, true
+			if scoreExterno >= LimiarAutoMatch {
+				aplicado, err := s.aplicarCandidatoExterno(ctx, ent, cand, scoreExterno)
+				if err != nil {
+					return "", "", 0, err
 				}
+				if aplicado.Resolved {
+					return "applied", "external", scoreExterno, nil
+				}
+				// aplicarCandidatoExterno degraded (collision with
+				// the owner's investment in the other entity, or the source
+				// failed to deliver the detail): there is no way to apply it
+				// blindly -- it falls back to the flagging decision below, with the
+				// same score already calculated (the candidate remains
+				// plausible, it just could not be applied on its own).
 			}
 		}
 	}

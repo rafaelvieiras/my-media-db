@@ -54,3 +54,4 @@ replaces the flat list of "open decisions" with a traceable record, one file per
 | [0034](0034-reversible-unattended-upgrades.md) | An unattended upgrade has to be reversible: pre-migration copy, downgrade guard, PUID/PGID | — | Accepted |
 | [0035](0035-suggested-match-hint.md) | A cheaper variant of a misspelled name is a suggestion the owner accepts, never an automatic fix | — | Accepted |
 | [0036](0036-gate-unknown-is-not-fine.md) | A metric that could not be measured blocks the gate | QG1 | Accepted |
+| [0037](0037-search-term-from-the-catalog-too.md) | A movie is searched by its catalog title, not only by the release name | MD1 | Accepted |

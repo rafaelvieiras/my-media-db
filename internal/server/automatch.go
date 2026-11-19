@@ -212,11 +212,11 @@ func (s *Server) AutoMatchElegiveis(ctx context.Context) (resolved, pending int,
 // net for merges) must not be applied blindly by the auto-match — the item stays
 // pending in the queue, like any candidate that did not reach the threshold.
 func (s *Server) tentarAutoMatch(ctx context.Context, ent sqlcgen.Entity) (autoMatchResultDTO, error) {
-	titulo, ano, ok, err := s.tituloAnoDoArquivo(ctx, ent)
+	variantes, err := s.variantesTituloAno(ctx, ent)
 	if err != nil {
 		return autoMatchResultDTO{}, err
 	}
-	if !ok {
+	if len(variantes) == 0 {
 		return autoMatchNone, nil
 	}
 
@@ -232,11 +232,11 @@ func (s *Server) tentarAutoMatch(ctx context.Context, ent sqlcgen.Entity) (autoM
 	// returns the HIGHEST-scored non-discarded one regardless of threshold (to also
 	// serve the preview without a cut) -- the >= LimiarAutoMatch cut is decided HERE,
 	// by the caller.
-	candidatosLocais, err := s.buscarLocal(ctx, titulo, ent.Type, nil)
+	alvo, achou, err := s.melhorCandidatoLocalEntre(ctx, ent, variantes)
 	if err != nil {
 		return autoMatchResultDTO{}, err
 	}
-	if alvo, achou := s.melhorCandidatoLocal(ctx, candidatosLocais, ent.ID, titulo, ano); achou && alvo.Score >= LimiarAutoMatch {
+	if achou && alvo.Score >= LimiarAutoMatch {
 		if err := s.fundirEntities(ctx, alvo.ID, ent.ID); err != nil {
 			return autoMatchResultDTO{}, err
 		}
@@ -252,20 +252,19 @@ func (s *Server) tentarAutoMatch(ctx context.Context, ent sqlcgen.Entity) (autoM
 	if s.enrich == nil {
 		return autoMatchNone, nil
 	}
-	externos, disponivel := s.buscarExterno(ctx, titulo, ent.Type, lang)
-	if !disponivel {
-		return autoMatchNone, nil
+	buscado, err := s.melhorCandidatoExternoEntre(ctx, ent, variantes, lang)
+	if err != nil {
+		return autoMatchResultDTO{}, err
 	}
 	// Same reasoning as the local one: the finder returns the highest-scored
 	// non-discarded candidate without a cut; the >= LimiarAutoMatch cut is decided
-	// here. tituloVencedor does not interest the auto-match (only the preview,
+	// here. TituloVencedor does not interest the auto-match (only the preview,
 	// match_preview.go).
-	cand, score, _, achou := s.melhorCandidatoExterno(ctx, externos, titulo, ano)
-	if !achou || score < LimiarAutoMatch {
+	if !buscado.Disponivel || !buscado.Achou || buscado.Score < LimiarAutoMatch {
 		return autoMatchNone, nil
 	}
 
-	return s.aplicarCandidatoExterno(ctx, ent, cand, score)
+	return s.aplicarCandidatoExterno(ctx, ent, buscado.Candidato, buscado.Score)
 }
 
 // aplicarCandidatoExterno applies ONE already chosen external candidate (score >=
@@ -311,11 +310,79 @@ func (s *Server) aplicarCandidatoExterno(ctx context.Context, ent sqlcgen.Entity
 	}, nil
 }
 
+// consultaTituloAno is ONE search attempt: the text to send to the finders and the year
+// to score/qualify it with (0 = unknown year, matching.ajustarPorAno already degrades
+// without a bonus and without a veto).
+type consultaTituloAno struct {
+	Titulo string
+	Ano    int
+}
+
+// variantesTituloAno lists the search attempts for `ent`, in PREFERENCE order and
+// without duplicate titles.
+//
+// A movie is searched TWICE: first with the CATALOG title (entity.title, the folder
+// name the owner curated), then with the one derived from the file name (the release
+// name). The scan gives a movie two very different strings -- the folder
+// ("Alligator 2 A Mutação") and the file ("Alligator2.91.BD1080p.MemoriadaTV.Maior") --
+// and the provider only recognizes the first one. Measured on a production library:
+// of 25 random movies without any external id, 21 reach LimiarAutoMatch when searched by
+// the catalog title, against ~0 when searched by the release name (the release name
+// "Alligator2 91 BD1080p MemoriadaTV Maior" returns ZERO candidates, while "Alligator 2
+// A Mutação" returns the right movie as the first result with score 100).
+//
+// The other types keep the single term they always had: a series already prefers its
+// FOLDER (tituloAnoDaPastaDaSerie, with the entity title as fallback) and never had the
+// movie's problem.
+//
+// An entity with NO file at all has nothing to search (empty result, not an error): that
+// is the old contract of tituloAnoDoArquivo and it keeps the auto-match away from manual
+// drafts and orphans.
+func (s *Server) variantesTituloAno(ctx context.Context, ent sqlcgen.Entity) ([]consultaTituloAno, error) {
+	files, err := s.leitura().ListarMediaFilesPorEntity(ctx, ent.ID)
+	if err != nil {
+		return nil, err
+	}
+	if len(files) == 0 {
+		return nil, nil
+	}
+	var out []consultaTituloAno
+	if ent.Type == tipoEntFilme {
+		if t := strings.TrimSpace(ent.Title); t != "" {
+			out = append(out, consultaTituloAno{Titulo: t, Ano: anoDeReleaseDate(ent.ReleaseDate)})
+		}
+	}
+	if t, a, ok := s.tituloAnoDoArquivo(ctx, ent, files); ok {
+		out = append(out, consultaTituloAno{Titulo: t, Ano: a})
+	}
+	return dedupeConsultas(out), nil
+}
+
+// dedupeConsultas drops the attempts whose title repeats a previous one once normalized
+// ("Alligator 2: A Mutação" and "Alligator 2 A Mutação" are the SAME search): the
+// second attempt would spend a provider call to score the same candidate list against
+// the same title. An attempt with an empty normalized title is dropped as well -- there
+// is nothing to search.
+func dedupeConsultas(in []consultaTituloAno) []consultaTituloAno {
+	vistos := make(map[string]bool, len(in))
+	out := make([]consultaTituloAno, 0, len(in))
+	for _, c := range in {
+		chave := matching.NormalizarNome(c.Titulo)
+		if chave == "" || vistos[chave] {
+			continue
+		}
+		vistos[chave] = true
+		out = append(out, c)
+	}
+	return out
+}
+
 // tituloAnoDoArquivo derives title/year from the FIRST file linked to the entity via
 // naming.Parse (the SAME parser used by the scan) — it does not trust the raw
-// entity.title of a draft. ok=false (without err) when the entity has no file at all,
-// or the name yields no title (e.g. "2160p.mkv"): in those cases there is nothing to
-// search, and that is NOT a failure of the auto-match.
+// entity.title of a draft. ok=false when the name yields no title (e.g. "2160p.mkv"):
+// in that case there is nothing to search, and that is NOT a failure of the auto-match.
+// The caller has already listed the files (variantesTituloAno), so this function does no
+// I/O beyond the folder check of the series branch.
 //
 // SERIES is the special case: the first file of a series is an EPISODE, and its name
 // carries SxxEyy and the episode title -- "Os gárgulas - S03E08 - Genesis Undone"
@@ -323,25 +390,18 @@ func (s *Server) aplicarCandidatoExterno(ctx context.Context, ent sqlcgen.Entity
 // provider does not even return a candidate. The title the search needs is in the
 // series FOLDER ("Os Gárgulas (1994)"), which is the same string the scan used to name
 // the entity, only with the year.
-func (s *Server) tituloAnoDoArquivo(ctx context.Context, ent sqlcgen.Entity) (titulo string, ano int, ok bool, err error) {
-	files, err := s.leitura().ListarMediaFilesPorEntity(ctx, ent.ID)
-	if err != nil {
-		return "", 0, false, err
-	}
-	if len(files) == 0 {
-		return "", 0, false, nil
-	}
+func (s *Server) tituloAnoDoArquivo(ctx context.Context, ent sqlcgen.Entity, files []sqlcgen.MediaFile) (titulo string, ano int, ok bool) {
 	if ent.Type == tipoEntSerie {
 		if t, a, achou := s.tituloAnoDaPastaDaSerie(ctx, ent, files[0]); achou {
-			return t, a, true, nil
+			return t, a, true
 		}
 	}
 	nome := strings.TrimSuffix(filepath.Base(files[0].Path), filepath.Ext(files[0].Path))
 	info := naming.Parse(nome)
 	if info.Title == "" {
-		return "", 0, false, nil
+		return "", 0, false
 	}
-	return info.Title, info.Year, true, nil
+	return info.Title, info.Year, true
 }
 
 // tituloAnoDaPastaDaSerie derives title/year from the series FOLDER name, going one
@@ -513,6 +573,79 @@ func (s *Server) melhorCandidatoExterno(ctx context.Context, candidatos []provid
 		}
 	}
 	return melhor.cand, melhor.score, tituloVencedor, true
+}
+
+// melhorCandidatoLocalEntre walks the search variants IN ORDER and STOPS at the first one
+// that reaches LimiarAutoMatch -- the second search then costs nothing. Below the
+// threshold it returns the BEST candidate among ALL variants, because the callers also
+// need the real score to decide "flag" (retroativo.go) and to display it
+// (match_preview.go).
+//
+// Wrapping the single-term finder (melhorCandidatoLocal) instead of duplicating it keeps
+// the ranking/threshold logic in exactly one place.
+func (s *Server) melhorCandidatoLocalEntre(ctx context.Context, ent sqlcgen.Entity, variantes []consultaTituloAno) (candidatoPontuado, bool, error) {
+	var melhor candidatoPontuado
+	achou := false
+	for _, v := range variantes {
+		candidatos, err := s.buscarLocal(ctx, v.Titulo, ent.Type, nil)
+		if err != nil {
+			return candidatoPontuado{}, false, err
+		}
+		alvo, ok := s.melhorCandidatoLocal(ctx, candidatos, ent.ID, v.Titulo, v.Ano)
+		if ok && (!achou || alvo.Score > melhor.Score) {
+			melhor, achou = alvo, true
+		}
+		if achou && melhor.Score >= LimiarAutoMatch {
+			return melhor, true, nil
+		}
+	}
+	return melhor, achou, nil
+}
+
+// candidatoExternoBusca is the outcome of the EXTERNAL search over every variant. Achou
+// says whether any variant produced a non-discarded candidate; Disponivel whether at
+// least one source answered at all (the caller's "external:[]/available:false"
+// degradation depends on that distinction, and with several variants "all sources failed
+// for one variant" is not the same as "all sources failed").
+type candidatoExternoBusca struct {
+	Candidato      provider.ResultadoExterno
+	TituloVencedor string
+	Score          float64
+	Achou          bool
+	Disponivel     bool
+}
+
+// melhorCandidatoExternoEntre is the external counterpart of melhorCandidatoLocalEntre:
+// it walks the variants IN ORDER, stops at the first one that reaches LimiarAutoMatch and
+// otherwise returns the best-scored candidate among all of them. A variant whose sources
+// ALL failed (not merely "returned nothing") does not abort the walk -- the next variant
+// still gets its chance, and Disponivel records that some source did answer.
+func (s *Server) melhorCandidatoExternoEntre(ctx context.Context, ent sqlcgen.Entity, variantes []consultaTituloAno, lang string) (candidatoExternoBusca, error) {
+	var melhor candidatoExternoBusca
+	for _, v := range variantes {
+		externos, disponivel := s.buscarExterno(ctx, v.Titulo, ent.Type, lang)
+		if !disponivel {
+			continue
+		}
+		melhor.Disponivel = true
+		cand, score, tituloVencedor, achou := s.melhorCandidatoExterno(ctx, externos, v.Titulo, v.Ano)
+		if !achou {
+			continue
+		}
+		if !melhor.Achou || score > melhor.Score {
+			melhor = candidatoExternoBusca{
+				Candidato:      cand,
+				TituloVencedor: tituloVencedor,
+				Score:          score,
+				Achou:          true,
+				Disponivel:     true,
+			}
+		}
+		if melhor.Score >= LimiarAutoMatch {
+			return melhor, nil
+		}
+	}
+	return melhor, nil
 }
 
 // titulosAlternativosDoCandidato fetches the alternative/translated titles that the

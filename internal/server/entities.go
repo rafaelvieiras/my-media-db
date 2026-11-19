@@ -363,6 +363,10 @@ const kindColecao = "collection"
 // parent type: a collection orders by YEAR; series/season follow the sort_index
 // (season/episode number), the order ListarRelacoesFilhas already returns.
 const (
+	// tipoEntFilme is the top-level movie type. It has its own constant because the
+	// auto-match branches on it (automatch.go, variantesTituloAno): a movie is searched
+	// by its catalog title as well, a series is not.
+	tipoEntFilme     = "movie"
 	tipoEntSerie     = "tv"
 	tipoEntTemporada = "season"
 	kindTemporada    = "tv_season"
