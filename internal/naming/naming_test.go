@@ -279,3 +279,23 @@ func TestSemEnfeite(t *testing.T) {
 		}
 	}
 }
+
+// TestTituloSemSubtitulo covers the shape the Kodi convention gives a folder:
+// "<Title> - <Subtitle or edition> (year)". The folder is the authoritative name of the work,
+// and the part before the dash is what a source indexes.
+func TestTituloSemSubtitulo(t *testing.T) {
+	casos := []struct{ in, want string }{
+		{"101 Dálmatas - O Filme (1996)", "101 Dálmatas"},
+		{"Mortal Kombat - O Filme (1995)", "Mortal Kombat"},
+		{"Dungeons & Dragons 3 - O Livro da Escuridão (2012)", "Dungeons & Dragons 3"},
+		{"Spider-Man - Homecoming (2017)", "Spider-Man"}, // o hífen sem espaços NÃO separa
+		{"Toy Story (1995)", ""},                         // sem separador: nada a cortar
+		{"- O Filme (1996)", ""},                         // só o subtítulo: não vira título vazio
+		{"Show (2011–2013) - A Série", "Show"},
+	}
+	for _, c := range casos {
+		if got := TituloSemSubtitulo(c.in); got != c.want {
+			t.Errorf("TituloSemSubtitulo(%q) = %q, quero %q", c.in, got, c.want)
+		}
+	}
+}

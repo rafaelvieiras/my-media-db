@@ -595,14 +595,19 @@ func TestVariantesBuscaRetroativo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("variantesBuscaRetroativo(aligator): %v", err)
 	}
-	if len(variantes) != 2 {
-		t.Fatalf("variantes = %+v, quero 2 (título do catálogo + nome do arquivo)", variantes)
+	// A PASTA vem primeiro (é ela que carrega a obra na convenção Kodi), depois a pasta sem o
+	// subtítulo depois do hífen, e só então o nome do arquivo.
+	if len(variantes) != 3 {
+		t.Fatalf("variantes = %+v, quero 3 (pasta + pasta sem subtítulo + nome do arquivo)", variantes)
 	}
 	if variantes[0].Titulo != "Alligator 2 A Mutação" || variantes[0].Ano != 1991 {
-		t.Errorf("variante[0] = %+v, quero {Alligator 2 A Mutação, 1991} (título do catálogo, ano do release_date)", variantes[0])
+		t.Errorf("variante[0] = %+v, quero {Alligator 2 A Mutação, 1991} (título da pasta, ano do release_date)", variantes[0])
 	}
-	if !strings.Contains(variantes[1].Titulo, "Alligator2") {
-		t.Errorf("variante[1] = %+v, quero o nome do arquivo (Alligator2 91 BD1080p ...)", variantes[1])
+	if variantes[1].Titulo != "Alligator 2" || variantes[1].Ano != 1991 {
+		t.Errorf("variante[1] = %+v, quero {Alligator 2, 1991} (pasta até o hífen)", variantes[1])
+	}
+	if !strings.Contains(variantes[2].Titulo, "Alligator2") {
+		t.Errorf("variante[2] = %+v, quero o nome do arquivo (Alligator2 91 BD1080p ...)", variantes[2])
 	}
 }
 

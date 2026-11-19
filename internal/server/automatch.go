@@ -348,6 +348,12 @@ func (s *Server) variantesTituloAno(ctx context.Context, ent sqlcgen.Entity) ([]
 	}
 	var out []consultaTituloAno
 	if ent.Type == tipoEntFilme {
+		// The FOLDER comes first, because in the Kodi convention -- the one this project
+		// follows and every player reads -- the folder IS the work and its name is more
+		// trustworthy than the file name inside it. The entity title is only a cleaned copy
+		// of it, so the raw name still carries information the copy lost (the subtitle after
+		// the dash, the brackets).
+		out = append(out, s.variantesDaPastaDoFilme(ctx, ent, files[0])...)
 		if t := strings.TrimSpace(ent.Title); t != "" {
 			out = append(out, consultaTituloAno{Titulo: t, Ano: anoDeReleaseDate(ent.ReleaseDate)})
 		}
@@ -358,10 +364,45 @@ func (s *Server) variantesTituloAno(ctx context.Context, ent sqlcgen.Entity) ([]
 	return dedupeConsultas(comVariantesSemEnfeite(out)), nil
 }
 
-// comVariantesSemEnfeite appends, after each attempt, the SAME attempt without the trailing
+// variantesDaPastaDoFilme derives the search attempts from the NAME OF THE FOLDER the movie
+// sits in -- the authoritative name of the work, ahead of the release name of any file.
+//
+// It gives two attempts: the folder as the convention writes it ("101 Dálmatas - O Filme",
+// year from "(1996)") and, when there is a subtitle after the dash, the title alone
+// ("101 Dálmatas"). Sources index the title, so the second one is the attempt that answers
+// most of the time; the first is kept because a folder WITHOUT a subtitle is exactly the
+// same string as the title, and because the provider may know the longer form.
+//
+// Nothing is derived when the file sits loose at the root of the library: the folder there is
+// the library itself, and searching a provider for "Filmes" would be a wildcard.
+func (s *Server) variantesDaPastaDoFilme(ctx context.Context, ent sqlcgen.Entity, arquivo sqlcgen.MediaFile) []consultaTituloAno {
+	pasta := filepath.Dir(arquivo.Path)
+	if s.ehRaizDaFonte(ctx, arquivo, pasta) {
+		return nil
+	}
+	base := filepath.Base(pasta)
+	if base == "." || base == string(filepath.Separator) || base == "" {
+		return nil
+	}
+	info := naming.Parse(base)
+	ano := info.Year
+	if ano == 0 {
+		ano = anoDeReleaseDate(ent.ReleaseDate)
+	}
+	var out []consultaTituloAno
+	if info.Title != "" {
+		out = append(out, consultaTituloAno{Titulo: info.Title, Ano: ano})
+	}
+	if semSub := naming.TituloSemSubtitulo(base); semSub != "" {
+		out = append(out, consultaTituloAno{Titulo: semSub, Ano: ano})
+	}
+	return out
+}
+
+// comVariantesSemEnfeite puts, right after each attempt, the SAME attempt without the trailing
 // filler of the title ("101 Dálmatas O Filme" -> "101 Dálmatas", "Mortal Kombat O Filme" ->
-// "Mortal Kombat"). They go LAST: the literal title is always tried first, and the variant
-// only costs a provider call when everything before it failed.
+// "Mortal Kombat"). It never comes BEFORE its literal: the title as it is on disk is always
+// tried first, and the variant only costs a provider call when that one failed.
 //
 // MEASURED against TMDb, the case that motivated it: "101 Dálmatas O Filme" returns ZERO
 // results while "101 Dálmatas" returns the right movie as its first result. It is the same
@@ -370,8 +411,8 @@ func (s *Server) variantesTituloAno(ctx context.Context, ent sqlcgen.Entity) ([]
 // automatic path instead of waiting for the owner to open the item.
 func comVariantesSemEnfeite(consultas []consultaTituloAno) []consultaTituloAno {
 	out := make([]consultaTituloAno, 0, 2*len(consultas))
-	out = append(out, consultas...)
 	for _, c := range consultas {
+		out = append(out, c)
 		if sem := naming.SemEnfeite(c.Titulo); sem != c.Titulo {
 			out = append(out, consultaTituloAno{Titulo: sem, Ano: c.Ano})
 		}

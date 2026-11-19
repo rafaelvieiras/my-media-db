@@ -37,7 +37,7 @@ jobs:
     name: Version and release notes
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.semantic.outputs.version }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -55,11 +55,32 @@ jobs:
       - name: Install release tooling
         run: npm ci
 
+      # semantic-release creates the tag and the GitHub Release and THEN pushes the release
+      # notes to refs/notes/...; when that last push is rejected the whole command exits 1 with
+      # everything already published (issue #46). `continue-on-error` keeps that from killing a
+      # release that exists, and the version is read from the TAG ON HEAD below, so a real
+      # failure -- nothing published -- still stops the pipeline.
       - name: Run semantic-release
         id: semantic
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx semantic-release
+
+      - name: Read the published version from the tag on HEAD
+        id: version
+        run: |
+          tag="$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
+          if [ -z "$tag" ]; then
+            echo "::error::semantic-release did not publish a tag for this commit (see the step log above)"
+            exit 1
+          fi
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Warn that the release notes were not pushed
+        if: steps.semantic.outcome == 'failure'
+        run: |
+          echo "::warning::semantic-release failed after publishing the tag and the GitHub Release (the release notes push, issue #46). Version ${{ steps.version.outputs.version }} and its image are still released."
 
   docker:
     name: Build and push the multi-arch image
