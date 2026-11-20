@@ -17,7 +17,10 @@ package server
 import (
 	"context"
 	"log"
+	"os"
 	"path/filepath"
+
+	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
 // DescobrirArteLocalMusica sweeps EVERY artist/album entity with at least one owned
@@ -63,20 +66,83 @@ func (s *Server) descobrirArteLocalMusicaDe(ctx context.Context, entityID string
 	if err != nil {
 		return false, err
 	}
-	faixaPath, err := s.leitura().ObterCaminhoDescendentePresente(ctx, entityID)
-	if err != nil {
-		return false, nil // no owned descendant (defensive -- should not happen here)
+	dir, faixaPath, ok := s.pastaDeMusica(ctx, ent)
+	if !ok {
+		return false, nil // no owned descendant, or the folder is not on disk
 	}
+	// RefreshLocalAsset always applies filepath.Dir(p) internally, so p here is only a
+	// vector to reach the right folder -- keeping the track's file name preserves the
+	// "<video>-poster" variants descobrirPoster also looks for.
+	return s.scanner.RefreshLocalAsset(ctx, entityID, []string{filepath.Join(dir, filepath.Base(faixaPath))})
+}
 
-	var p string
+// ehMusica answers "is this entity part of the music vertical?" for the album/artist
+// pair -- the two types whose media_file only exists on the descendant TRACK (ADR-0027),
+// which is what makes their artwork destination (pastaDeMusica) and their file names
+// (NomeArquivoArteMusica: folder.jpg, cdart.png...) different from the video ones (issue
+// #79). tipoEntFaixa is deliberately NOT here: a track has its own media_file, so it
+// follows the video rules.
+func ehMusica(tipo string) bool {
+	return tipo == tipoEntAlbum || tipo == tipoEntArtista
+}
+
+// pastaDeMusica resolves the folder that receives the artwork of an album or an artist,
+// plus the track path it was derived from: the directory of a descendant track file (album)
+// or its PARENT (artist) -- the SAME rule the local-artwork discovery has always used, now
+// shared with the write side (issue #79).
+//
+// ok=false when: the entity has no owned descendant track (artist/album never have a
+// media_file of their own, ADR-0027); the folder is not on disk right now (remote mount
+// offline) -- writing would fail, and creating folders in the library is not our call; or,
+// for an ARTIST, when the album folder IS a library root, i.e. the tracks are not inside an
+// album subfolder and going up one level would drop the artist picture in the root of the
+// library. A missing destination is "nothing to do", never an error.
+func (s *Server) pastaDeMusica(ctx context.Context, ent sqlcgen.Entity) (dir, faixaPath string, ok bool) {
+	faixaPath, err := s.leitura().ObterCaminhoDescendentePresente(ctx, ent.ID)
+	if err != nil || faixaPath == "" {
+		return "", "", false // sql.ErrNoRows: no owned track (defensive)
+	}
+	albumDir := filepath.Dir(faixaPath)
 	switch ent.Type {
 	case tipoEntAlbum:
-		p = faixaPath // filepath.Dir(faixaPath) = album folder
+		if !diretorioExiste(albumDir) {
+			return "", "", false
+		}
+		return albumDir, faixaPath, true
 	case tipoEntArtista:
-		p = filepath.Dir(faixaPath) // filepath.Dir(album folder) = artist folder
-	default:
-		return false, nil
+		raizes, err := s.raizesConfiaveis(ctx)
+		if err != nil {
+			return "", "", false
+		}
+		if ehRaizDeBiblioteca(raizes, albumDir) {
+			return "", "", false
+		}
+		artistDir := filepath.Dir(albumDir)
+		if artistDir == albumDir || !diretorioExiste(artistDir) {
+			return "", "", false
+		}
+		return artistDir, faixaPath, true
 	}
+	return "", "", false
+}
 
-	return s.scanner.RefreshLocalAsset(ctx, entityID, []string{p})
+// diretorioExiste reports whether `dir` is a directory ON DISK right now.
+func diretorioExiste(dir string) bool {
+	if dir == "" {
+		return false
+	}
+	info, err := os.Stat(dir)
+	return err == nil && info.IsDir()
+}
+
+// ehRaizDeBiblioteca reports whether `dir` is one of the library roots (a configured
+// library_source path or the assets dir).
+func ehRaizDeBiblioteca(raizes []string, dir string) bool {
+	limpo := filepath.Clean(dir)
+	for _, raiz := range raizes {
+		if raiz != "" && filepath.Clean(raiz) == limpo {
+			return true
+		}
+	}
+	return false
 }

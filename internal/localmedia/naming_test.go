@@ -376,3 +376,49 @@ func TestEscreverArquivoAtomicoFalhaSemOrfao(t *testing.T) {
 		t.Fatalf("entradas do dir = %v, quero so [alvo] (sem .tmp-* orfao)", entradas)
 	}
 }
+
+// TestNomeArquivoArteMusica fixes the music naming convention (issue #79): a bare name per
+// kind, the SAME words the library already has on disk (folder/backdrop/banner/logo/cdart), no
+// "<video>-poster" prefix -- a music folder has no video to lend its name and the folder itself
+// already identifies the work.
+func TestNomeArquivoArteMusica(t *testing.T) {
+	casos := []struct{ kind, quero string }{
+		{KindPoster, "folder.jpg"},
+		{KindFanart, "backdrop.jpg"},
+		{KindBackdrop, "backdrop.jpg"},
+		{KindBanner, "banner.jpg"},
+		{KindClearlogo, "logo.jpg"},
+		{"logo", "logo.jpg"}, // aggregator vocabulary (assets.go)
+		{KindDiscart, "cdart.jpg"},
+		{"disc", "cdart.jpg"}, // aggregator vocabulary (assets.go)
+		{KindThumb, "thumb.jpg"},
+		{"qualquer", "qualquer.jpg"}, // unknown kind keeps its own name
+	}
+	for _, c := range casos {
+		if got := NomeArquivoArteMusica(c.kind, true, 0, ".jpg"); got != c.quero {
+			t.Errorf("NomeArquivoArteMusica(%q) = %q, quero %q", c.kind, got, c.quero)
+		}
+	}
+	// the extension of the asset wins, and the rotation suffix marks a non-principal artwork
+	if got := NomeArquivoArteMusica(KindPoster, true, 0, ".png"); got != "folder.png" {
+		t.Errorf("poster principal com .png = %q, quero folder.png", got)
+	}
+	if got := NomeArquivoArteMusica(KindPoster, false, 2, ".jpg"); got != "folder2.jpg" {
+		t.Errorf("poster secundario = %q, quero folder2.jpg", got)
+	}
+}
+
+// TestIndiceRotacaoLivreMusica covers the next-free-index rule on the music names: it counts
+// the suffix AFTER "folder"/"cdart", never reindexes a hole, and ignores names of other kinds.
+func TestIndiceRotacaoLivreMusica(t *testing.T) {
+	existentes := []string{"/m/folder.jpg", "/m/folder2.jpg", "/m/cdart.png", "/m/cdart3.png", "/m/outra.jpg"}
+	if got := IndiceRotacaoLivreMusica(existentes, KindPoster, ".jpg"); got != 3 {
+		t.Errorf("indice do poster = %d, quero 3 (folder e folder2 ocupados)", got)
+	}
+	if got := IndiceRotacaoLivreMusica(existentes, KindDiscart, ".png"); got != 4 {
+		t.Errorf("indice do cdart = %d, quero 4 (cdart e cdart3 ocupados)", got)
+	}
+	if got := IndiceRotacaoLivreMusica(nil, KindPoster, ".jpg"); got != 1 {
+		t.Errorf("indice sem nenhum arquivo = %d, quero 1", got)
+	}
+}

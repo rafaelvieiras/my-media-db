@@ -266,6 +266,15 @@ func (s *Server) gravarAssetNaPastaReal(ctx context.Context, ent sqlcgen.Entity,
 		indice = localmedia.IndiceRotacaoLivre(existentes, kind, pastaExclusiva, nomeBase, ext)
 	}
 	nome := localmedia.NomeArquivoArte(kind, principal, indice, pastaExclusiva, nomeBase, ext)
+	if ehMusica(ent.Type) {
+		// Music folder: bare names (folder.jpg, cdart.png...), never the "<video>-poster"
+		// shape -- see NomeArquivoArteMusica.
+		indice = 0
+		if !principal {
+			indice = localmedia.IndiceRotacaoLivreMusica(existentes, asset.Kind, ext)
+		}
+		nome = localmedia.NomeArquivoArteMusica(asset.Kind, principal, indice, ext)
+	}
 	destino := filepath.Join(dir, nome)
 	if err := localmedia.EscreverArquivoAtomico(destino, dados); err != nil {
 		return "", err
@@ -327,7 +336,21 @@ func (s *Server) locaisExistentesDoKind(ctx context.Context, entityID, kind, exc
 // media_file of the library into memory (~150 ms, 20.075 rows) to count the files of a
 // single folder, and this function runs 2 to 5 times per entity in the midias_faltantes
 // job: about 50.000 full table scans per run, which was most of its 2 hours.
+//
+// MUSIC (album/artist) has its own arm (issue #79): the folder comes from a descendant
+// TRACK (ADR-0027 -- they never have a media_file of their own, see pastaDeMusica) and the
+// artwork names there are the bare music convention (NomeArquivoArteMusica), so
+// nomeBaseVideo is empty and pastaExclusiva is always true. Without it the destination was
+// never resolvable, so the job downloaded the album cover and the artist picture every run
+// and wrote nothing.
 func (s *Server) resolverDestino(ctx context.Context, ent sqlcgen.Entity) (dir, nomeBaseVideo string, pastaExclusiva, ok bool, err error) {
+	if ehMusica(ent.Type) {
+		dir, _, ok := s.pastaDeMusica(ctx, ent)
+		if !ok {
+			return "", "", false, false, nil
+		}
+		return dir, "", true, true, nil
+	}
 	localFiles, ancestors, err := s.carregarMediaFilesLocalmedia(ctx, ent)
 	if err != nil {
 		return "", "", false, false, err
@@ -504,7 +527,12 @@ func (s *Server) writeEntityNfo(w http.ResponseWriter, r *http.Request) {
 	// collide with the tvshow.nfo/episode NFO written there). It is treated as "no
 	// destination folder" (404) — the UI should not expose the "Salvar NFO" button for a
 	// season.
-	if ent.Type == tipoEntTemporada {
+	//
+	// Music (album/artist) is in the same boat for a different reason (issue #79): their
+	// destination folder NOW resolves (pastaDeMusica), but this codebase has no music NFO
+	// convention yet -- MontarNFO only covers movie/tv/episode. Writing a nameless ".nfo"
+	// into the album folder would be worse than not writing it.
+	if ent.Type == tipoEntTemporada || ehMusica(ent.Type) {
 		respondErroLocalmedia(w, errSemDestino)
 		return
 	}
