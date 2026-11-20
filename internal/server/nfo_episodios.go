@@ -121,21 +121,25 @@ func numeracaoDoBloco(linha sqlcgen.ListarEpisodiosDoMediaFileRow, existentes []
 	if linha.Temporada > 0 && linha.Episodio > 0 {
 		return int(linha.Temporada), int(linha.Episodio)
 	}
-	// 2. What the file already declares at this block stays (nobody loses a number a previous
-	// manager wrote, and the damaged files from the regression of v0.15.4 are exactly the ones
-	// that declare nothing).
+	// 2. What the file already declares at this block stays -- but only when it declares a
+	// COMPLETE pair. A PARTIAL pair (a <season> with no <episode>, or the other way round) is
+	// the exact shape of the damage of v0.15.4, so it is not authoritative: it falls through to
+	// the file name, which gives both numbers from ONE source (mixing "season 4" from the file
+	// with "episode 7" from the name would be a pair that never existed).
+	var parcialT, parcialE int
 	if indice < len(existentes) {
 		t, e := existentes[indice].Temporada, existentes[indice].Episodio
-		if t > 0 || e > 0 {
+		if t > 0 && e > 0 {
 			return t, e
 		}
+		parcialT, parcialE = t, e
 	}
 	// 3. The file name (single-episode file only, see documentoNFODeEpisodios): this is what
 	// RECOVERS the tag that a previous run dropped, and what Kodi reads anyway.
 	if temporadaArquivo > 0 && episodioArquivo > 0 {
 		return temporadaArquivo, episodioArquivo
 	}
-	return 0, 0
+	return parcialT, parcialE
 }
 
 // camposDoBloco picks the preserved user fields of one episode of the file: the block that
