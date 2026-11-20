@@ -383,3 +383,12 @@ documented in the organizer's own code). Full detail in
   breaking the ones that do not, and durations **derived** from the timestamps (one definition,
   reused by every endpoint). Two read endpoints: `GET /queue` and `GET /queue/{id}`. Recorded in
   [ADR-0040](adr/0040-queue-observability.md).
+- **Q2 — Parallelism is intra-run and per provider** (2026-11-20, issue #65). The queue made the
+  size of the problem visible (a 10 h 28 min run, a job waiting 8 h 46 min) and the obvious
+  reaction is "run more at once". Measured, the constraints say otherwise: MusicBrainz caps the
+  client at 1 req/s per IP **and the limiter is per client instance**, music matching lives
+  **inside the scan** at 2–4 calls per track, SQLite has one writer, and providers differ (TMDb is
+  latency-bound, not capped). Decision: concurrency stays 1 at the queue level; parallelism is
+  **inside a run, per phase, per provider**, and only after a **process-wide** limiter exists.
+  Music is fixed by **calling less** (album-first matching, no repeated attempts on hopeless files).
+  Recorded in [ADR-0041](adr/0041-parallelism-is-intra-run-and-per-provider.md).

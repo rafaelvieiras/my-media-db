@@ -58,3 +58,4 @@ replaces the flat list of "open decisions" with a traceable record, one file per
 | [0038](0038-match-alerts-beyond-the-typo.md) | A match that succeeds can still be useless: warn when the tree is empty or does not fit | — | Accepted |
 | [0039](0039-release-name-is-not-a-title.md) | A release name is not a title: cut at the release section, drop a trailing genre tag, and give movies the "did you mean this?" hint | — | Accepted |
 | [0040](0040-queue-observability.md) | The queue is observable: per-item progress, a bounded trail, a queue view and a derived duration | Q1 | Accepted |
+| [0041](0041-parallelism-is-intra-run-and-per-provider.md) | Parallelism lives inside a run and per provider (behind a process-wide limiter), never at the queue level | Q2 | Accepted |
