@@ -5029,20 +5029,20 @@ components:
           type: boolean
           description: >
             true enquanto há uma execução ativa (queued ou running) deste job.
-          last_duration_ms:
-            type: [integer, "null"]
-            description: >
-              Quanto durou a ÚLTIMA execução finalizada (started_at ->
-              finished_at), em milissegundos (ADR-0040). null quando o job nunca
-              terminou uma execução.
-          progress:
-            oneOf:
-              - $ref: "#/components/schemas/JobProgress"
-              - type: "null"
-            description: >
-              Estado da execução ativa (ou da última, quando o job está parado):
-              etapa, item atual, contadores e tempo decorrido. null quando o job
-              nunca rodou.
+        last_duration_ms:
+          type: [integer, "null"]
+          description: >
+            Quanto durou a ÚLTIMA execução finalizada (started_at ->
+            finished_at), em milissegundos (ADR-0040). null quando o job nunca
+            terminou uma execução.
+        progress:
+          oneOf:
+            - $ref: "#/components/schemas/JobProgress"
+            - type: "null"
+          description: >
+            Estado da execução ativa (ou da última, quando o job está parado):
+            etapa, item atual, contadores e tempo decorrido. null quando o job
+            nunca rodou.
     JobList:
       type: object
       required: [items]
@@ -5068,7 +5068,7 @@ components:
     JobExecution:
       type: object
       description: Uma execução no histórico de um job (briefing 0052) — genérico para QUALQUER tipo de job.
-      required: [id, job_id, trigger, status, started_at, finished_at, message]
+      required: [id, job_id, trigger, status, started_at, finished_at, message, ok, failed]
       properties:
         id: { type: string }
         job_id: { type: string }

@@ -14,25 +14,8 @@ import { Input } from '@/components/ui/input'
 import { LoadingState, ErrorState } from '@/components/query-states'
 import { jobExecutionsQueryOptions } from '@/lib/queries'
 import { ApiError, patchJob, runJob, type JobDefinition } from '@/lib/api'
+import { formatarCarimbo, formatarDuracaoMS } from '@/lib/format'
 import { useLocale, useT } from '@/lib/i18n'
-
-// formatarCarimbo returns a short stamp (date+time) in the interface locale, or
-// an em dash for null/absent. Without a date lib — only `Intl` via `toLocaleString`
-// (no precedent for date formatting in this project yet, so it stays local
-// and simple).
-function formatarCarimbo(
-  iso: string | null | undefined,
-  locale: string,
-): string {
-  if (!iso) {
-    return '—'
-  }
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) {
-    return iso
-  }
-  return d.toLocaleString(locale, { dateStyle: 'short', timeStyle: 'short' })
-}
 
 function invalidarJobs(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ['jobs'] })
@@ -73,6 +56,11 @@ export function JobCard({ job }: { job: JobDefinition }) {
     salvarCron.error instanceof ApiError ? salvarCron.error.message : null
   const erroExecutar =
     executar.error instanceof ApiError ? executar.error.message : null
+  // Duração da última execução e o progresso da execução ativa (ADR-0040): as
+  // duas coisas que faltavam para saber "quanto demorou" e "em que pé está".
+  const levou = formatarDuracaoMS(job.last_duration_ms)
+  const progresso = job.progress
+  const corrido = formatarDuracaoMS(progresso?.elapsed_ms)
 
   return (
     <li className="flex flex-col gap-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
@@ -188,8 +176,50 @@ export function JobCard({ job }: { job: JobDefinition }) {
             : t('jobs.card.lastRun', {
                 when: formatarCarimbo(job.last_run_at, locale),
               })}
+          {levou ? ` · ${t('jobs.card.took', { duration: levou })}` : null}
         </span>
       </div>
+
+      {progresso ? (
+        <div className="flex flex-col gap-1 rounded-lg bg-muted/50 p-2 text-sm">
+          {progresso.step_total > 0 && progresso.step_label ? (
+            <span>
+              {t('jobs.card.step', {
+                index: progresso.step_index,
+                total: progresso.step_total,
+                label: progresso.step_label,
+              })}
+            </span>
+          ) : null}
+          <span className="flex flex-wrap items-center gap-3 text-muted-foreground">
+            {progresso.total > 0 ? (
+              <span>
+                {t('jobs.card.progressCount', {
+                  done: progresso.done,
+                  total: progresso.total,
+                })}
+              </span>
+            ) : null}
+            <span>
+              {t('jobs.card.okFailed', {
+                ok: progresso.ok,
+                failed: progresso.failed,
+              })}
+            </span>
+            {corrido ? (
+              <span>{t('jobs.card.elapsed', { duration: corrido })}</span>
+            ) : null}
+          </span>
+          {progresso.current_item ? (
+            <span
+              className="truncate text-muted-foreground"
+              title={progresso.current_item}
+            >
+              {t('jobs.card.currentItem', { item: progresso.current_item })}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
       <div>
         <Button
@@ -240,36 +270,52 @@ function JobHistoryList({ jobId }: { jobId: string }) {
 
   return (
     <ul className="flex flex-col gap-1.5 rounded-lg bg-muted/50 p-2">
-      {data.map((exec) => (
-        <li key={exec.id} className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="text-muted-foreground">
-            {formatarCarimbo(exec.started_at, locale)}
-          </span>
-          <Badge variant="outline">
-            {exec.trigger === 'schedule'
-              ? t('jobs.history.trigger.schedule')
-              : t('jobs.history.trigger.manual')}
-          </Badge>
-          <Badge
-            variant={
-              exec.status === 'success'
-                ? 'default'
-                : exec.status === 'error'
-                  ? 'destructive'
-                  : 'secondary'
-            }
+      {data.map((exec) => {
+        const duracao = formatarDuracaoMS(exec.duration_ms)
+        return (
+          <li
+            key={exec.id}
+            className="flex flex-wrap items-center gap-2 text-sm"
           >
-            {exec.status === 'running'
-              ? t('jobs.history.status.running')
-              : exec.status === 'success'
-                ? t('jobs.history.status.success')
-                : t('jobs.history.status.error')}
-          </Badge>
-          {exec.message ? (
-            <span className="text-muted-foreground">{exec.message}</span>
-          ) : null}
-        </li>
-      ))}
+            <span className="text-muted-foreground">
+              {formatarCarimbo(exec.started_at, locale)}
+            </span>
+            <Badge variant="outline">
+              {exec.trigger === 'schedule'
+                ? t('jobs.history.trigger.schedule')
+                : t('jobs.history.trigger.manual')}
+            </Badge>
+            <Badge
+              variant={
+                exec.status === 'success'
+                  ? 'default'
+                  : exec.status === 'error'
+                    ? 'destructive'
+                    : 'secondary'
+              }
+            >
+              {exec.status === 'running'
+                ? t('jobs.history.status.running')
+                : exec.status === 'success'
+                  ? t('jobs.history.status.success')
+                  : t('jobs.history.status.error')}
+            </Badge>
+            {duracao ? (
+              <span className="text-muted-foreground">
+                {t('jobs.card.took', { duration: duracao })}
+              </span>
+            ) : null}
+            {exec.ok > 0 || exec.failed > 0 ? (
+              <span className="text-muted-foreground">
+                {t('jobs.card.okFailed', { ok: exec.ok, failed: exec.failed })}
+              </span>
+            ) : null}
+            {exec.message ? (
+              <span className="text-muted-foreground">{exec.message}</span>
+            ) : null}
+          </li>
+        )
+      })}
     </ul>
   )
 }

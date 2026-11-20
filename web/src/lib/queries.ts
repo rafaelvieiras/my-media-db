@@ -28,6 +28,8 @@ import {
   getAutoDownloadTrailerTemaSettings,
   getYtdlpSettings,
   getMatchPreview,
+  getQueue,
+  getQueueItem,
   listJobExecutions,
   listJobs,
   getOrphans,
@@ -479,6 +481,29 @@ export const jobsQueryOptions = queryOptions({
   refetchInterval: (query) =>
     query.state.data?.some((job) => job.running) ? 4000 : false,
 })
+
+// The execution queue (ADR-0040). While something is running or waiting it
+// polls every 4 s (the same cadence as `jobsQueryOptions`), so the owner sees
+// the counters and the current item move; when idle it stops polling — a cron
+// run shows up on the next mount or on the jobs screen.
+export const queueQueryOptions = queryOptions({
+  queryKey: ['queue'],
+  queryFn: () => getQueue(),
+  refetchInterval: (query) => {
+    const dados = query.state.data
+    return dados && (dados.running || dados.queued.length > 0) ? 4000 : false
+  },
+})
+
+// ONE queue item with its trail (the per-item outcomes of that run). Fetched on
+// demand when the owner expands the item — the trail can be long (up to 200
+// rows), so it is not part of the queue listing.
+export function queueItemQueryOptions(id: string) {
+  return queryOptions({
+    queryKey: ['queue', id, 'events'],
+    queryFn: () => getQueueItem(id),
+  })
+}
 
 // Paginated history of the executions of ONE job. Key under `['job', id,
 // 'executions', ...]` — invalidated after firing `run` of that job (a new

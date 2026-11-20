@@ -212,6 +212,8 @@ describe('JobsScreen — jobs administration (0052)', () => {
           started_at: '2026-07-13T03:00:00Z',
           finished_at: '2026-07-13T03:00:05Z',
           message: 'backup gravado em mymediadb-20260713.sqlite (7 mantidos)',
+          ok: 0,
+          failed: 0,
         },
       ],
     })
@@ -230,5 +232,73 @@ describe('JobsScreen — jobs administration (0052)', () => {
     expect(
       within(historico as HTMLElement).getByText('Success'),
     ).toBeInTheDocument()
+  })
+
+  it('the card shows how long the last run took and the progress of the active one', async () => {
+    renderJobs({
+      job: jobFixture({
+        enabled: true,
+        running: true,
+        last_run_at: '2026-07-12T03:00:00Z',
+        last_status: 'success',
+        last_duration_ms: 140000, // 2min20s -> "2min" (two largest components)
+        progress: {
+          status: 'running',
+          step_label: 'enriquecimento retroativo',
+          step_index: 3,
+          step_total: 8,
+          current_item: 'Filmes/O Auto da Compadecida (2000)',
+          done: 40,
+          total: 120,
+          ok: 37,
+          failed: 3,
+          elapsed_ms: 4500000, // 1h 15min
+        },
+      }),
+    })
+    await esperarLista()
+
+    expect(
+      screen.getByText(/Última execução.*2min|Last run.*2min/),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/Step 3\/8: enriquecimento retroativo/),
+    ).toBeInTheDocument()
+    expect(screen.getByText('40 of 120')).toBeInTheDocument()
+    expect(screen.getByText('37 ok · 3 failed')).toBeInTheDocument()
+    expect(screen.getByText('running for 1h 15min')).toBeInTheDocument()
+    expect(
+      screen.getByText('Now: Filmes/O Auto da Compadecida (2000)'),
+    ).toBeInTheDocument()
+  })
+
+  it('the history shows the duration and the counters of each execution', async () => {
+    const user = userEvent.setup()
+    renderJobs({
+      executions: [
+        {
+          id: 'e1',
+          job_id: 'backup_vacuum',
+          trigger: 'schedule',
+          status: 'success',
+          started_at: '2026-07-13T03:00:00Z',
+          finished_at: '2026-07-13T03:02:20Z',
+          message: 'backup gravado em mymediadb-20260713.sqlite',
+          duration_ms: 140000,
+          wait_ms: 0,
+          ok: 12,
+          failed: 1,
+        },
+      ],
+    })
+    await esperarLista()
+
+    await user.click(screen.getByRole('button', { name: 'Show history' }))
+
+    const linha = (await screen.findByText(/backup gravado em/)).closest('li')
+    expect(linha).not.toBeNull()
+    const dentro = within(linha as HTMLElement)
+    expect(dentro.getByText('Last run took 2min')).toBeInTheDocument()
+    expect(dentro.getByText('12 ok · 1 failed')).toBeInTheDocument()
   })
 })

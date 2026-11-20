@@ -2,6 +2,7 @@ import { Link, Outlet } from '@tanstack/react-router'
 import {
   Activity,
   Briefcase,
+  ListOrdered,
   FileQuestion,
   Library,
   ListChecks,
@@ -36,6 +37,7 @@ const ITENS: {
     | '/dashboard/review'
     | '/dashboard/orphans'
     | '/dashboard/jobs'
+    | '/dashboard/queue'
     | '/dashboard/settings'
     | '/dashboard/integrations'
     | '/dashboard/webhook'
@@ -48,6 +50,7 @@ const ITENS: {
   { to: '/dashboard/review', label: 'nav.dashboard.review', icon: ListChecks },
   { to: '/dashboard/orphans', label: 'nav.dashboard.orphans', icon: Trash2 },
   { to: '/dashboard/jobs', label: 'nav.dashboard.jobs', icon: Briefcase },
+  { to: '/dashboard/queue', label: 'nav.dashboard.queue', icon: ListOrdered },
   {
     to: '/dashboard/settings',
     label: 'nav.dashboard.settings',

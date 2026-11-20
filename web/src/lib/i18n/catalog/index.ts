@@ -12,6 +12,7 @@ import { jobs } from './jobs'
 import { library } from './library'
 import { media } from './media'
 import { nav } from './nav'
+import { queue } from './queue'
 import { review } from './review'
 import { settings } from './settings'
 import {
@@ -34,6 +35,7 @@ export const CATALOGS = {
     review: review.en,
     settings: settings.en,
     jobs: jobs.en,
+    queue: queue.en,
     collections: collections.en,
     media: media.en,
   },
@@ -45,6 +47,7 @@ export const CATALOGS = {
     review: review['pt-BR'],
     settings: settings['pt-BR'],
     jobs: jobs['pt-BR'],
+    queue: queue['pt-BR'],
     collections: collections['pt-BR'],
     media: media['pt-BR'],
   },
@@ -56,6 +59,7 @@ export const CATALOGS = {
     review: review.es,
     settings: settings.es,
     jobs: jobs.es,
+    queue: queue.es,
     collections: collections.es,
     media: media.es,
   },

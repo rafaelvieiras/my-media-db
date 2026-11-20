@@ -60,3 +60,33 @@ export function formatDuration(totalSeconds: number): string {
   }
   return partes.slice(0, 2).join(' ')
 }
+
+// formatarCarimbo returns a short date+time stamp ("13/07/26, 03:00") in the
+// interface locale, an em dash when the value is absent and the value itself
+// when it does not parse. `Intl` only — no date library (there is no precedent
+// for one in this project).
+export function formatarCarimbo(
+  iso: string | null | undefined,
+  locale = 'en',
+): string {
+  if (!iso) {
+    return '—'
+  }
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) {
+    return iso
+  }
+  return d.toLocaleString(locale, { dateStyle: 'short', timeStyle: 'short' })
+}
+
+// formatarDuracaoMS turns a duration in milliseconds into the same short label
+// the uptime uses ("3h 12min"), or null when the server sent no duration at all
+// (ADR-0040: durations are derived, so absent is a real state).
+export function formatarDuracaoMS(
+  ms: number | null | undefined,
+): string | null {
+  if (ms === null || ms === undefined || !Number.isFinite(ms)) {
+    return null
+  }
+  return formatDuration(Math.round(ms / 1000))
+}
