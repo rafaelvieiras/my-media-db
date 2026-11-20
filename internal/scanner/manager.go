@@ -146,6 +146,13 @@ type MusicaImportador interface {
 	// assigns to it. It degrades silently (ok=false) when the source does not
 	// implement the capability -- see enrich.ImportarFaixaPorTituloDeAlbum.
 	ImportarFaixaPorTituloDeAlbum(ctx context.Context, source string, alvo enrich.FaixaAlvo, langs []string) (faixaID string, criada bool, err error)
+	// The *ComAlbum variants return the album that was resolved, so the scan can keep
+	// it and resolve the NEXT file of the same album with zero requests (ADR-0042).
+	ImportarFaixaPossuidaComAlbum(ctx context.Context, source, artistaMBID string, alvo enrich.FaixaAlvo, langs []string) (faixaID string, album *enrich.AlbumImportado, criada bool, err error)
+	ImportarFaixaPorTituloDeAlbumComAlbum(ctx context.Context, source string, alvo enrich.FaixaAlvo, langs []string) (faixaID string, album *enrich.AlbumImportado, criada bool, err error)
+	// ImportarFaixaDesteAlbum imports one more owned track into an album already
+	// resolved (no network at all).
+	ImportarFaixaDesteAlbum(ctx context.Context, alb enrich.AlbumImportado, alvo enrich.FaixaAlvo, langs []string) (faixaID string, ok bool)
 }
 
 // LibraryGetter is the subset of library.Service the scanner consumes to

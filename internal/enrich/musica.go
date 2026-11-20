@@ -306,20 +306,44 @@ type FaixaAlvo struct {
 // metadata stays in extension_data, see extensaoFaixa) — it is the AUTOMATIC trigger of the
 // scan, which has to be conservative.
 func (s *Servico) ImportarFaixaPossuida(ctx context.Context, source, artistaMBID string, alvo FaixaAlvo, langs []string) (string, bool, error) {
+	faixaID, _, criada, err := s.ImportarFaixaPossuidaComAlbum(ctx, source, artistaMBID, alvo, langs)
+	return faixaID, criada, err
+}
+
+// AlbumImportado is the REUSABLE CONTEXT of a scoped import: the album that was already
+// fetched from the source plus the entities it produced. The scanner keeps it per scan (keyed
+// by the album tags) so that the NEXT file of the same album resolves with ZERO requests --
+// album resolution is the expensive part (1-2 MusicBrainz calls at 1 req/s), not the track.
+//
+// It is a value (not a pointer) so it can live in a map by copy; Album.Faixas is the
+// tracklist already in memory, which is exactly what escolherFaixaAlvo needs.
+type AlbumImportado struct {
+	AlbumID     string
+	ArtistaMBID string
+	Album       provider.AlbumExterno
+}
+
+// ImportarFaixaPossuidaComAlbum is ImportarFaixaPossuida returning the resolved album context
+// so the caller can reuse it (see AlbumImportado). Same semantics, same errors.
+func (s *Servico) ImportarFaixaPossuidaComAlbum(ctx context.Context, source, artistaMBID string, alvo FaixaAlvo, langs []string) (string, *AlbumImportado, bool, error) {
 	prov, ok := s.provFonte(source)
 	if !ok {
-		return "", false, fmt.Errorf("enrich: fonte %q sem provider", source)
+		return "", nil, false, fmt.Errorf("enrich: fonte %q sem provider", source)
 	}
 	ap, ok := prov.(provider.MusicaAlbumProvider)
 	if !ok {
-		return "", false, fmt.Errorf("enrich: fonte %q nao suporta album seletivo de musica", source)
+		return "", nil, false, fmt.Errorf("enrich: fonte %q nao suporta album seletivo de musica", source)
 	}
 
 	alb, err := s.buscarAlbumAlvo(ctx, ap, artistaMBID, alvo, langs)
 	if err != nil {
-		return "", false, err
+		return "", nil, false, err
 	}
-	return s.importarFaixaComAlbum(ctx, prov, artistaMBID, alb, alvo, langs)
+	faixaID, albumID, criada, err := s.importarFaixaComAlbum(ctx, prov, artistaMBID, alb, alvo, langs)
+	if err != nil {
+		return faixaID, nil, criada, err
+	}
+	return faixaID, &AlbumImportado{AlbumID: albumID, ArtistaMBID: artistaMBID, Album: alb}, criada, nil
 }
 
 // ImportarFaixaPorTituloDeAlbum is the COMPILATION/SOUNDTRACK path of the scoped import:
@@ -334,16 +358,24 @@ func (s *Servico) ImportarFaixaPossuida(ctx context.Context, source, artistaMBID
 // brought no artist-credit. The scanner then follows the pipeline (step 4.5/fingerprint or
 // draft) with no error log -- the same semantics as any optional capability of the project.
 func (s *Servico) ImportarFaixaPorTituloDeAlbum(ctx context.Context, source string, alvo FaixaAlvo, langs []string) (string, bool, error) {
+	faixaID, _, criada, err := s.ImportarFaixaPorTituloDeAlbumComAlbum(ctx, source, alvo, langs)
+	return faixaID, criada, err
+}
+
+// ImportarFaixaPorTituloDeAlbumComAlbum is ImportarFaixaPorTituloDeAlbum returning the album
+// context (see AlbumImportado) so the files after the first one of a compilation resolve
+// without a single request.
+func (s *Servico) ImportarFaixaPorTituloDeAlbumComAlbum(ctx context.Context, source string, alvo FaixaAlvo, langs []string) (string, *AlbumImportado, bool, error) {
 	if alvo.AlbumNome == "" {
-		return "", false, nil
+		return "", nil, false, nil
 	}
 	prov, ok := s.provFonte(source)
 	if !ok {
-		return "", false, nil
+		return "", nil, false, nil
 	}
 	tp, ok := prov.(provider.MusicaAlbumPorTituloProvider)
 	if !ok {
-		return "", false, nil
+		return "", nil, false, nil
 	}
 	ac, achou, err := tp.BuscarAlbumPorTitulo(ctx, alvo.AlbumNome, provider.AlvoFaixaAlbum{
 		RecordingMBID: alvo.RecordingMBID,
@@ -354,12 +386,16 @@ func (s *Servico) ImportarFaixaPorTituloDeAlbum(ctx context.Context, source stri
 		DuracaoMs:     int(alvo.DuracaoSegundos * 1000),
 	}, langs)
 	if err != nil {
-		return "", false, err
+		return "", nil, false, err
 	}
 	if !achou || ac.ArtistaMBID == "" {
-		return "", false, nil
+		return "", nil, false, nil
 	}
-	return s.importarFaixaComAlbum(ctx, prov, ac.ArtistaMBID, ac.Album, alvo, langs)
+	faixaID, albumID, criada, err := s.importarFaixaComAlbum(ctx, prov, ac.ArtistaMBID, ac.Album, alvo, langs)
+	if err != nil {
+		return faixaID, nil, criada, err
+	}
+	return faixaID, &AlbumImportado{AlbumID: albumID, ArtistaMBID: ac.ArtistaMBID, Album: ac.Album}, criada, nil
 }
 
 // importarFaixaComAlbum is the common body of the scoped import (ADR-0029), extracted
@@ -368,10 +404,10 @@ func (s *Servico) ImportarFaixaPorTituloDeAlbum(ctx context.Context, source stri
 // the album (find-or-create + artwork + artist→album link) and the owned track
 // (find-or-create + album→track link). No new logic: it is exactly the sequence
 // ImportarFaixaPossuida already executed, now without the "which album" in the middle.
-func (s *Servico) importarFaixaComAlbum(ctx context.Context, prov provider.Provider, artistaMBID string, alb provider.AlbumExterno, alvo FaixaAlvo, langs []string) (string, bool, error) {
+func (s *Servico) importarFaixaComAlbum(ctx context.Context, prov provider.Provider, artistaMBID string, alb provider.AlbumExterno, alvo FaixaAlvo, langs []string) (string, string, bool, error) {
 	artistaID, _, err := s.acharOuCriarArtistaIdentidade(ctx, prov, artistaMBID, langs)
 	if err != nil {
-		return "", false, err
+		return "", "", false, err
 	}
 	// ARTIST artwork inventory (fanart.tv) — the same best-effort trigger as the album
 	// below, see the long note in importarArtista.
@@ -379,7 +415,7 @@ func (s *Servico) importarFaixaComAlbum(ctx context.Context, prov provider.Provi
 
 	albumID, _, err := s.acharOuCriarAlbum(ctx, alb)
 	if err != nil {
-		return "", false, err
+		return "", "", false, err
 	}
 	// sort_index=0: the scoped import does not know the position of the album in the
 	// complete discography (only the whole tree, importarArtista, has that order) — ligarFilho
@@ -389,14 +425,37 @@ func (s *Servico) importarFaixaComAlbum(ctx context.Context, prov provider.Provi
 
 	fx, ok := escolherFaixaAlvo(alb.Faixas, alvo)
 	if !ok {
-		return "", false, fmt.Errorf("enrich: faixa alvo nao encontrada no album %s", alb.MBID)
+		return "", "", false, fmt.Errorf("enrich: faixa alvo nao encontrada no album %s", alb.MBID)
 	}
 	faixaID, criada, err := s.acharOuCriarFaixa(ctx, artistaMBID, fx)
 	if err != nil {
-		return "", false, err
+		return "", "", false, err
 	}
 	s.ligarFilho(ctx, albumID, faixaID, musicext.KindAlbum, fx.TrackNumber)
-	return faixaID, criada, nil
+	return faixaID, albumID, criada, nil
+}
+
+// ImportarFaixaDesteAlbum imports another OWNED track into an album that is ALREADY RESOLVED
+// (AlbumImportado): it reuses the in-memory tracklist to pick the target track exactly as the
+// first file of the album did, then find-or-creates the track and its album link.
+//
+// ZERO network: acharOuCriarFaixa is a local find-by-MBID plus an insert. This is the whole
+// point of the album cache -- one album costs 1-2 requests, not 1-2 per track.
+//
+// Silent degradation (ok=false) when the album tracklist has no track matching the target: the
+// caller falls back to its own pipeline, which will resolve the album again if it must.
+func (s *Servico) ImportarFaixaDesteAlbum(ctx context.Context, alb AlbumImportado, alvo FaixaAlvo, langs []string) (string, bool) {
+	fx, ok := escolherFaixaAlvo(alb.Album.Faixas, alvo)
+	if !ok {
+		return "", false
+	}
+	faixaID, _, err := s.acharOuCriarFaixa(ctx, alb.ArtistaMBID, fx)
+	if err != nil {
+		log.Printf("enrich: faixa %q do album %s (cache da varredura) falhou: %v", fx.Title, alb.Album.MBID, err)
+		return "", false
+	}
+	s.ligarFilho(ctx, alb.AlbumID, faixaID, musicext.KindAlbum, fx.TrackNumber)
+	return faixaID, true
 }
 
 // acharOuCriarArtistaIdentidade performs the find-or-create of the artist WITHOUT touching

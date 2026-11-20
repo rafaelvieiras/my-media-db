@@ -2,10 +2,12 @@ package scanner
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
@@ -205,16 +207,44 @@ type spyMusicaImportador struct {
 	faixaID    string
 	ultimoAlvo enrich.FaixaAlvo
 	chamadas   int
+	// album/faixaDoCache/doCache are the album-cache surface: the spy can return an
+	// album context from the network import and answer the LOCAL import separately.
+	album        *enrich.AlbumImportado
+	faixaDoCache string
+	doCache      int
+	albumDoCache enrich.AlbumImportado
 }
 
 func (s *spyMusicaImportador) Importar(context.Context, string, string, string, []string) (string, bool, error) {
 	return "", false, nil
 }
 
-func (s *spyMusicaImportador) ImportarFaixaPossuida(_ context.Context, _, _ string, alvo enrich.FaixaAlvo, _ []string) (string, bool, error) {
+func (s *spyMusicaImportador) ImportarFaixaPossuida(ctx context.Context, source, artistaMBID string, alvo enrich.FaixaAlvo, langs []string) (string, bool, error) {
+	faixaID, _, criada, err := s.ImportarFaixaPossuidaComAlbum(ctx, source, artistaMBID, alvo, langs)
+	return faixaID, criada, err
+}
+
+// ImportarFaixaPossuidaComAlbum is the album-aware variant: the spy returns the album
+// context so the tests of the album cache can exercise the local path.
+func (s *spyMusicaImportador) ImportarFaixaPossuidaComAlbum(_ context.Context, _, _ string, alvo enrich.FaixaAlvo, _ []string) (string, *enrich.AlbumImportado, bool, error) {
 	s.chamadas++
 	s.ultimoAlvo = alvo
-	return s.faixaID, true, nil
+	return s.faixaID, s.album, true, nil
+}
+
+// ImportarFaixaPorTituloDeAlbumComAlbum mirrors the variant above for the compilation path.
+func (s *spyMusicaImportador) ImportarFaixaPorTituloDeAlbumComAlbum(ctx context.Context, source string, alvo enrich.FaixaAlvo, langs []string) (string, *enrich.AlbumImportado, bool, error) {
+	faixaID, criada, err := s.ImportarFaixaPorTituloDeAlbum(ctx, source, alvo, langs)
+	return faixaID, nil, criada, err
+}
+
+// ImportarFaixaDesteAlbum counts the LOCAL imports (the album cache hit) separately from
+// the network ones, which is exactly what the cache tests assert.
+func (s *spyMusicaImportador) ImportarFaixaDesteAlbum(_ context.Context, alb enrich.AlbumImportado, alvo enrich.FaixaAlvo, _ []string) (string, bool) {
+	s.doCache++
+	s.albumDoCache = alb
+	s.ultimoAlvo = alvo
+	return s.faixaDoCache, s.faixaDoCache != ""
 }
 
 // ImportarFaixaPorTituloDeAlbum degrades silently in this spy: it only exists for the
@@ -948,5 +978,200 @@ func TestScanMusicaFingerprintAbaixoDoLimiarViraDraft(t *testing.T) {
 	}
 	if prov.resolverN != 0 || prov.albumFaixaN != 0 {
 		t.Errorf("import escopado disparado (resolverN=%d albumFaixaN=%d), quero 0/0 -- candidato fraco nunca importa", prov.resolverN, prov.albumFaixaN)
+	}
+}
+
+// ── album cache (ADR-0042) ──────────────────────────────────────────────────
+//
+// The expensive part of the music scan is RESOLVING the album (1-2 MusicBrainz
+// calls at 1 req/s), not creating the track. Once an album is resolved, every other
+// file of it is local: the track is picked from the tracklist already in memory.
+// The two tests below prove the two halves of that: the first file pays the network,
+// the second pays nothing -- and the second half is skipped when the tags do not say
+// the same album.
+
+// TestScanMusicaReusaAlbumResolvidoNoMesmoScan is the whole point of ADR-0042: two
+// files of the SAME album, one network import and ONE local import.
+func TestScanMusicaReusaAlbumResolvidoNoMesmoScan(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	arq1 := filepath.Join(root, "01 - Track One.mp3")
+	arq2 := filepath.Join(root, "02 - Track Two.mp3")
+	escrever(t, arq1)
+	escrever(t, arq2)
+
+	spy := &spyMusicaImportador{
+		faixaID:      "faixa-primeira",
+		faixaDoCache: "faixa-segunda",
+		album: &enrich.AlbumImportado{
+			AlbumID:     "album-1",
+			ArtistaMBID: mbidArtistaFixture,
+			Album:       albumFixture(),
+		},
+	}
+	preSemearFaixaSpy(t, d, spy.faixaID, "Track One")
+	preSemearFaixaSpy(t, d, spy.faixaDoCache, "Track Two")
+
+	tags := mediainfo.AudioTags{AlbumArtist: "Fake Band", Album: "Fake Album"}
+	t1 := tags
+	t1.Title, t1.TrackNumber = "Track One", 1
+	t2 := tags
+	t2.Title, t2.TrackNumber = "Track Two", 2
+
+	m := NewManagerComProber(d, proberComTags{porPath: map[string]mediainfo.AudioTags{arq1: t1, arq2: t2}})
+	m.agora = relogioCrescente()
+	m.ConfigurarMusica(spy, &fakeMusicaProvider{})
+	m.idiomas = func(context.Context) []string { return []string{"en"} }
+
+	src := criarSourceMusica(t, d, root)
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	if spy.chamadas != 1 {
+		t.Errorf("import pela REDE = %d, quero 1 (so o primeiro arquivo do album resolve o album)", spy.chamadas)
+	}
+	if spy.doCache != 1 {
+		t.Errorf("import LOCAL (cache de album) = %d, quero 1 (o segundo arquivo do album)", spy.doCache)
+	}
+	if spy.albumDoCache.AlbumID != "album-1" {
+		t.Errorf("album reaproveitado = %q, quero album-1", spy.albumDoCache.AlbumID)
+	}
+	if id, _ := mediaFileDe(t, d, arq2); id != spy.faixaDoCache {
+		t.Errorf("faixa do segundo arquivo = %q, quero %q (a do import local)", id, spy.faixaDoCache)
+	}
+}
+
+// TestScanMusicaNaoReusaAlbumDeOutroAlbum: the cache is keyed by album artist + album,
+// so a file of a DIFFERENT album still pays its own resolution.
+func TestScanMusicaNaoReusaAlbumDeOutroAlbum(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	arq1 := filepath.Join(root, "01 - Um.mp3")
+	arq2 := filepath.Join(root, "02 - Dois.mp3")
+	escrever(t, arq1)
+	escrever(t, arq2)
+
+	spy := &spyMusicaImportador{faixaID: "faixa-a", faixaDoCache: "faixa-b"}
+	preSemearFaixaSpy(t, d, spy.faixaID, "Um")
+	preSemearFaixaSpy(t, d, spy.faixaDoCache, "Dois")
+
+	m := NewManagerComProber(d, proberComTags{porPath: map[string]mediainfo.AudioTags{
+		arq1: {AlbumArtist: "Fake Band", Album: "Fake Album", Title: "Um", TrackNumber: 1},
+		arq2: {AlbumArtist: "Fake Band", Album: "OUTRO Album", Title: "Dois", TrackNumber: 1},
+	}})
+	m.agora = relogioCrescente()
+	m.ConfigurarMusica(spy, &fakeMusicaProvider{})
+	m.idiomas = func(context.Context) []string { return []string{"en"} }
+
+	src := criarSourceMusica(t, d, root)
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	if spy.doCache != 0 {
+		t.Errorf("import LOCAL = %d, quero 0 (albuns diferentes)", spy.doCache)
+	}
+	if spy.chamadas != 2 {
+		t.Errorf("import pela REDE = %d, quero 2 (cada album resolve o seu)", spy.chamadas)
+	}
+}
+
+// ── draft throttle ─────────────────────────────────────────────────────────
+
+// semearDraftComTentativa pre-seeds the state of a file whose previous scan ended in a
+// draft track, stamped `quando` (empty = never tried).
+func semearDraftComTentativa(t *testing.T, d *db.DB, path, id, quando string) {
+	t.Helper()
+	ctx := context.Background()
+	q := sqlcgen.New(d.Write)
+	if _, err := q.CriarEntity(ctx, sqlcgen.CriarEntityParams{
+		ID: id, Type: tipoFaixa, Title: "Track One",
+	}); err != nil {
+		t.Fatalf("semear faixa draft: %v", err)
+	}
+	if _, err := d.Write.ExecContext(ctx,
+		"UPDATE entity SET status = 'draft' WHERE id = ?", id); err != nil {
+		t.Fatalf("rebaixar faixa para draft: %v", err)
+	}
+	if quando != "" {
+		if _, err := d.Write.ExecContext(ctx,
+			"UPDATE entity SET last_external_match_attempt_at = ? WHERE id = ?", quando, id); err != nil {
+			t.Fatalf("carimbar tentativa: %v", err)
+		}
+	}
+	if _, err := q.CriarMediaFile(ctx, sqlcgen.CriarMediaFileParams{
+		ID: "mf-" + id, EntityID: id, Path: path, State: "present",
+		Size: sql.NullInt64{Int64: 1, Valid: true},
+	}); err != nil {
+		t.Fatalf("semear media_file: %v", err)
+	}
+}
+
+// TestScanMusicaNaoRepeteTentativaDeDraftRecente: a file that already failed recently
+// keeps the draft without a single request -- the whole point of the throttle (each
+// attempt costs MusicBrainz calls at 1 req/s plus fpcalc reading the whole file).
+func TestScanMusicaNaoRepeteTentativaDeDraftRecente(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	arq := filepath.Join(root, "01 - Track One.mp3")
+	escrever(t, arq)
+
+	// The stored media_file has a different size, so the incremental short-circuit
+	// does NOT apply: the file is "changed" and would go through the pipeline.
+	recente := time.Now().UTC().Add(-24 * time.Hour).Format(time.RFC3339)
+	semearDraftComTentativa(t, d, arq, "faixa-draft", recente)
+
+	spy := &spyMusicaImportador{faixaID: "faixa-nova"}
+	preSemearFaixaSpy(t, d, spy.faixaID, "Track One")
+	// REAL clock: the throttle compares the stamp with "now" (relogioCrescente would
+	// put the fake clock before the stamp and every draft would look recent).
+	m := NewManagerComProber(d, proberComTags{porPath: map[string]mediainfo.AudioTags{
+		arq: {AlbumArtist: "Fake Band", Album: "Fake Album", Title: "Track One", TrackNumber: 1},
+	}})
+	m.ConfigurarMusica(spy, &fakeMusicaProvider{})
+	m.idiomas = func(context.Context) []string { return []string{"en"} }
+
+	src := criarSourceMusica(t, d, root)
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	if spy.chamadas != 0 || spy.doCache != 0 {
+		t.Errorf("rede/cache chamados (%d/%d), quero 0/0 (draft tentado ha 24h)", spy.chamadas, spy.doCache)
+	}
+	if id, conf := mediaFileDe(t, d, arq); id != "faixa-draft" || conf != confDraft {
+		t.Errorf("arquivo apontou para %q (conf %v), quero o draft existente (conf 0)", id, conf)
+	}
+}
+
+// TestScanMusicaTentaDeNovoDraftForaDaJanela: past the window the scanner tries again.
+func TestScanMusicaTentaDeNovoDraftForaDaJanela(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	arq := filepath.Join(root, "01 - Track One.mp3")
+	escrever(t, arq)
+
+	antigo := time.Now().UTC().Add(-30 * 24 * time.Hour).Format(time.RFC3339)
+	semearDraftComTentativa(t, d, arq, "faixa-draft", antigo)
+
+	spy := &spyMusicaImportador{faixaID: "faixa-resolvida"}
+	preSemearFaixaSpy(t, d, spy.faixaID, "Track One")
+	m := NewManagerComProber(d, proberComTags{porPath: map[string]mediainfo.AudioTags{
+		arq: {AlbumArtist: "Fake Band", Album: "Fake Album", Title: "Track One", TrackNumber: 1},
+	}})
+	m.ConfigurarMusica(spy, &fakeMusicaProvider{})
+	m.idiomas = func(context.Context) []string { return []string{"en"} }
+
+	src := criarSourceMusica(t, d, root)
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	if spy.chamadas != 1 {
+		t.Errorf("import pela REDE = %d, quero 1 (tentativa anterior tem 30 dias)", spy.chamadas)
+	}
+	if id, _ := mediaFileDe(t, d, arq); id != spy.faixaID {
+		t.Errorf("arquivo apontou para %q, quero %q", id, spy.faixaID)
 	}
 }

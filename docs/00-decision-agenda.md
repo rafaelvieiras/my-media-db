@@ -392,3 +392,12 @@ documented in the organizer's own code). Full detail in
   **inside a run, per phase, per provider**, and only after a **process-wide** limiter exists.
   Music is fixed by **calling less** (album-first matching, no repeated attempts on hopeless files).
   Recorded in [ADR-0041](adr/0041-parallelism-is-intra-run-and-per-provider.md).
+- **Q3 — Music: the album is resolved once** (2026-11-20, ADR-0042). Measured: a 3 150-file music
+  source took 5 h 50 min and every track of the textual path costs 2–4 MusicBrainz calls at 1 req/s
+  (≈ 6 200 requests for the 2 087 textual tracks), even though the expensive object is the
+  **album** — the first file already fetched the whole tracklist and threw it away. Decision: the
+  scan keeps the resolved album (`enrich.AlbumImportado` + `albumCache`) and every other file of it
+  is local (`ImportarFaixaDesteAlbum`, zero requests); a draft attempted within 7 days is not
+  retried; a music file whose content changed repoints its track. **Not** adopted: caching the
+  acoustic fingerprint — the incremental short-circuit already prevents `fpcalc` on unchanged
+  files. Recorded in [ADR-0042](adr/0042-a-music-album-is-resolved-once.md).
