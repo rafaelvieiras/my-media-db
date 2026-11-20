@@ -85,6 +85,15 @@ A pull request that breaks a principle will probably be rejected.
 
 **Conventions that break CI when ignored.**
 
+- **A documentation-only change does not run the ratchet, and that is on purpose.**
+  The `changes` job of `quality-gate.yml` classifies the diff: when every changed
+  file is `*.md`, `docs/`, `LICENSE` or the root `assets/`, the Go and TS sides are
+  skipped and the report job says so instead of publishing a table of numbers that
+  cannot have moved. `e2e.yml` and `release.yml` skip those pushes at the trigger.
+  So a `docs:` commit never costs a Chromium download, never rebuilds the image, and
+  never turns the release red. Two consequences for you: a doc fix no longer needs
+  the gate in the PR, and a `docs:` commit cannot release a version even if you
+  wanted one.
 - sqlc corrupts accent marks in `.sql` query files, so queries stay in **ASCII**.
   Migrations may use any text.
 - Generated files (`gen:types`, sqlc) must land already formatted.
