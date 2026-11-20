@@ -299,3 +299,68 @@ func TestTituloSemSubtitulo(t *testing.T) {
 		}
 	}
 }
+
+// TestParseEpisodeNoCaminho cobre a pilha que o Kodi usa (e que o Jellyfin copiou: a lista dele
+// abre com "Kodi Standard Naming"): nome primeiro; sem episodio no nome, ep numero SOLTO
+// (E05/EP05/S1EP05/T01E05) + temporada da PASTA. Medido na biblioteca do dono: 83 arquivos que
+// hoje nao tem numeracao caem aqui (Dilbert S1EP01 x30, Ragnarok/Toonsylvania/O Socio T01E01 x53),
+// todos dentro de pasta de temporada, e nenhum falso positivo.
+func TestParseEpisodeNoCaminho(t *testing.T) {
+	casos := []struct {
+		caminho   string
+		temporada int
+		episodio  int
+		ok        bool
+	}{
+		{"/lib/Serie/Temporada 01/Serie.S01E07.mkv", 1, 7, true},           // nome completo vence
+		{"/lib/Serie/Temporada 01/S1EP01.O.Homem.Galinha.mkv", 1, 1, true}, // S1EP01 (Dilbert)
+		{"/lib/Serie/Temporada 02/ToonSylvania T02E05.mkv", 2, 5, true},    // T02E05
+		{"/lib/Serie/Temporada 01/Ragnarok - T01E11.mp4", 1, 11, true},     // T01E11
+		{"/lib/Serie/Season 03/Show.E04.mkv", 3, 4, true},                  // E04
+		{"/lib/Serie/Season 03/Show.EP_04.mkv", 3, 4, true},                // EP_04
+		{"/lib/Serie/Temporada 01/12 - O Doutor.mkv", 1, 12, true},         // numero inicial
+		{"/lib/Serie/Temporada 01/S1EP01.mkv", 1, 1, true},                 // sem titulo
+		// sem pasta de temporada nao ha temporada para ancorar: fica para a revisao
+		{"/lib/Serie/S1EP01.O.Homem.Galinha.mkv", 0, 0, false},
+		// titulo com ano colado nao vira episodio
+		{"/lib/Serie/Temporada 01/Bio-Dome1996.mkv", 0, 0, false},
+		// "The 12 Days of ..." nao tem numero colado ao E
+		{"/lib/Serie/Specials/The 12 Days of Beavis.avi", 0, 0, false},
+		// filme nunca ganha numero por acidente
+		{"/lib/Filmes/8 Mile (2002)/8.Mile.2002.1080p.BluRay.mkv", 0, 0, false},
+	}
+	for _, c := range casos {
+		info, ok := ParseEpisodeNoCaminho(c.caminho)
+		if ok != c.ok {
+			t.Errorf("ParseEpisodeNoCaminho(%q) ok = %v, quero %v (%+v)", c.caminho, ok, c.ok, info)
+			continue
+		}
+		if !c.ok {
+			continue
+		}
+		if info.Season != c.temporada || len(info.Episodes) != 1 || info.Episodes[0] != c.episodio {
+			t.Errorf("ParseEpisodeNoCaminho(%q) = %+v, quero temporada %d episodio %d", c.caminho, info, c.temporada, c.episodio)
+		}
+	}
+}
+
+// TestParseEpisodeNoCaminhoNaoMudaOQueJaCasava garante o contrato de compatibilidade: para todo
+// nome que ParseEpisode ja entende, a pilha nova devolve o MESMO resultado. E a garantia de que
+// nenhuma numeracao existente muda com a camada nova.
+func TestParseEpisodeNoCaminhoNaoMudaOQueJaCasava(t *testing.T) {
+	nomes := []string{
+		"Serie.S01E07.mkv", "Show_S01E01.avi", "Serie - 1x05.mkv", "Anime - 013.mkv",
+		"S02E01E02E03.mkv", "Serie.S01E01-E03.mkv", "Serie.S01E01-03.mkv",
+	}
+	for _, n := range nomes {
+		base := n[:len(n)-len(".mkv")]
+		if n[len(n)-4:] != ".mkv" {
+			base = n[:len(n)-len(".avi")]
+		}
+		esperado, okEsperado := ParseEpisode(base)
+		obtido, okObtido := ParseEpisodeNoCaminho("/lib/Serie/Temporada 01/" + n)
+		if okEsperado != okObtido || esperado.Season != obtido.Season || len(esperado.Episodes) != len(obtido.Episodes) {
+			t.Errorf("%q mudou: antes %+v (%v), agora %+v (%v)", n, esperado, okEsperado, obtido, okObtido)
+		}
+	}
+}

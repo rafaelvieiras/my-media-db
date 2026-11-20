@@ -130,7 +130,10 @@ func (s *Servico) recasarArquivosPendentes(ctx context.Context, serieID string) 
 		if s.temVinculoEpisodio(ctx, mf.ID) {
 			continue // already linked (previous scan or previous iteration of this loop)
 		}
-		ep, ok := naming.ParseEpisode(semExtensaoArquivo(filepath.Base(mf.Path)))
+		// Same stack as the scanner: the name first, then an episode-only number anchored on
+		// the season folder (a file named "S1EP05.mkv" inside "Temporada 01" is episode 5 of
+		// season 1 -- Kodi reads it that way and so do we).
+		ep, ok := naming.ParseEpisodeNoCaminho(mf.Path)
 		if !ok {
 			continue // episode pattern not recognized -- stays pending
 		}

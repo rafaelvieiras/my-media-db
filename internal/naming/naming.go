@@ -15,6 +15,7 @@
 package naming
 
 import (
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -508,6 +509,46 @@ func ParseEpisode(name string) (EpisodeInfo, bool) {
 	return parseEpisodeAbsolute(name)
 }
 
+// reEpSolto reads an EPISODE-only number: "E05", "EP05", "S1EP05", "T01E05". It is the shape
+// of Kodi's second enumeration pattern (AdvancedSettings.cpp, "[_. -]?()e(?:p[ ._-]?)?([0-9]+)"):
+// the season group is empty and the season comes from the folder.
+//
+// Two deliberate differences from Kodi's pattern, both to avoid the false positives that a
+// loose rule produces on a library that mixes movies and episodes:
+//   - the digits follow "e" directly ("e" and "ep" glued, and "ep" may carry ONE separator:
+//     "EP01", "EP_01", "EP.01"), so "The 12 Days of Beavis" is not read as episode 12;
+//   - the character before the "e" may not be a LETTER, so "Dome1996" is not read as episode
+//     1996, while "S1EP01" (digit before the E) and "Show.E05" still are.
+var reEpSolto = regexp.MustCompile(`(?i)(?:^|[^a-z])(?:ep[ ._-]?|e)(\d{1,4})(?:$|[^0-9a-z])`)
+
+// ParseEpisodeNoCaminho resolves the numbering of a video FILE the way Kodi does (and Jellyfin
+// copies: its expression list is headed "Kodi Standard Naming"): first the name alone, which is
+// what states a season AND an episode; if the name states no episode, an EPISODE-only number
+// ("E05", "EP05", "S1EP05", "T01E05") combined with the SEASON of the folder the file lives in.
+//
+// The folder half is what makes it safe: a loose episode number is only worth something when
+// there is a season folder to anchor it, exactly as NumeroEpisodioInicial documents. A file
+// outside a season folder returns false and goes to review instead of getting a guess.
+//
+// It is a SUPERSET of ParseEpisode: every name ParseEpisode understands keeps the same result
+// (it is tried first), so no existing numbering changes.
+func ParseEpisodeNoCaminho(caminho string) (EpisodeInfo, bool) {
+	base := filepath.Base(caminho)
+	base = strings.TrimSuffix(base, filepath.Ext(base))
+	if ep, ok := ParseEpisode(base); ok {
+		return ep, true
+	}
+	temporada, ok := NumeroDaPastaTemporada(filepath.Base(filepath.Dir(caminho)))
+	if !ok {
+		return EpisodeInfo{}, false
+	}
+	n, ok := NumeroEpisodioInicial(base)
+	if !ok {
+		return EpisodeInfo{}, false
+	}
+	return EpisodeInfo{Season: temporada, Episodes: []int{n}}, true
+}
+
 // parseEpisodeCruzado covers the "1x05" form (Kodi/Jellyfin). It runs after the
 // SxxEyy form — which is unambiguous — and before the absolute one.
 func parseEpisodeCruzado(name string) (EpisodeInfo, bool) {
@@ -537,7 +578,14 @@ func parseEpisodeCruzado(name string) (EpisodeInfo, bool) {
 // rejected.
 func NumeroEpisodioInicial(name string) (int, bool) {
 	nome := strings.TrimSpace(name)
-	for _, re := range []*regexp.Regexp{reEpRotulo, reEpInicial, reEpSoNumero} {
+	expressoes := []*regexp.Regexp{reEpRotulo, reEpInicial, reEpSoNumero}
+	// The glued "E05"/"EP05" form is the LAST resort and only when the name does not already
+	// state a season: "Show S01E01" keeps being read by ParseEpisode ("S01E01" carries the
+	// season, and "E01" inside it is the same number), so reading it here would be noise.
+	if _, temTemporada := ParseEpisode(nome); !temTemporada {
+		expressoes = append(expressoes, reEpSolto)
+	}
+	for _, re := range expressoes {
 		m := re.FindStringSubmatch(nome)
 		if m == nil {
 			continue
