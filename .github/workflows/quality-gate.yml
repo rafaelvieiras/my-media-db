@@ -18,6 +18,16 @@
 # Wall time is the MAXIMUM of the two sides instead of their sum. Measured on the run
 # before the split: 272 s total, of which 52 s was compiling golangci-lint from source
 # (`go install`), 18 s was ffmpeg, 47 s was `npm ci` and 144 s was the gate itself.
+#
+# DOCUMENTATION-ONLY CHANGES DO NOT MEASURE ANYTHING. The `changes` job classifies the
+# diff; when every changed file is documentation (*.md, docs/, LICENSE, the root
+# assets/), `go` and `web` are skipped and `report` states why instead of publishing a
+# table of numbers that cannot have moved. The classification lives in a JOB, not in a
+# `paths-ignore` trigger, on purpose: a skipped workflow creates no check run, so a
+# required status that is skipped never reports and the PR waits forever. With the job
+# pattern the contract name (`Quality Gate (Go + TS)`) is reported either way.
+#
+# The classification FAILS OPEN: if the diff cannot be computed, everything runs.
 
 name: Quality Gate
 
@@ -47,8 +57,56 @@ env:
   GOCYCLO_VERSION: 'v0.6.0'
 
 jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.classify.outputs.code }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # The classification diffs against the base of the PR/push.
+          fetch-depth: 0
+
+      - name: Classify the changed files
+        id: classify
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "pull_request" ]; then
+            range="origin/${BASE_REF}...${SHA}"
+          else
+            range="${BEFORE}..${SHA}"
+          fi
+          # FAIL OPEN: an unreadable diff means "assume code", which runs everything.
+          if ! files=$(git diff --name-only "$range"); then
+            echo "diff of '${range}' failed: assuming code changed."
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          code=false
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            case "$file" in
+              # Documentation and the README logo: nothing in the binary, nothing in
+              # the front end, nothing in the tooling. `docs/*` covers docs/adr too.
+              *.md | docs/* | LICENSE | assets/*) echo "documentation: $file" ;;
+              *) echo "code: $file"; code=true ;;
+            esac
+          done <<< "$files"
+          echo "code=${code}" >> "$GITHUB_OUTPUT"
+
   go:
     name: Gate — Go
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
 
@@ -203,6 +261,8 @@ jobs:
 
   web:
     name: Gate — TS/Web
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
 
@@ -265,8 +325,9 @@ jobs:
   # the ratchet means.
   report:
     name: Quality Gate (Go + TS)
-    needs: [go, web]
-    # Always: a red side still has to produce the table that explains why.
+    needs: [changes, go, web]
+    # Always: a red side still has to produce the table that explains why, and a
+    # documentation-only run still has to REPORT the contract name as a success.
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 6
@@ -280,7 +341,27 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
+      # The documentation-only path: no side ran, so there is no table to merge. It
+      # writes the same file the sticky comment reads, so the PR ends up with one
+      # truthful line instead of a table of numbers that cannot have changed.
+      - name: Explain that there is no code to measure
+        if: needs.changes.outputs.code != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          {
+            echo '## Quality Gate: skipped, no code changed'
+            echo
+            echo 'Every changed file in this run is documentation (`*.md`, `docs/`,'
+            echo '`LICENSE` or the README assets), so the Go and TS sides have nothing'
+            echo 'to measure and were skipped on purpose.'
+            echo
+            echo 'This is a success, not a missing check: the ratchet only guards code.'
+          } > reports/quality-gate-report.md
+          cat reports/quality-gate-report.md >> "$GITHUB_STEP_SUMMARY"
+
       - name: Download both partial reports
+        if: needs.changes.outputs.code == 'true'
         continue-on-error: true
         uses: actions/download-artifact@v8
         with:
@@ -289,6 +370,7 @@ jobs:
           pattern: metrics-*
 
       - name: Merge, comment and decide
+        if: needs.changes.outputs.code == 'true'
         env:
           GO_RESULT: ${{ needs.go.result }}
           WEB_RESULT: ${{ needs.web.result }}
