@@ -34,6 +34,7 @@ import { IntegrationDetailScreen } from '@/routes/integration-detail'
 import { WebhookScreen } from '@/routes/webhook'
 import { HistoricoOrfaosScreen } from '@/routes/historico-orfaos'
 import { JobsScreen } from '@/routes/jobs'
+import { QueueScreen } from '@/routes/queue'
 import { HealthScreen } from '@/routes/health'
 
 // Router context: it carries the shared QueryClient, so that route
@@ -248,6 +249,14 @@ const dashboardJobsRoute = createRoute({
   component: JobsScreen,
 })
 
+// A fila (ADR-0040) fica ao lado dos jobs porque mostra as MESMAS execuções que
+// a tela de jobs dispara — mais as varreduras, que não têm tela própria.
+const dashboardQueueRoute = createRoute({
+  getParentRoute: () => dashboardRoute,
+  path: '/queue',
+  component: QueueScreen,
+})
+
 const dashboardHealthRoute = createRoute({
   getParentRoute: () => dashboardRoute,
   path: '/health',
@@ -280,6 +289,7 @@ const routeTree = rootRoute.addChildren([
     dashboardWebhookRoute,
     dashboardHistoricoOrfaosRoute,
     dashboardJobsRoute,
+    dashboardQueueRoute,
     dashboardHealthRoute,
   ]),
 ])

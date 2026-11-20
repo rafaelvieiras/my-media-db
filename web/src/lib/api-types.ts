@@ -2735,6 +2735,10 @@ export interface components {
       last_message: string | null
       /** @description true enquanto há uma execução ativa (queued ou running) deste job. */
       running: boolean
+      /** @description Quanto durou a ÚLTIMA execução finalizada (started_at -> finished_at), em milissegundos (ADR-0040). null quando o job nunca terminou uma execução. */
+      last_duration_ms?: number | null
+      /** @description Estado da execução ativa (ou da última, quando o job está parado): etapa, item atual, contadores e tempo decorrido. null quando o job nunca rodou. */
+      progress?: components['schemas']['JobProgress'] | null
     }
     JobList: {
       items: components['schemas']['Job'][]
@@ -2765,9 +2769,9 @@ export interface components {
       /** @description Tempo executando (started_at -> finished_at). null enquanto não terminou. */
       duration_ms?: number | null
       /** @description Quantos itens a execução reportou como concluídos (ADR-0040). */
-      ok?: number
+      ok: number
       /** @description Quantos itens a execução reportou como falhos (ADR-0040). */
-      failed?: number
+      failed: number
     }
     /** @description Um item da fila de execução (ADR-0028/ADR-0040): scan ou job, com os tempos derivados e o rótulo legível da referência. */
     QueueItem: {

@@ -1776,6 +1776,15 @@ export async function confirmCandidate(
 // front; the shape is exactly that of `components['schemas']['Job']` (without
 // `config_json`/`created_at`/`updated_at` — those stay only in the backend).
 export type JobDefinition = components['schemas']['Job']
+// Progresso ao vivo de uma execução de job (ADR-0040): etapa, item atual,
+// contadores e tempo decorrido. `null` quando o job nunca rodou.
+export type JobProgress = components['schemas']['JobProgress']
+
+// A fila de execução (ADR-0040): scan e job no mesmo recurso.
+export type QueueItem = components['schemas']['QueueItem']
+export type QueueView = components['schemas']['QueueView']
+export type QueueEvent = components['schemas']['QueueEvent']
+export type QueueItemDetail = components['schemas']['QueueItemDetail']
 type JobList = components['schemas']['JobList']
 
 export type JobExecution = components['schemas']['JobExecution']
@@ -1792,6 +1801,27 @@ export interface JobExecutionsParams {
 // Lists all the `job_definition` with the current state (including `running`, from the
 // in-memory Manager). Never empty after the foundation — there is always the
 // `backup_vacuum` seed.
+// The WHOLE queue in one request (ADR-0040): the running item (with step,
+// current item, counters and elapsed time), the FIFO of waiting items (with
+// position and wait time) and the most recently finished ones (with duration).
+// `recent` limits how many finished items come back (default on the server: 20).
+export async function getQueue(recent?: number): Promise<QueueView> {
+  const query = recent === undefined ? '' : `?recent=${recent}`
+  return lerJson<QueueView>(await fetch(`${base}/api/v1/queue${query}`))
+}
+
+// ONE queue item plus its trail: the per-item rows ("what each processed thing
+// did") that survive the run. 404 (unknown id) becomes an `ApiError`.
+export async function getQueueItem(
+  id: string,
+  events?: number,
+): Promise<QueueItemDetail> {
+  const query = events === undefined ? '' : `?events=${events}`
+  return lerJson<QueueItemDetail>(
+    await fetch(`${base}/api/v1/queue/${id}${query}`),
+  )
+}
+
 export async function listJobs(): Promise<JobDefinition[]> {
   const data = await lerJson<JobList>(await fetch(`${base}/api/v1/jobs`))
   return data.items
