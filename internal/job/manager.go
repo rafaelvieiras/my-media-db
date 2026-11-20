@@ -34,6 +34,14 @@ const manterExecucoes = 100
 // (the scheduler query compares next_run_at <= now as TEXT).
 const carimboFormato = time.RFC3339
 
+// intervaloNarracao is how often a running handler may write the progress
+// snapshot (counters, step, current item) into its queue row. The UI polls the
+// queue every 4 s while something runs, so 500 ms is already four times faster
+// than anybody can read it, and it turns a run that used to commit one UPDATE
+// per entity into one every half second. Measured cost of that round trip on the
+// production array: ~30 ms (issue #73).
+const intervaloNarracao = 500 * time.Millisecond
+
 // Orchestration errors; sentinels for the HTTP handler to map onto the
 // standard error envelope.
 var (
@@ -345,7 +353,7 @@ func (m *Manager) executarViaRunner(ctx context.Context, refID, _ string, regist
 	var mensagem string
 	var execErr error
 	if comProgresso, ok := handler.(HandlerComProgresso); ok {
-		mensagem, execErr = comProgresso.ExecutarComProgresso(ctx, cfg, NovoProgresso(registro))
+		mensagem, execErr = comProgresso.ExecutarComProgresso(ctx, cfg, NovoProgressoComIntervalo(registro, intervaloNarracao))
 	} else {
 		mensagem, execErr = handler.Executar(ctx, cfg)
 	}
