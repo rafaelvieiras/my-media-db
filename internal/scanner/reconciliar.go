@@ -51,7 +51,7 @@ func (m *Manager) ReconciliarFaixaDraft(ctx context.Context, entityID string, la
 		return false, nil
 	}
 
-	faixaID, _, ok := m.matchTextualFaixa(ctx, tags, duracaoSegundos, langs)
+	faixaID, _, ok := m.matchTextualFaixa(ctx, tags, duracaoSegundos, langs, nil)
 	if !ok {
 		return false, nil
 	}

@@ -54,6 +54,19 @@ never reach this check: the incremental short-circuit above already covers them.
 one, `gravarArquivoMusica` repoints `entity_id` (`AtualizarMediaFileEntityID`) instead of keeping
 the stale link.
 
+**4. A failure is remembered too, and only when it is a fact.** Measured after the first
+three landed: the folder that ends in draft paid **3 artist candidates x 2-3 requests per FILE**,
+because only success was cached. The scan now stores, in the same per-scan cache:
+
+- **"this artist has no album with that name"** (`enrich.ErrAlbumDoArtistaAusente`) — the source
+  answered; the next file of the folder does not ask that candidate again;
+- **the resolved album, even when the track was not in it** (`enrich.ErrFaixaForaDoAlbum` carries
+  the album back) — so the next file is answered by the tracklist in memory, locally;
+- and **nothing at all on a network error**. A transient failure is not a fact of the
+  (artist, album) pair, so it must stay unanswered and be retried by the next file. That
+  distinction is the whole point of the two sentinel errors: without it, a bad minute of
+  MusicBrainz would turn a whole folder into drafts.
+
 **Not adopted: caching the acoustic fingerprint.** It looked like the obvious second win and it is
 not: an unchanged file never reaches `fpcalc` (the short-circuit), so the cache would only pay for
 files whose content **changed** — where recomputing the fingerprint is the correct behaviour
@@ -67,6 +80,10 @@ anyway. A migration to save that is not justified by the measurement.
 - **Confidence is unchanged.** A track resolved from the album cache gets the same
   `confMusicaTextual` (70) and the same `escolherFaixaAlvo` decision the first file got — it is the
   same source data, read once.
+- **The negative cache is per scan, and safe because a fact of an album cannot change between
+  two files probed seconds apart.** It is not persisted for the same reason the positive one is
+  not: after a restart the first file of a folder pays the attempt again, which is one attempt per
+  folder and not one per file.
 - **The cache is per scan, not persisted.** A scan that resolves no file of an album does not
   remember anything; the next scan pays the first track again. That is deliberate: an in-memory map
   cannot go stale, and one fetch per album per scan is already the win.

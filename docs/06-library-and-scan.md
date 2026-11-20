@@ -57,6 +57,10 @@ Blade Runner 2049 (2017) [tmdbid-335984]/
   tracklist already in memory (`albumCache`, keyed by album artist + album) with zero requests. A
   file that ended in draft is not attempted again for **7 days** (`last_external_match_attempt_at`),
   and a music file whose content changed repoints its track instead of keeping the stale link.
+  A **failure is remembered too**: "this artist has no such album" and "the album exists, the track
+  is not in it" are facts of the album folder, so the rest of the folder is answered with zero
+  requests — while a network error is **not** cached, so a bad minute of the provider does not turn
+  a folder into drafts.
 
 ### Confidence score and review queue
 

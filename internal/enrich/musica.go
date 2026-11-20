@@ -13,6 +13,7 @@ package enrich
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 
@@ -325,6 +326,19 @@ type AlbumImportado struct {
 
 // ImportarFaixaPossuidaComAlbum is ImportarFaixaPossuida returning the resolved album context
 // so the caller can reuse it (see AlbumImportado). Same semantics, same errors.
+// ErrAlbumDoArtistaAusente reports the answer "this artist has no album with that
+// name in the source". It is a fact of the (artist, album) PAIR, not of a file, so
+// a scan may remember it and skip the question for the rest of the folder. A
+// network or provider failure is deliberately NOT this error: it must stay
+// unanswered, so the next file retries.
+var ErrAlbumDoArtistaAusente = errors.New("album do artista ausente na fonte")
+
+// ErrFaixaForaDoAlbum reports "the album exists, this track is not in it". The
+// album context is still returned alongside it, so the scan can remember the
+// album (its tracklist is what answers the next file) without repeating the
+// resolution.
+var ErrFaixaForaDoAlbum = errors.New("faixa alvo fora do album")
+
 func (s *Servico) ImportarFaixaPossuidaComAlbum(ctx context.Context, source, artistaMBID string, alvo FaixaAlvo, langs []string) (string, *AlbumImportado, bool, error) {
 	prov, ok := s.provFonte(source)
 	if !ok {
@@ -341,6 +355,12 @@ func (s *Servico) ImportarFaixaPossuidaComAlbum(ctx context.Context, source, art
 	}
 	faixaID, albumID, criada, err := s.importarFaixaComAlbum(ctx, prov, artistaMBID, alb, alvo, langs)
 	if err != nil {
+		if albumID != "" {
+			// The album resolved and the tracklist is in hand: hand it back so the scan
+			// answers the NEXT file of this album locally (zero requests), instead of
+			// re-resolving the album to learn the same thing file after file.
+			return faixaID, &AlbumImportado{AlbumID: albumID, ArtistaMBID: artistaMBID, Album: alb}, criada, err
+		}
 		return faixaID, nil, criada, err
 	}
 	return faixaID, &AlbumImportado{AlbumID: albumID, ArtistaMBID: artistaMBID, Album: alb}, criada, nil
@@ -425,7 +445,10 @@ func (s *Servico) importarFaixaComAlbum(ctx context.Context, prov provider.Provi
 
 	fx, ok := escolherFaixaAlvo(alb.Faixas, alvo)
 	if !ok {
-		return "", "", false, fmt.Errorf("enrich: faixa alvo nao encontrada no album %s", alb.MBID)
+		// albumID goes back with the error on purpose: the ALBUM resolved, only the
+		// track is not in it, and the caller can remember the album (same shape as a
+		// successful import, minus the track).
+		return "", albumID, false, fmt.Errorf("%w: faixa alvo nao encontrada no album %s", ErrFaixaForaDoAlbum, alb.MBID)
 	}
 	faixaID, criada, err := s.acharOuCriarFaixa(ctx, artistaMBID, fx)
 	if err != nil {
@@ -511,7 +534,7 @@ func (s *Servico) buscarAlbumAlvo(ctx context.Context, ap provider.MusicaAlbumPr
 		return provider.AlbumExterno{}, err
 	}
 	if !achou {
-		return provider.AlbumExterno{}, fmt.Errorf("enrich: album %q do artista %s nao encontrado na fonte", alvo.AlbumNome, artistaMBID)
+		return provider.AlbumExterno{}, fmt.Errorf("%w: album %q do artista %s nao encontrado na fonte", ErrAlbumDoArtistaAusente, alvo.AlbumNome, artistaMBID)
 	}
 	return alb, nil
 }
