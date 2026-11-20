@@ -245,6 +245,44 @@ func TestDiretorioDestinoSerieTemporadaUnicaSobeNivel(t *testing.T) {
 	}
 }
 
+// TestDiretorioDestinoSeriePastaDeTemporadaEmOutroIdioma: the go-up-a-level
+// fallback must recognise season folder names that are not English (issue #89).
+// A library organised in Portuguese puts every track inside "Temporada 01"; when
+// the name was not recognised, the SERIES root resolved to the SEASON folder and
+// tvshow.nfo/poster/fanart landed inside it -- invisible to Kodi/Jellyfin.
+func TestDiretorioDestinoSeriePastaDeTemporadaEmOutroIdioma(t *testing.T) {
+	for _, temporada := range []string{
+		"Temporada 01", "Temporada 1", "temporada 2",
+		"Staffel 3", "Saison 2", "Stagione 1", "Seizoen 4",
+		"Temporada Specials", "Season_specials",
+	} {
+		ent := Entity{ID: "serie1", Type: TipoSerie}
+		files := []MediaFile{
+			{EntityID: "serie1", Path: "/lib/Show/" + temporada + "/E01.mkv", State: "present", CreatedAt: "2024-01-01T00:00:00.000Z"},
+			{EntityID: "serie1", Path: "/lib/Show/" + temporada + "/E02.mkv", State: "present", CreatedAt: "2024-01-02T00:00:00.000Z"},
+		}
+		dir, ok := DiretorioDestino(ent, files, nil)
+		if !ok || dir != "/lib/Show" {
+			t.Fatalf("pasta %q: dir = %q ok=%v, quero /lib/Show true", temporada, dir, ok)
+		}
+	}
+}
+
+// TestDiretorioDestinoSeriePastaQueNaoEhDeTemporada: the fallback must not climb
+// out of a folder that only LOOKS like a season by a substring ("Temporadas
+// Especiais" without a number is still ambiguous, but "Temporada Especial" is
+// accepted; a plain "Extras" folder is not).
+func TestDiretorioDestinoSeriePastaQueNaoEhDeTemporada(t *testing.T) {
+	ent := Entity{ID: "serie1", Type: TipoSerie}
+	files := []MediaFile{
+		{EntityID: "serie1", Path: "/lib/Show/Extras/E01.mkv", State: "present", CreatedAt: "2024-01-01T00:00:00.000Z"},
+	}
+	dir, ok := DiretorioDestino(ent, files, nil)
+	if !ok || dir != "/lib/Show/Extras" {
+		t.Fatalf("dir = %q ok=%v, quero /lib/Show/Extras (nao sobe de Extras)", dir, ok)
+	}
+}
+
 // TestDiretorioDestinoSerieTemporadaUnicaFormatoCurto: the "S01" variant (short
 // form, without "Season") must also trigger the fallback.
 func TestDiretorioDestinoSerieTemporadaUnicaFormatoCurto(t *testing.T) {

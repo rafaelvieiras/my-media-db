@@ -345,7 +345,15 @@ func DiretorioDestino(entity Entity, mediaFiles []MediaFile, ancestors []Entity)
 // series root rule, ADR-0021): "Season 1", "Season 01", "season12" (with or
 // without a space) or the short form "S01"/"s1" — tolerant of zero-padding
 // and case variation.
-var regexPastaTemporada = regexp.MustCompile(`(?i)^season\s*\d+$|^s\d{1,2}$`)
+//
+// It is NOT English-only (issue #89): a library organised in Portuguese, Spanish,
+// German, French, Italian or Dutch writes "Temporada 01", "Staffel 3", "Saison 2",
+// "Stagione 1", "Seizoen 4". When the name did not match, the SERIES root resolved to
+// the SEASON folder and tvshow.nfo/poster/fanart were written INSIDE it -- invisible to
+// Kodi/Jellyfin/tinyfin, which look for them one level up. Measured on the owner's
+// library: 97 of 264 series and 168 assets. The "specials" folder ("Temporada Specials")
+// counts as a season folder too.
+var regexPastaTemporada = regexp.MustCompile(`(?i)^(season|temporada|staffel|saison|stagione|seizoen)\s*[._-]?\s*(\d+|specials?|especiais?|especiales?|sp[eé]ciaux|spezials?)$|^s\d{1,2}$`)
 
 // diretoriosPresentesDoAlvo gathers, in order of appearance and without
 // duplicating, the directories (filepath.Dir) of every 'present' media_file of
