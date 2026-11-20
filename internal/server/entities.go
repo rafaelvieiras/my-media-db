@@ -443,29 +443,39 @@ func (s *Server) getEntityMembers(w http.ResponseWriter, r *http.Request) {
 // (getEntityMembers) and by the Phase B mutations (add/removeMember). It skips
 // a child purged in the middle (NoRows).
 func (s *Server) montarMembros(ctx context.Context, id, tipoPai string) ([]entityCardDTO, error) {
-	rels, err := s.leitura().ListarRelacoesFilhas(ctx, id)
-	if err != nil {
-		return nil, err
-	}
 	kind, ordenarPorAno := kindEOrdemMembros(tipoPai)
 	// When the parent is a season, episodes get the REAL numbering projected
 	// onto the ordering of the season ITSELF — read once from its extension_data.
 	ordem, seasonNumber := s.ordenacaoDaTemporada(ctx, id, tipoPai)
-	membros := make([]membroCard, 0, len(rels))
-	for _, rel := range rels {
-		if rel.Kind != kind {
-			continue
-		}
-		row, err := s.leitura().ObterEntityCard(ctx, rel.ChildID)
-		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				continue // child purged in the middle: skip it
-			}
-			return nil, err
-		}
-		card := cardDTODeMembro(row)
+	// ONE query for the whole list (issue #89). The old shape read each child with
+	// ObterEntityCard, which materializes the transitive closure of the relation tree on
+	// EVERY call: a season with 296 episodes paid 296 closures and took 219 s on a
+	// library served from a network share.
+	rows, err := s.leitura().ListarCardsDeMembros(ctx, sqlcgen.ListarCardsDeMembrosParams{
+		ParentID: id,
+		Kind:     kind,
+	})
+	if err != nil {
+		return nil, err
+	}
+	membros := make([]membroCard, 0, len(rows))
+	for _, row := range rows {
+		card := cardDTO(sqlcgen.ListarEntityCardsRow{
+			ID:                      row.ID,
+			Type:                    row.Type,
+			Title:                   row.Title,
+			Status:                  row.Status,
+			Owned:                   row.Owned,
+			FileCount:               row.FileCount,
+			MatchConfidence:         row.MatchConfidence,
+			HasPoster:               row.HasPoster,
+			CompletenessComplete:    row.CompletenessComplete,
+			CompletenessMissingJson: row.CompletenessMissingJson,
+		})
 		s.anotarPosseCard(ctx, &card)
-		s.anotarNumbering(ctx, &card, ordem, seasonNumber)
+		// The numbering comes from the extension_data the batch already carried: no
+		// second read per episode.
+		s.anotarNumberingDaNS(ctx, &card, row.ExtensionDataJson, ordem, seasonNumber)
 		membros = append(membros, membroCard{dto: card, ano: row.ReleaseDate})
 	}
 	// Series/season preserve the sort_index order (number); only a collection is
@@ -515,15 +525,14 @@ func (s *Server) ordenacaoDaTemporada(ctx context.Context, seasonID, tipoPai str
 // episode, a scale of dozens per season, acceptable; TODO: a single aggregated
 // query if it becomes heavy). It degrades on any failure (the UI omits
 // number/still, never invents).
-func (s *Server) anotarNumbering(ctx context.Context, card *entityCardDTO, ordering string, seasonNumber int) {
+// anotarNumberingDaNS fills the episode card with the REAL numbering and the still
+// URL from the extension_data the caller ALREADY has (the batch of /members): no extra
+// read per episode.
+func (s *Server) anotarNumberingDaNS(ctx context.Context, card *entityCardDTO, extensionDataJSON sql.NullString, ordering string, seasonNumber int) {
 	if card.Type != tipoEntEpisodio {
 		return
 	}
-	ent, err := s.leitura().ObterEntity(ctx, card.ID)
-	if err != nil {
-		return
-	}
-	ns := tvext.Namespace(ent.ExtensionDataJson, nsTVCore)
+	ns := tvext.Namespace(extensionDataJSON, nsTVCore)
 	card.Numbering = projetarNumbering(ns, ordering, seasonNumber)
 	// Still precedence: the custom still (asset `user`) beats the provider's raw
 	// one. An extra read per episode (acceptable, same scale as the numbering).
