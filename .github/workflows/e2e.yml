@@ -13,11 +13,29 @@
 
 name: E2E (Playwright)
 
+# DOCUMENTATION-ONLY CHANGES DO NOT RUN THIS. Browser E2E is the most expensive thing
+# here (Chromium, a binary built with -cover, two coverage ratchets) and a changed
+# `*.md` cannot move either number. A `paths-ignore` trigger is acceptable because
+# this check is NOT a required status: a required status that never reports blocks the
+# merge forever, which is why quality-gate.yml uses a `changes` JOB instead. If this
+# check ever becomes required, port that pattern here.
 on:
   push:
     branches: [main, master]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - 'assets/**'
   pull_request:
     branches: [main, master]
+    # Same list on purpose: a YAML anchor inside `on:` is not worth the risk with
+    # GitHub's own parser, and the two triggers must never drift.
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - 'assets/**'
   workflow_dispatch:
 
 permissions:

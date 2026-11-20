@@ -17,9 +17,18 @@
 
 name: Release
 
+# A documentation-only push cannot cut a release, so it does not pay for the versioning
+# run at all. The `docker` job already refuses to build without a version
+# (`if: needs.version.outputs.version != ''`); this trigger filter is the same rule one
+# step earlier. `workflow_dispatch` still allows a manual release from a docs branch.
 on:
   push:
     branches: [master]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - 'assets/**'
   workflow_dispatch:
 
 permissions:
