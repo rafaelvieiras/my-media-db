@@ -546,6 +546,52 @@ func (q *Queries) ListarEpisodeIDsComMediaFilePresente(ctx context.Context) ([]s
 	return items, nil
 }
 
+const listarEpisodiosDoMediaFile = `-- name: ListarEpisodiosDoMediaFile :many
+SELECT mfe.entity_id AS id,
+       COALESCE(ep_rel.sort_index, 0) AS episodio,
+       COALESCE(se_rel.sort_index, 0) AS temporada
+FROM media_file_entity mfe
+LEFT JOIN entity_relation ep_rel ON ep_rel.child_id = mfe.entity_id AND ep_rel.kind = 'tv_episode'
+LEFT JOIN entity_relation se_rel ON se_rel.child_id = ep_rel.parent_id AND se_rel.kind = 'tv_season'
+WHERE mfe.media_file_id = ?1
+ORDER BY mfe.ordinal, episodio, mfe.entity_id
+`
+
+type ListarEpisodiosDoMediaFileRow struct {
+	ID        string
+	Episodio  int64
+	Temporada int64
+}
+
+// Every episode that lives in ONE video file, with the season/episode numbers taken from the
+// entity_relation tree (series->season sort_index = season number, season->episode
+// sort_index = episode number, ADR-0021). A multi-episode file (S02E01-E02-E03) has one
+// entity per episode and therefore ONE .nfo shared by all of them: the document needs one
+// <episodedetails> block per row (Kodi/Jellyfin convention, issue #80). 0 means "no number
+// in the tree" (a special without a season/episode link).
+func (q *Queries) ListarEpisodiosDoMediaFile(ctx context.Context, mediaFileID string) ([]ListarEpisodiosDoMediaFileRow, error) {
+	rows, err := q.db.QueryContext(ctx, listarEpisodiosDoMediaFile, mediaFileID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListarEpisodiosDoMediaFileRow{}
+	for rows.Next() {
+		var i ListarEpisodiosDoMediaFileRow
+		if err := rows.Scan(&i.ID, &i.Episodio, &i.Temporada); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listarMediaFilePathsPorFonte = `-- name: ListarMediaFilePathsPorFonte :many
 SELECT id, path
 FROM media_file
@@ -806,6 +852,33 @@ func (q *Queries) ObterMediaFile(ctx context.Context, id string) (MediaFile, err
 		&i.UpdatedAt,
 		&i.LibrarySourceID,
 	)
+	return i, err
+}
+
+const obterMediaFileDoEpisodio = `-- name: ObterMediaFileDoEpisodio :one
+SELECT mf.id, mf.path
+FROM media_file_entity mfe
+JOIN media_file mf ON mf.id = mfe.media_file_id
+WHERE mfe.entity_id = ?1
+  AND mfe.kind = 'tv_episode'
+  AND mf.state = 'present'
+ORDER BY mfe.ordinal, mf.path
+LIMIT 1
+`
+
+type ObterMediaFileDoEpisodioRow struct {
+	ID   string
+	Path string
+}
+
+// The 'present' media_file of ONE episode, through the media_file_entity junction
+// (media_file.entity_id points at the SERIES, never at the episode -- ADR-0021). It is the
+// FILE that owns the .nfo: Kodi names the episode NFO after the video, so the writer needs
+// the file, not the entity (issue #80).
+func (q *Queries) ObterMediaFileDoEpisodio(ctx context.Context, entityID string) (ObterMediaFileDoEpisodioRow, error) {
+	row := q.db.QueryRowContext(ctx, obterMediaFileDoEpisodio, entityID)
+	var i ObterMediaFileDoEpisodioRow
+	err := row.Scan(&i.ID, &i.Path)
 	return i, err
 }
 

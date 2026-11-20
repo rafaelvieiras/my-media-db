@@ -11,6 +11,7 @@ import (
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/localmedia"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
@@ -1104,5 +1105,386 @@ func TestMaterializarMidiasFaltantesAlbumMultiDiscoGravaNoAlbum(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(discoDir, "folder.png")); err == nil {
 		t.Error("capa gravada DENTRO da pasta do disco -- deve ficar no album")
+	}
+}
+
+// semearArvoreSerieMultiEpisodio seeds a series whose TWO episodes live in ONE video file
+// (Show.S01E01E02.mkv, the multi-episode convention of Kodi/Jellyfin), returning the library
+// root and the path of the shared video.
+func semearArvoreSerieMultiEpisodio(t *testing.T, d *db.DB) (libRoot, video string) {
+	t.Helper()
+	semearEntity(t, d, "s1", "tv", "Serie")
+	semearEntity(t, d, "se1", "season", "Temporada 1")
+	semearEntity(t, d, "e1", "episode", "Primeiro Episodio")
+	semearEntity(t, d, "e2", "episode", "Segundo Episodio")
+	ligarFilhoOrdenado(t, d, "r-se1", "s1", "se1", "tv_season", 1)
+	ligarFilhoOrdenado(t, d, "r-e1", "se1", "e1", "tv_episode", 1)
+	ligarFilhoOrdenado(t, d, "r-e2", "se1", "e2", "tv_episode", 2)
+
+	libRoot = t.TempDir()
+	video = filepath.Join(libRoot, "Season 01", "Show.S01E01E02.mkv")
+	semearFile(t, d, "mf1", "s1", video, "present", 0.9, "")
+	for ordinal, epID := range map[int64]string{0: "e1", 1: "e2"} {
+		if err := escrita(t, d).CriarVinculoEntidade(context.Background(), sqlcgen.CriarVinculoEntidadeParams{
+			MediaFileID: "mf1", EntityID: epID, Kind: "tv_episode", Ordinal: ordinal,
+		}); err != nil {
+			t.Fatalf("CriarVinculoEntidade(%s): %v", epID, err)
+		}
+	}
+	return libRoot, video
+}
+
+// TestMaterializarMidiasFaltantesUmNFOPorArquivo covers issue #80: two episodes in ONE video
+// file share ONE .nfo, whose document carries one <episodedetails> block per episode -- before,
+// each entity wrote its own single-block document over the other one and the file ended up with
+// a mix (one episode's title, another one's number), rewritten on every run.
+func TestMaterializarMidiasFaltantesUmNFOPorArquivo(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	_, video := semearArvoreSerieMultiEpisodio(t, d)
+	nfoPath := localmedia.CaminhoNFODeVideo(video)
+
+	artes, nfoGravado, err := srv.MaterializarMidiasFaltantes(context.Background(), "e1")
+	if err != nil {
+		t.Fatalf("MaterializarMidiasFaltantes(e1): %v", err)
+	}
+	if len(artes) != 0 {
+		t.Errorf("artes = %v, quero nenhuma", artes)
+	}
+	if !nfoGravado {
+		t.Fatal("nfoGravado = false, quero true (primeira gravacao)")
+	}
+	corpo, err := os.ReadFile(nfoPath)
+	if err != nil {
+		t.Fatalf("ler %s: %v", nfoPath, err)
+	}
+	texto := string(corpo)
+	for _, quero := range []string{"Primeiro Episodio", "Segundo Episodio", "<season>1</season>", "<episode>1</episode>", "<episode>2</episode>"} {
+		if !strings.Contains(texto, quero) {
+			t.Errorf("NFO nao contem %q:\n%s", quero, texto)
+		}
+	}
+	if blocos := strings.Count(texto, "<episodedetails>"); blocos != 2 {
+		t.Errorf("blocos <episodedetails> = %d, quero 2", blocos)
+	}
+	// BOTH episodes point at the one .nfo (it describes the file, not the entity).
+	for _, id := range []string{"e1", "e2"} {
+		ent, err := srv.leitura().ObterEntity(context.Background(), id)
+		if err != nil {
+			t.Fatalf("ObterEntity(%s): %v", id, err)
+		}
+		if !ent.NfoPath.Valid || ent.NfoPath.String != nfoPath {
+			t.Errorf("%s.nfo_path = %v, quero %q", id, ent.NfoPath, nfoPath)
+		}
+	}
+
+	// 2nd episode: already convergent, nothing is rewritten.
+	artes2, nfo2, err := srv.MaterializarMidiasFaltantes(context.Background(), "e2")
+	if err != nil {
+		t.Fatalf("MaterializarMidiasFaltantes(e2): %v", err)
+	}
+	if len(artes2) != 0 || nfo2 {
+		t.Errorf("2a passada (e2): artes=%v nfo=%v, quero nada (documento do arquivo ja converge)", artes2, nfo2)
+	}
+	depois, err := os.ReadFile(nfoPath)
+	if err != nil {
+		t.Fatalf("reler %s: %v", nfoPath, err)
+	}
+	if string(depois) != texto {
+		t.Error("o NFO mudou na 2a passada -- a convergencia do documento compartilhado falhou")
+	}
+}
+
+// TestMaterializarMidiasFaltantesNFOCompartilhadoCorrigeLegado covers the retroactive part: a
+// file whose .nfo was written by the old per-entity logic (ONE block, with the title of one
+// episode and the number the file name gave) is rewritten as the document of the FILE, with one
+// block per episode and the numbering of the tree.
+func TestMaterializarMidiasFaltantesNFOCompartilhadoCorrigeLegado(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	_, video := semearArvoreSerieMultiEpisodio(t, d)
+	nfoPath := localmedia.CaminhoNFODeVideo(video)
+
+	legado := `<?xml version="1.0" encoding="UTF-8"?>
+<episodedetails>
+  <title>Segundo Episodio</title>
+  <season>3</season>
+  <episode>1</episode>
+  <watched>true</watched>
+  <playcount>4</playcount>
+</episodedetails>
+`
+	if err := localmedia.EscreverArquivoAtomico(nfoPath, []byte(legado)); err != nil {
+		t.Fatalf("escrever legado: %v", err)
+	}
+
+	_, nfoGravado, err := srv.MaterializarMidiasFaltantes(context.Background(), "e1")
+	if err != nil {
+		t.Fatalf("MaterializarMidiasFaltantes(e1): %v", err)
+	}
+	if !nfoGravado {
+		t.Fatal("nfoGravado = false, quero true (o legado nao converge)")
+	}
+	corpo, err := os.ReadFile(nfoPath)
+	if err != nil {
+		t.Fatalf("ler %s: %v", nfoPath, err)
+	}
+	texto := string(corpo)
+	if blocos := strings.Count(texto, "<episodedetails>"); blocos != 2 {
+		t.Fatalf("blocos = %d, quero 2 -- o legado nao virou documento do arquivo:\n%s", blocos, texto)
+	}
+	if strings.Contains(texto, "<season>3</season>") {
+		t.Errorf("o <season>3</season> do legado sobreviveu (deve vir da arvore):\n%s", texto)
+	}
+	// the watched state of the block that ALREADY existed is preserved on the episode it
+	// belonged to (the file declared "Segundo Episodio", the 2nd block).
+	if !strings.Contains(texto, "<playcount>4</playcount>") {
+		t.Errorf("playcount preservado ausente:\n%s", texto)
+	}
+}
+
+// TestPastaDeMusicaSemFaixaNaoTemDestino covers the "nothing to do" arm of pastaDeMusica: an
+// album/artist without an owned descendant track has no folder (ADR-0027: they never have a
+// media_file of their own), which is a no-op, never an error.
+func TestPastaDeMusicaSemFaixaNaoTemDestino(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	semearEntity(t, d, "albVazio", "album", "Sem Faixa")
+	semearEntity(t, d, "artVazio", "artista", "Sem Album")
+	ctx := context.Background()
+
+	for _, id := range []string{"albVazio", "artVazio"} {
+		ent, err := srv.leitura().ObterEntity(ctx, id)
+		if err != nil {
+			t.Fatalf("ObterEntity(%s): %v", id, err)
+		}
+		if dir, faixa, ok := srv.pastaDeMusica(ctx, ent); ok {
+			t.Errorf("pastaDeMusica(%s) = (%q, %q, true), quero ok=false", id, dir, faixa)
+		}
+	}
+	// e a entity fora da vertical de musica tambem nao tem pasta por aqui
+	ent, err := srv.leitura().ObterEntity(ctx, "albVazio")
+	if err != nil {
+		t.Fatalf("ObterEntity: %v", err)
+	}
+	ent.Type = "movie"
+	if _, _, ok := srv.pastaDeMusica(ctx, ent); ok {
+		t.Error("pastaDeMusica(filme) = ok, quero false (so album/artista)")
+	}
+}
+
+// TestMaterializarMidiasFaltantesEpisodioSemArquivoNaoGravaNFO covers the guard: an episode
+// entity without a 'present' media_file has no file to name a .nfo after -- no write, no error.
+func TestMaterializarMidiasFaltantesEpisodioSemArquivoNaoGravaNFO(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	semearEntity(t, d, "eSolto", "episode", "Episodio Sem Arquivo")
+
+	artes, nfo, err := srv.MaterializarMidiasFaltantes(context.Background(), "eSolto")
+	if err != nil {
+		t.Fatalf("MaterializarMidiasFaltantes: %v", err)
+	}
+	if len(artes) != 0 || nfo {
+		t.Errorf("artes=%v nfo=%v, quero nada (sem arquivo nao ha destino)", artes, nfo)
+	}
+}
+
+// TestMaterializarMidiasFaltantesNFOCompartilhadoPreservaCamposPorEpisodio covers the per-block
+// preservation: the local fields (watched/rating/play count) of EACH episode of the file survive
+// a rewrite, matched by <season>/<episode> -- not the old "one block for everybody". The file is
+// hand-edited to hold a single block with a watch count, which is what makes it diverge from the
+// document of the file.
+func TestMaterializarMidiasFaltantesNFOCompartilhadoPreservaCamposPorEpisodio(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	_, video := semearArvoreSerieMultiEpisodio(t, d)
+	nfoPath := localmedia.CaminhoNFODeVideo(video)
+	ctx := context.Background()
+
+	if _, _, err := srv.MaterializarMidiasFaltantes(ctx, "e1"); err != nil {
+		t.Fatalf("1a chamada: %v", err)
+	}
+	corpo, err := os.ReadFile(nfoPath)
+	if err != nil {
+		t.Fatalf("ler %s: %v", nfoPath, err)
+	}
+	partes := strings.SplitN(string(corpo), "<episodedetails>", 3)
+	if len(partes) != 3 {
+		t.Fatalf("esperava 2 blocos, achei %d:\n%s", len(partes)-1, corpo)
+	}
+	// O dono editou o NFO a mao: sobrou so o bloco do SEGUNDO episodio, com um playcount.
+	soSegundo := partes[0] + "<episodedetails>" + partes[2]
+	soSegundo = strings.Replace(soSegundo, "</episodedetails>", "  <playcount>7</playcount>\n</episodedetails>", 1)
+	if err := localmedia.EscreverArquivoAtomico(nfoPath, []byte(soSegundo)); err != nil {
+		t.Fatalf("escrever editado: %v", err)
+	}
+
+	// O documento do ARQUIVO tem 2 blocos: o editado nao converge e e reescrito, preservando o
+	// playcount no episodio a que ele pertencia.
+	_, nfoGravado, err := srv.MaterializarMidiasFaltantes(ctx, "e1")
+	if err != nil {
+		t.Fatalf("2a chamada: %v", err)
+	}
+	if !nfoGravado {
+		t.Fatal("nfoGravado = false, quero true (o arquivo nao tem mais os 2 blocos)")
+	}
+	final, err := os.ReadFile(nfoPath)
+	if err != nil {
+		t.Fatalf("reler %s: %v", nfoPath, err)
+	}
+	partes = strings.SplitN(string(final), "<episodedetails>", 3)
+	if len(partes) != 3 {
+		t.Fatalf("esperava 2 blocos no final, achei %d:\n%s", len(partes)-1, final)
+	}
+	if strings.Contains(partes[1], "<playcount>") {
+		t.Errorf("o 1o bloco ganhou playcount que era do 2o:\n%s", partes[1])
+	}
+	if !strings.Contains(partes[2], "<playcount>7</playcount>") {
+		t.Errorf("o 2o bloco perdeu o playcount preservado:\n%s", partes[2])
+	}
+}
+
+// TestMaterializarAssetsMusicaRotacionaNomesBare covers the music rotation: the first artwork of
+// a kind takes the bare name (folder.png), the second one the numeric suffix (folder1.png) -- and
+// neither ever becomes poster.png, the video name no music folder should receive (ADR-0043).
+func TestMaterializarAssetsMusicaRotacionaNomesBare(t *testing.T) {
+	_, h, d := setupMidiasFaltantesServer(t)
+	_, albumID, albumDir := semearArvoreMusica(t, d)
+
+	primeiro := decodeAsset(t, postAsset(t, h, albumID, "poster", pngPayload(64)))
+	rec := do(t, h, http.MethodPost, "/api/v1/entities/"+albumID+"/assets/"+primeiro.ID+"/materialize", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("materialize do 1o: status = %d (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	segundo := decodeAsset(t, postAsset(t, h, albumID, "poster", pngPayload(64)))
+	rec = do(t, h, http.MethodPost, "/api/v1/entities/"+albumID+"/assets/"+segundo.ID+"/materialize", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("materialize do 2o: status = %d (corpo=%s)", rec.Code, rec.Body.String())
+	}
+
+	for _, quero := range []string{"folder.png", "folder1.png"} {
+		if _, err := os.Stat(filepath.Join(albumDir, quero)); err != nil {
+			t.Errorf("arquivo ausente %s: %v", quero, err)
+		}
+	}
+	for _, naoQuero := range []string{"poster.png", "poster1.png"} {
+		if _, err := os.Stat(filepath.Join(albumDir, naoQuero)); err == nil {
+			t.Errorf("%s existe -- nome de video vazou para a pasta de musica", naoQuero)
+		}
+	}
+}
+
+// TestWriteEntityNfoEpisodioEscreveDocumentoDoArquivo covers the HTTP path: POST
+// /entities/{id}/nfo of ONE episode of a multi-episode file writes the document of the FILE (both
+// blocks), the same as the job -- the endpoint is idempotent-but-correct, never per entity.
+func TestWriteEntityNfoEpisodioEscreveDocumentoDoArquivo(t *testing.T) {
+	_, h, d := setupMidiasFaltantesServer(t)
+	_, video := semearArvoreSerieMultiEpisodio(t, d)
+
+	rec := do(t, h, http.MethodPost, "/api/v1/entities/e1/nfo", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	corpo, err := os.ReadFile(localmedia.CaminhoNFODeVideo(video))
+	if err != nil {
+		t.Fatalf("ler NFO: %v", err)
+	}
+	texto := string(corpo)
+	for _, quero := range []string{"Primeiro Episodio", "Segundo Episodio", "<episode>2</episode>"} {
+		if !strings.Contains(texto, quero) {
+			t.Errorf("NFO do arquivo nao contem %q:\n%s", quero, texto)
+		}
+	}
+}
+
+// TestWriteEntityNfoMusicaResponde404 covers the decision that music has no NFO (yet): the album
+// folder resolves, but there is no music NFO convention -- the endpoint answers 404 (no
+// destination) instead of writing a nameless ".nfo" next to the tracks.
+func TestWriteEntityNfoMusicaResponde404(t *testing.T) {
+	_, h, d := setupMidiasFaltantesServer(t)
+	_, albumID, albumDir := semearArvoreMusica(t, d)
+
+	rec := do(t, h, http.MethodPost, "/api/v1/entities/"+albumID+"/nfo", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, quero 404 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	entradas, err := os.ReadDir(albumDir)
+	if err != nil {
+		t.Fatalf("ReadDir(%s): %v", albumDir, err)
+	}
+	for _, entrada := range entradas {
+		if strings.HasSuffix(entrada.Name(), ".nfo") {
+			t.Errorf("arquivo %q escrito na pasta de musica, quero nenhum NFO", entrada.Name())
+		}
+	}
+}
+
+// TestDescobrirArteLocalMusicaSemScanner covers the no-op arm: without a scanner there is
+// nothing to recheck on disk, and the batch says so instead of failing.
+func TestDescobrirArteLocalMusicaSemScanner(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	semearArvoreMusica(t, d)
+
+	achados, err := srv.DescobrirArteLocalMusica(context.Background())
+	if err != nil {
+		t.Fatalf("DescobrirArteLocalMusica: %v", err)
+	}
+	if achados != 0 {
+		t.Errorf("achados = %d, quero 0 (sem scanner nao ha o que rechecar)", achados)
+	}
+}
+
+// TestMaterializarMidiasFaltantesNFOCompartilhadoRemoveOrfao covers the cleanup of a sibling's
+// legacy .nfo: when an episode of the file had its NFO registered at an OLD path (legacy naming
+// or a moved file), the write must stamp the new destination on every episode of the file and
+// remove the orphan, so Kodi does not find two documents for one episode.
+func TestMaterializarMidiasFaltantesNFOCompartilhadoRemoveOrfao(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	_, video := semearArvoreSerieMultiEpisodio(t, d)
+	nfoPath := localmedia.CaminhoNFODeVideo(video)
+	ctx := context.Background()
+
+	orfao := filepath.Join(filepath.Dir(video), "legado-antigo.nfo")
+	if err := localmedia.EscreverArquivoAtomico(orfao, []byte("<episodedetails><title>velho</title></episodedetails>\n")); err != nil {
+		t.Fatalf("escrever orfao: %v", err)
+	}
+	if err := escrita(t, d).AtualizarEntityNfo(ctx, sqlcgen.AtualizarEntityNfoParams{
+		NfoPath:      nsOf(orfao),
+		NfoWrittenAt: nsOf("2026-01-01T00:00:00.000Z"),
+		ID:           "e2",
+	}); err != nil {
+		t.Fatalf("AtualizarEntityNfo: %v", err)
+	}
+
+	if _, nfoGravado, err := srv.MaterializarMidiasFaltantes(ctx, "e1"); err != nil {
+		t.Fatalf("MaterializarMidiasFaltantes: %v", err)
+	} else if !nfoGravado {
+		t.Fatal("nfoGravado = false, quero true")
+	}
+	for _, id := range []string{"e1", "e2"} {
+		ent, err := srv.leitura().ObterEntity(ctx, id)
+		if err != nil {
+			t.Fatalf("ObterEntity(%s): %v", id, err)
+		}
+		if !ent.NfoPath.Valid || ent.NfoPath.String != nfoPath {
+			t.Errorf("%s.nfo_path = %v, quero %q", id, ent.NfoPath, nfoPath)
+		}
+	}
+	if _, err := os.Stat(orfao); !os.IsNotExist(err) {
+		t.Errorf("NFO legado %s continua no disco (stat err=%v), quero removido", orfao, err)
+	}
+}
+
+// TestGravarNFOEpisodiosErroDeEscrita covers the failure arm: when the .nfo cannot be written
+// (a directory squatting on the path), the error propagates instead of being reported as a
+// written document.
+func TestGravarNFOEpisodiosErroDeEscrita(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	_, video := semearArvoreSerieMultiEpisodio(t, d)
+	nfoPath := localmedia.CaminhoNFODeVideo(video)
+	if err := os.MkdirAll(nfoPath, 0o755); err != nil {
+		t.Fatalf("criar diretorio no lugar do nfo: %v", err)
+	}
+	ent, err := srv.leitura().ObterEntity(context.Background(), "e1")
+	if err != nil {
+		t.Fatalf("ObterEntity: %v", err)
+	}
+	if _, err := srv.gravarNFOEpisodios(context.Background(), ent, map[string][]artworkItem{}); err == nil {
+		t.Error("gravarNFOEpisodios sem erro, quero o erro de escrita propagado")
 	}
 }

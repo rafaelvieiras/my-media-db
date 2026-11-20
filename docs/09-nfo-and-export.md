@@ -39,6 +39,19 @@ v1 had an NFO model (music video) with **every Kodi tag documented inline**
 mapping is the standard to follow for movie/tvshow/episode. Rewrite in Go; use
 the reference preserved in the scratchpad as the basis for the mapping.
 
+## One file, one NFO, one block per episode
+
+A `.nfo` belongs to the **video file**, not to the entity (Kodi names it after the video and
+takes the episode numbering from the file name). A video that holds several episodes
+(`S01E01E02`, `S02E01-E02-E03`) is one file with one `.nfo`, whose document carries **one
+`<episodedetails>` block per episode, in file order** — the format Kodi's own library export
+writes (and the reason `<season>`/`<episode>` come from the entity tree, never from the file
+name). See [ADR-0044](adr/0044-one-nfo-per-file.md).
+
+The local fields the owner or Kodi wrote (rating, watched, play count, resume, date added and
+any unrecognized tag) are preserved **per block**, matched by `<season>`/`<episode>`; a legacy
+single-block file is matched to the first episode of the file.
+
 ## Open decisions (see [11](11-open-decisions.md))
 
 - Template engine vs direct struct→XML serialization.

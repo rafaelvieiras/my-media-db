@@ -580,6 +580,13 @@ type Querier interface {
 	// it was just never reached); episode artwork (still) stays OUT
 	// (kindsMidiasFaltantes does not gain still -- lazy/manual).
 	ListarEpisodeIDsComMediaFilePresente(ctx context.Context) ([]string, error)
+	// Every episode that lives in ONE video file, with the season/episode numbers taken from the
+	// entity_relation tree (series->season sort_index = season number, season->episode
+	// sort_index = episode number, ADR-0021). A multi-episode file (S02E01-E02-E03) has one
+	// entity per episode and therefore ONE .nfo shared by all of them: the document needs one
+	// <episodedetails> block per row (Kodi/Jellyfin convention, issue #80). 0 means "no number
+	// in the tree" (a special without a season/episode link).
+	ListarEpisodiosDoMediaFile(ctx context.Context, mediaFileID string) ([]ListarEpisodiosDoMediaFileRow, error)
 	// Complement of ListarElegiveisReprocessamentoArtes: tracks
 	// type='faixa' status='draft' with a present media_file (entity_id points
 	// directly, ADR-0027 is 1:1) WITHOUT entity_relation as a child of any album (NOT
@@ -937,6 +944,11 @@ type Querier interface {
 	// Reads the cache of ONE specific source of the entity (the logical cache key).
 	ObterMediaExternalPorFonte(ctx context.Context, arg ObterMediaExternalPorFonteParams) (MediaExternal, error)
 	ObterMediaFile(ctx context.Context, id string) (MediaFile, error)
+	// The 'present' media_file of ONE episode, through the media_file_entity junction
+	// (media_file.entity_id points at the SERIES, never at the episode -- ADR-0021). It is the
+	// FILE that owns the .nfo: Kodi names the episode NFO after the video, so the writer needs
+	// the file, not the entity (issue #80).
+	ObterMediaFileDoEpisodio(ctx context.Context, entityID string) (ObterMediaFileDoEpisodioRow, error)
 	// Scanner dedupe: finds the file by content hash (stable across rename/move).
 	// content_hash is NOT UNIQUE (a real collision is astronomical with the partial
 	// hash), hence LIMIT 1. If found, the scanner updates the path instead of a new row.

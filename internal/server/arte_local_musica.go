@@ -122,11 +122,9 @@ func (s *Server) pastaDeMusica(ctx context.Context, ent sqlcgen.Entity) (dir, fa
 		if ehRaizDeBiblioteca(raizes, albumDir) {
 			return "", "", false
 		}
-		artistDir := filepath.Dir(albumDir)
-		if artistDir == albumDir || !diretorioExiste(artistDir) {
-			return "", "", false
-		}
-		return artistDir, faixaPath, true
+		// No extra check of the parent: it exists by construction when the album folder does,
+		// and going up can only reach a real folder.
+		return filepath.Dir(albumDir), faixaPath, true
 	}
 	return "", "", false
 }
