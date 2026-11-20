@@ -1076,3 +1076,33 @@ func TestMaterializarMidiasFaltantesAlbumConvergeNomeParaFolder(t *testing.T) {
 		t.Errorf("artesBaixadas = %v, quero conter poster (a convergencia de nome e trabalho)", artes)
 	}
 }
+
+// TestMaterializarMidiasFaltantesAlbumMultiDiscoGravaNoAlbum covers a multi-disc release: the
+// tracks live in "CD 1"/"Digital Media 01" subfolders, but the cover belongs to the ALBUM --
+// it lands on the album folder, not duplicated inside each disc folder.
+func TestMaterializarMidiasFaltantesAlbumMultiDiscoGravaNoAlbum(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	albumDir := filepath.Join(t.TempDir(), "Artists", "Duran Duran", "Rio (1982)")
+	discoDir := filepath.Join(albumDir, "Digital Media 01")
+	if err := os.MkdirAll(discoDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	semearEntity(t, d, "art1", "artista", "Duran Duran")
+	semearEntity(t, d, "alb1", "album", "Rio")
+	semearEntity(t, d, "fx1", "faixa", "Hungry Like the Wolf")
+	ligarFilhoOrdenado(t, d, "r1", "art1", "alb1", "music_artista_principal", 0)
+	ligarFilhoOrdenado(t, d, "r2", "alb1", "fx1", "music_album", 1)
+	semearFile(t, d, "f1", "fx1", filepath.Join(discoDir, "01 - Hungry Like the Wolf.flac"), "present", 1, "")
+	imgSrv := servidorImagem(t, nil)
+	semearInventarioArte(t, d, "me-mb", "alb1", "musicbrainz", "poster", imgSrv.URL+"/img")
+
+	if _, _, err := srv.MaterializarMidiasFaltantes(context.Background(), "alb1"); err != nil {
+		t.Fatalf("MaterializarMidiasFaltantes: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(albumDir, "folder.png")); err != nil {
+		t.Errorf("capa do album ausente em %s: %v", albumDir, err)
+	}
+	if _, err := os.Stat(filepath.Join(discoDir, "folder.png")); err == nil {
+		t.Error("capa gravada DENTRO da pasta do disco -- deve ficar no album")
+	}
+}

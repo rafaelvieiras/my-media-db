@@ -19,6 +19,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
@@ -102,14 +103,18 @@ func (s *Server) pastaDeMusica(ctx context.Context, ent sqlcgen.Entity) (dir, fa
 	if err != nil || faixaPath == "" {
 		return "", "", false // sql.ErrNoRows: no owned track (defensive)
 	}
-	albumDir := filepath.Dir(faixaPath)
 	switch ent.Type {
 	case tipoEntAlbum:
+		// A multi-disc release keeps its tracks in "CD 1"/"Disc 2"/"Digital Media 01"
+		// subfolders: the cover belongs to the ALBUM, one level up -- the same shape of rule
+		// the series root already has for "Season NN" (subirEnquantoPastaDeTemporada).
+		albumDir := subirEnquantoPastaDeDisco(filepath.Dir(faixaPath))
 		if !diretorioExiste(albumDir) {
 			return "", "", false
 		}
 		return albumDir, faixaPath, true
 	case tipoEntArtista:
+		albumDir := subirEnquantoPastaDeDisco(filepath.Dir(faixaPath))
 		raizes, err := s.raizesConfiaveis(ctx)
 		if err != nil {
 			return "", "", false
@@ -124,6 +129,26 @@ func (s *Server) pastaDeMusica(ctx context.Context, ent sqlcgen.Entity) (dir, fa
 		return artistDir, faixaPath, true
 	}
 	return "", "", false
+}
+
+// regexPastaDeDisco matches the subfolder names a multi-disc release uses for one disc
+// ("CD 1", "Disc 02", "Disk 3", "Disco 1", "Digital Media 01") -- see
+// subirEnquantoPastaDeDisco.
+var regexPastaDeDisco = regexp.MustCompile(`(?i)^(cd|disc|disk|disco|digital media)\s*\d+$`)
+
+// subirEnquantoPastaDeDisco goes up one level while the folder name still looks like a DISC
+// subfolder of a multi-disc release, so the cover of the album lands on the album itself
+// instead of being duplicated inside "CD 1" and "CD 2". It mirrors
+// localmedia.subirEnquantoPastaDeTemporada (the same idea for "Season NN").
+func subirEnquantoPastaDeDisco(dir string) string {
+	for dir != "" && regexPastaDeDisco.MatchString(filepath.Base(dir)) {
+		pai := filepath.Dir(dir)
+		if pai == dir {
+			break // filesystem root: nothing left to go up (defensive)
+		}
+		dir = pai
+	}
+	return dir
 }
 
 // diretorioExiste reports whether `dir` is a directory ON DISK right now.
