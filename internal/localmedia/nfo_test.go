@@ -1,6 +1,8 @@
 package localmedia
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -589,5 +591,37 @@ func TestCanonicalizarNFOEpisodiosMantemConteudo(t *testing.T) {
 	}
 	if _, err := CanonicalizarNFOEpisodios([]byte("<movie><title>x</title></movie>")); err == nil {
 		t.Error("CanonicalizarNFOEpisodios(sem episodedetails) sem erro")
+	}
+}
+
+// TestEscreverArquivoAtomicoNaoDeixaArquivoPrivado cobre o modo do arquivo: os.CreateTemp cria
+// 0600 e o rename mantem -- sem o Chmod explicito, todo .nfo e toda arte gravados pelo app
+// ficavam ilegiveis para Kodi/Jellyfin com outro uid (medido na biblioteca: 14 880 .nfo em 0600).
+func TestEscreverArquivoAtomicoNaoDeixaArquivoPrivado(t *testing.T) {
+	destino := filepath.Join(t.TempDir(), "episodio.nfo")
+	if err := EscreverArquivoAtomico(destino, []byte("<episodedetails/>")); err != nil {
+		t.Fatalf("EscreverArquivoAtomico: %v", err)
+	}
+	info, err := os.Stat(destino)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if modo := info.Mode().Perm(); modo&0o044 == 0 {
+		t.Errorf("modo = %04o, quero no minimo legivel para o grupo e para os outros", modo)
+	}
+	if modo := info.Mode().Perm(); modo != 0o664 {
+		t.Errorf("modo = %04o, quero 0664", modo)
+	}
+	// Um .nfo rotacionado (rename, sem reescrita) tambem herda o modo do temporario.
+	rotacionado := filepath.Join(filepath.Dir(destino), "episodio (2).nfo")
+	if err := RenomearArquivo(destino, rotacionado); err != nil {
+		t.Fatalf("RenomearArquivo: %v", err)
+	}
+	info, err = os.Stat(rotacionado)
+	if err != nil {
+		t.Fatalf("Stat rotacionado: %v", err)
+	}
+	if modo := info.Mode().Perm(); modo != 0o664 {
+		t.Errorf("modo do rotacionado = %04o, quero 0664", modo)
 	}
 }

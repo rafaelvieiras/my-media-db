@@ -198,3 +198,20 @@ func TestUrlImagemServidaReescreveEDegrada(t *testing.T) {
 		t.Errorf("nil: got %v, quero nil", got)
 	}
 }
+
+// TestEscreverAtomicoNaoDeixaArquivoPrivado cobre o modo do arquivo do cache de arte: sem o
+// Chmod, o rename do temporario (0600) deixa a imagem ilegivel para qualquer processo que nao
+// seja o uid do container.
+func TestEscreverAtomicoNaoDeixaArquivoPrivado(t *testing.T) {
+	destino := filepath.Join(t.TempDir(), "capa.jpg")
+	if err := escreverAtomico(destino, []byte("bytes")); err != nil {
+		t.Fatalf("escreverAtomico: %v", err)
+	}
+	info, err := os.Stat(destino)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if modo := info.Mode().Perm(); modo != 0o664 {
+		t.Errorf("modo = %04o, quero 0664", modo)
+	}
+}
