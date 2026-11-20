@@ -1,3 +1,14 @@
+> [!NOTE]
+> **This project started as a personal project, and it shows.** Before it was
+> published there was no audience, so everything was written without ceremony and
+> in Portuguese: function names, parameters, comments, docs, file names, test
+> names. Publication is the line in the sand. **From that point on, everything new
+> is written in English** — identifiers, comments, docs, commit messages, file
+> names. What is still Portuguese is rewritten **gradually**, one touched file at a
+> time, never in a mass rename. So you will find both languages in the tree for a
+> while. That is a documented transition, not sloppiness: read
+> [AGENTS.md](AGENTS.md#language) for the rule.
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
