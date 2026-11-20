@@ -59,3 +59,4 @@ replaces the flat list of "open decisions" with a traceable record, one file per
 | [0039](0039-release-name-is-not-a-title.md) | A release name is not a title: cut at the release section, drop a trailing genre tag, and give movies the "did you mean this?" hint | — | Accepted |
 | [0040](0040-queue-observability.md) | The queue is observable: per-item progress, a bounded trail, a queue view and a derived duration | Q1 | Accepted |
 | [0041](0041-parallelism-is-intra-run-and-per-provider.md) | Parallelism lives inside a run and per provider (behind a process-wide limiter), never at the queue level | Q2 | Accepted |
+| [0042](0042-a-music-album-is-resolved-once.md) | A music album is resolved once per scan, a draft attempted inside the window is left alone, and a music file follows its content | Q3 | Accepted |

@@ -52,6 +52,11 @@ Blade Runner 2049 (2017) [tmdbid-335984]/
 - No id → **title + year → search on the provider**.
 - **Music** follows the same principle of a deterministic id through
   **MusicBrainz + embedded tags** (not by file name).
+- **A music album is resolved once per scan** ([ADR-0042](adr/0042-a-music-album-is-resolved-once.md)):
+  the first file of a release pays the MusicBrainz calls, the others pick their track from the
+  tracklist already in memory (`albumCache`, keyed by album artist + album) with zero requests. A
+  file that ended in draft is not attempted again for **7 days** (`last_external_match_attempt_at`),
+  and a music file whose content changed repoints its track instead of keeping the stale link.
 
 ### Confidence score and review queue
 

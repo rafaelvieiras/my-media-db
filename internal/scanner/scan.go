@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/enrich"
 	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 	"github.com/rafaelvieiras/my-media-db/internal/localmedia"
@@ -84,6 +85,12 @@ type scanRun struct {
 	// Analogous to the movie folderKey cache, but keyed by the series folder
 	// (0034).
 	serieCache map[string]serieResolvida
+	// albumCache keeps the album ALREADY RESOLVED for each album of the music
+	// scan (key = album artist + album, normalized), so the files AFTER the first
+	// one of the same album resolve with ZERO requests: the expensive part is
+	// resolving the album (1-2 MusicBrainz calls at 1 req/s), not the track. Same
+	// spirit as serieCache (ADR-0042).
+	albumCache map[string]enrich.AlbumImportado
 	// parcial marks that a SUBFOLDER (not the root, already validated by Stat)
 	// failed to be read during the WalkDir (e.g. a transient timeout/disconnection
 	// of a FUSE/rclone network mount in the middle of the walk). Unlike the
@@ -227,6 +234,7 @@ func (m *Manager) executarScan(ctx context.Context, source library.Source, progr
 		probeAtivo: m.prober.Disponivel(),
 		cache:      make(map[string]string),
 		serieCache: make(map[string]serieResolvida),
+		albumCache: make(map[string]enrich.AlbumImportado),
 		progresso:  progresso,
 	}
 	if !r.probeAtivo {

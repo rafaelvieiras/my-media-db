@@ -57,6 +57,8 @@ import (
 	"log"
 	"path/filepath"
 	"sort"
+	"strings"
+	"time"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/enrich"
@@ -117,6 +119,16 @@ func (r *scanRun) factsMusica(ctx context.Context, path string, mi []byte, size 
 		return f
 	}
 
+	// The file CHANGED (or is new). If it was already tried and stayed a draft
+	// inside the window, keep the draft without spending a single request: a file
+	// the source does not have does not become findable by asking again tomorrow,
+	// and each attempt costs MusicBrainz calls (1 req/s) plus a fingerprint.
+	if id, ok := r.draftRecente(ctx, path); ok {
+		f.faixaID = id
+		f.faixaConf = confDraft
+		return f
+	}
+
 	var tags mediainfo.AudioTags
 	var duracaoSegundos float64
 	if len(mi) > 0 {
@@ -132,7 +144,53 @@ func (r *scanRun) factsMusica(ctx context.Context, path string, mi []byte, size 
 	}
 
 	f.faixaID, f.faixaConf = r.resolverFaixa(ctx, path, tags, duracaoSegundos, f.rawNome)
+	if f.faixaConf == confDraft && f.faixaID != "" {
+		// Stamps the attempt (the same column the retroactive sweep uses), so the
+		// next scan of a CHANGED file does not pay the network again inside the
+		// window (draftRecente above).
+		r.carimbarTentativaFaixa(ctx, f.faixaID)
+	}
 	return f
+}
+
+// janelaNovaTentativaDraft is how long a file that ended in DRAFT is left alone
+// before the scanner tries the network for it again. A week: a track the source
+// does not have does not appear overnight, and every attempt costs MusicBrainz
+// calls (1 req/s) plus fpcalc reading the whole file. Files with UNCHANGED
+// mtime/size never reach here at all (the incremental short-circuit above).
+const janelaNovaTentativaDraft = 7 * 24 * time.Hour
+
+// draftRecente reports the entity of the track this path already points to when
+// it is a DRAFT whose last external attempt is inside janelaNovaTentativaDraft.
+func (r *scanRun) draftRecente(ctx context.Context, path string) (string, bool) {
+	q := sqlcgen.New(r.m.db.Read)
+	existente, err := q.ObterMediaFilePorPath(ctx, path)
+	if err != nil || existente.EntityID == "" {
+		return "", false
+	}
+	ent, err := q.ObterEntity(ctx, existente.EntityID)
+	if err != nil || ent.Status != "draft" {
+		return "", false
+	}
+	if !ent.LastExternalMatchAttemptAt.Valid || ent.LastExternalMatchAttemptAt.String == "" {
+		return "", false
+	}
+	tentativa, err := time.Parse(time.RFC3339, ent.LastExternalMatchAttemptAt.String)
+	if err != nil {
+		return "", false
+	}
+	if r.m.agora().Sub(tentativa) < janelaNovaTentativaDraft {
+		return ent.ID, true
+	}
+	return "", false
+}
+
+// carimbarTentativaFaixa records that the network was tried for this track
+// (best-effort: a failure here only costs a retry later, it never breaks the scan).
+func (r *scanRun) carimbarTentativaFaixa(ctx context.Context, faixaID string) {
+	if err := sqlcgen.New(r.m.db.Write).AtualizarTentativaMatchExterno(ctx, faixaID); err != nil {
+		log.Printf("scanner: carimbo da tentativa de match da faixa %s falhou: %v", faixaID, err)
+	}
 }
 
 // resolverFaixa runs the matching pipeline described in the package comment, in
@@ -158,6 +216,13 @@ func (r *scanRun) resolverFaixa(ctx context.Context, path string, tags mediainfo
 		if id, ok := r.importarEAcharPorMbid(ctx, tags, duracaoSegundos, langs); ok {
 			return id, confIDExterno
 		}
+	}
+
+	// The album of this file was already resolved in THIS scan (another file of the
+	// same album came first): the track is picked from the tracklist already in
+	// memory and created locally -- zero requests (ADR-0042).
+	if id, ok := r.matchPorAlbumEmCache(ctx, tags, duracaoSegundos, langs); ok {
+		return id, confMusicaTextual
 	}
 
 	if id, ok := r.matchTextual(ctx, tags, duracaoSegundos, langs); ok {
@@ -238,7 +303,54 @@ func (r *scanRun) resolverArtistaMBID(ctx context.Context, tags mediainfo.AudioT
 // Manager.matchTextualFaixa, extracted so it can be reused by the reconciliation
 // of draft tracks outside a scanRun (reconciliar.go).
 func (r *scanRun) matchTextual(ctx context.Context, tags mediainfo.AudioTags, duracaoSegundos float64, langs []string) (string, bool) {
-	return r.m.matchTextualFaixa(ctx, tags, duracaoSegundos, langs)
+	faixaID, album, ok := r.m.matchTextualFaixa(ctx, tags, duracaoSegundos, langs)
+	if ok && album != nil {
+		r.guardarAlbumNoCache(tags, *album)
+	}
+	return faixaID, ok
+}
+
+// chaveDoAlbum is the cache key of an album inside one scan: the album ARTIST plus the
+// album NAME, normalized -- the two tags every file of the same album shares. A file
+// without album name has no key (it cannot be grouped).
+func chaveDoAlbum(tags mediainfo.AudioTags) string {
+	album := strings.ToLower(strings.TrimSpace(tags.Album))
+	if album == "" {
+		return ""
+	}
+	artista := strings.ToLower(strings.TrimSpace(nomeArtistaDoAlbum(tags)))
+	return artista + "\x00" + album
+}
+
+// guardarAlbumNoCache stores an album already resolved so the NEXT file of it is local.
+func (r *scanRun) guardarAlbumNoCache(tags mediainfo.AudioTags, alb enrich.AlbumImportado) {
+	if chave := chaveDoAlbum(tags); chave != "" {
+		r.albumCache[chave] = alb
+	}
+}
+
+// matchPorAlbumEmCache is the check BEFORE any request: if this album was already
+// resolved in this scan, the track is picked from the tracklist already in memory
+// (escolherFaixaAlvo, the same selection the first file of the album used) and
+// created locally through the enrich. Zero network.
+func (r *scanRun) matchPorAlbumEmCache(ctx context.Context, tags mediainfo.AudioTags, duracaoSegundos float64, langs []string) (string, bool) {
+	chave := chaveDoAlbum(tags)
+	if chave == "" {
+		return "", false
+	}
+	alb, ok := r.albumCache[chave]
+	if !ok {
+		return "", false
+	}
+	alvo := enrich.FaixaAlvo{
+		AlbumNome:       tags.Album,
+		FaixaTitulo:     tags.Title,
+		FaixaNumero:     tags.TrackNumber,
+		FaixaDisco:      tags.DiscNumber,
+		ArtistaNome:     nomeArtistaDoAlbum(tags),
+		DuracaoSegundos: duracaoSegundos,
+	}
+	return r.m.musicaImportador.ImportarFaixaDesteAlbum(ctx, alb, alvo, langs)
 }
 
 // matchTextualFaixa searches the artist by name (album_artist, with a fallback to
@@ -257,12 +369,12 @@ func (r *scanRun) matchTextual(ctx context.Context, tags mediainfo.AudioTags, du
 // in the enrich.FaixaAlvo as an ADDITIONAL confirmation signal
 // (matching.ToleranciaDuracaoSegundos) -- it never decides anything on its own in
 // this method.
-func (m *Manager) matchTextualFaixa(ctx context.Context, tags mediainfo.AudioTags, duracaoSegundos float64, langs []string) (string, bool) {
+func (m *Manager) matchTextualFaixa(ctx context.Context, tags mediainfo.AudioTags, duracaoSegundos float64, langs []string) (string, *enrich.AlbumImportado, bool) {
 	if m.musicaProvider == nil || m.musicaImportador == nil {
-		return "", false
+		return "", nil, false
 	}
 	if tags.Album == "" {
-		return "", false
+		return "", nil, false
 	}
 	alvo := enrich.FaixaAlvo{
 		AlbumNome:       tags.Album,
@@ -273,8 +385,8 @@ func (m *Manager) matchTextualFaixa(ctx context.Context, tags mediainfo.AudioTag
 		DuracaoSegundos: duracaoSegundos,
 	}
 
-	if id, ok := m.matchPorArtista(ctx, tags, alvo, langs); ok {
-		return id, true
+	if id, album, ok := m.matchPorArtista(ctx, tags, alvo, langs); ok {
+		return id, album, true
 	}
 	// Step 4b: the path by ARTIST did not resolve (name missing, tie without
 	// evidence, homonymous artist without this album). It tries the album by
@@ -299,15 +411,15 @@ func nomeArtistaDoAlbum(tags mediainfo.AudioTags) string {
 // first one that works wins -- a tie stops being a give-up and starts being
 // resolved by EVIDENCE (the album that contains the track), without applying
 // anything blindly: if no candidate contains the album, it falls to the next step.
-func (m *Manager) matchPorArtista(ctx context.Context, tags mediainfo.AudioTags, alvo enrich.FaixaAlvo, langs []string) (string, bool) {
+func (m *Manager) matchPorArtista(ctx context.Context, tags mediainfo.AudioTags, alvo enrich.FaixaAlvo, langs []string) (string, *enrich.AlbumImportado, bool) {
 	nomeArtista := nomeArtistaDoAlbum(tags)
 	if nomeArtista == "" {
-		return "", false
+		return "", nil, false
 	}
 	resultados, err := m.musicaProvider.Buscar(ctx, nomeArtista, "artista", "")
 	if err != nil {
 		log.Printf("scanner: busca textual do artista %q falhou: %v", nomeArtista, err)
-		return "", false
+		return "", nil, false
 	}
 	candidatos := make([]candidatoTexto, 0, len(resultados))
 	for _, res := range resultados {
@@ -315,34 +427,34 @@ func (m *Manager) matchPorArtista(ctx context.Context, tags mediainfo.AudioTags,
 	}
 	artistas := melhoresCandidatosTexto(nomeArtista, candidatos)
 	if len(artistas) == 0 {
-		return "", false
+		return "", nil, false
 	}
 	for _, artistaMBID := range artistas {
 		if err := ctx.Err(); err != nil {
-			return "", false
+			return "", nil, false
 		}
-		faixaID, _, err := m.musicaImportador.ImportarFaixaPossuida(ctx, sourceMusicBrainz, artistaMBID, alvo, langs)
+		faixaID, album, _, err := m.musicaImportador.ImportarFaixaPossuidaComAlbum(ctx, sourceMusicBrainz, artistaMBID, alvo, langs)
 		if err != nil {
 			log.Printf("scanner: import escopado (artista %s, album %q) falhou: %v", artistaMBID, tags.Album, err)
 			continue
 		}
 		if faixaID != "" {
-			return faixaID, true
+			return faixaID, album, true
 		}
 	}
-	return "", false
+	return "", nil, false
 }
 
 // matchPorTituloDeAlbum is step 4b: it resolves the album by TITLE in the source
 // and uses its artist-credit (compilations/soundtracks). Silent degradation when
 // the source does not implement the capability -- the caller moves on to step 4.5.
-func (m *Manager) matchPorTituloDeAlbum(ctx context.Context, alvo enrich.FaixaAlvo, langs []string) (string, bool) {
-	faixaID, _, err := m.musicaImportador.ImportarFaixaPorTituloDeAlbum(ctx, sourceMusicBrainz, alvo, langs)
+func (m *Manager) matchPorTituloDeAlbum(ctx context.Context, alvo enrich.FaixaAlvo, langs []string) (string, *enrich.AlbumImportado, bool) {
+	faixaID, album, _, err := m.musicaImportador.ImportarFaixaPorTituloDeAlbumComAlbum(ctx, sourceMusicBrainz, alvo, langs)
 	if err != nil {
 		log.Printf("scanner: import escopado por titulo de album %q falhou: %v", alvo.AlbumNome, err)
-		return "", false
+		return "", nil, false
 	}
-	return faixaID, faixaID != ""
+	return faixaID, album, faixaID != ""
 }
 
 // candidatoTexto is an (id,title) pair candidate to a textual match of the ARTIST
@@ -504,7 +616,23 @@ func (r *scanRun) gravarArquivoMusica(ctx context.Context, q *sqlcgen.Queries, f
 
 	porPath, err := q.ObterMediaFilePorPath(ctx, f.path)
 	if err == nil {
-		return r.atualizarConteudoMudou(ctx, q, porPath, f)
+		if err := r.atualizarConteudoMudou(ctx, q, porPath, f); err != nil {
+			return err
+		}
+		// In music the entity link is DERIVED from the CONTENT (the tags): a file
+		// that changed and now resolves another track has to move its link. The movie
+		// path deliberately preserves `entity_id` (the identity comes from the FOLDER,
+		// which did not change) -- that is why the update above does not touch it.
+		// Without this, a draft file that gets resolved after a retag would keep
+		// pointing at the old draft forever.
+		if porPath.EntityID != f.faixaID {
+			return q.AtualizarMediaFileEntityID(ctx, sqlcgen.AtualizarMediaFileEntityIDParams{
+				EntityID:        f.faixaID,
+				MatchConfidence: nfFloat(f.faixaConf),
+				ID:              porPath.ID,
+			})
+		}
+		return nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return err
