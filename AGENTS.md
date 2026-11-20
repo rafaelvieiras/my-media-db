@@ -106,11 +106,37 @@ A pull request that breaks a principle will probably be rejected.
 
 - Conventional Commits in **English**, imperative, subject of 100 characters or
   fewer. The release pipeline reads them.
-- Docs, comments, and UI copy in English. No AI co-author trailer.
+- No AI co-author trailer.
 - **Secrets never go in the code.** An API key lives in the database (Integrations
   screen, [ADR-0023](docs/adr/0023-integration-config-through-the-ui-wins-over-env.md))
   or in a bootstrap environment variable. The database wins when the owner set the
   value in the UI.
+
+### Language
+
+Publication is the line in the sand. Before it, the project was written in
+Portuguese everywhere — identifiers, comments, docs, file names — because there
+was no audience. That history is real and stays where it is: **do not rename
+existing Portuguese for its own sake.**
+
+What a file must follow **from now on**:
+
+- **New code is English**: function names, parameters, local variables, types,
+  constants, comments, log messages, error strings, test names, mock data.
+- **New files are English**: file names, package names, directories, migration
+  names.
+- **New text is English**: docs, ADRs, README, UI copy, commit subject and body,
+  PR title and description, issue titles and bodies.
+- **Touching a file is an opportunity, not a mandate.** When you rewrite a
+  function or a block anyway, leave it in English (and rename what you rewrote).
+  Do not translate the rest of the file in the same commit.
+- **A rename never travels alone.** A rename that reaches dozens of call sites is
+  its own PR with no behavior change, or it waits.
+- **Portuguese stays allowed for data, never for code**: titles, overviews,
+  taglines, provider payloads and the owner's media in the database.
+
+So a mixed tree is expected. The ratchet is simple: **new code never adds to the
+Portuguese side.**
 
 **Scale and context.**
 

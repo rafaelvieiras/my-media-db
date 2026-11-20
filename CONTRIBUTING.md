@@ -40,7 +40,10 @@ Open a discussion first.
    `feat/incremental-scan`.
 3. **Follow the stack and the style** of the code around you. See
    [docs/03](docs/03-architecture.md).
-4. **Write in English** in code, comments, docs, and commit messages.
+4. **Write in English** in code, comments, docs, and commit messages. The project
+   predates its publication and still carries Portuguese identifiers in older
+   files: leave them unless you are rewriting that code anyway, and see
+   [AGENTS.md](AGENTS.md#language) for the rule.
 5. **Use Conventional Commits**: `type: summary` in the imperative, subject of 100
    characters or fewer. The release pipeline reads these messages to pick the next
    version number, so `feat:` and `fix:` matter.
