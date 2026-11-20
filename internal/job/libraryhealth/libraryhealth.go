@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
+	"github.com/rafaelvieiras/my-media-db/internal/job"
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 	"github.com/rafaelvieiras/my-media-db/internal/scanner"
 )
@@ -52,7 +53,7 @@ type LibraryLister interface {
 // this Handler, without touching the queue -- exactly as the worker would do,
 // only called directly instead of scheduled.
 type ScanRunner interface {
-	Executar(ctx context.Context, refID, trigger string, progresso execqueue.ProgressoFunc) (mensagem string, err error)
+	Executar(ctx context.Context, refID, trigger string, registro execqueue.Registro) (mensagem string, err error)
 	// StorageNaoVideo returns the bytes of NON-video files classified as
 	// managed/unmanaged on the last full sweep of the source -- ok=false if
 	// there has never been a scan. Calculated INSIDE the same WalkDir pass that
@@ -77,14 +78,17 @@ type Contador interface {
 // imports internal/server (it avoids a cycle, since server.Handler is built
 // FROM INSIDE the server, see server.WithLibraryHealthJob).
 type Matcher interface {
-	AutoMatchElegiveis(ctx context.Context) (resolved, pending int, err error)
+	// Both steps receive the queue registrar of the run (ADR-0040) so every
+	// entity they process leaves a row in the trail: "which ones succeeded and
+	// which ones failed" is answered per item, not only as a total.
+	AutoMatchElegiveis(ctx context.Context, registro execqueue.Registro) (resolved, pending int, err error)
 	// EnriquecerRetroativo sweeps the complement of ListarRevisao restricted to
 	// pure local items (no external_ids, never checked against any provider) and
 	// tries to enrich a small batch, throttled per item (a follow-up of the
 	// auto-match): it applies on its own with high confidence, or flags it for
 	// the review queue when it found something plausible but not trustworthy
 	// enough.
-	EnriquecerRetroativo(ctx context.Context) (aplicados, sinalizados int, err error)
+	EnriquecerRetroativo(ctx context.Context, registro execqueue.Registro) (aplicados, sinalizados int, err error)
 	// ReprocessarArtesFaltantes sweeps entities ALREADY identified (with
 	// external_ids) whose art inventory (fanart.tv etc.) was never verified --
 	// and tries again, in a small batch, throttled per item (a complement of the
@@ -167,19 +171,36 @@ func (h *Handler) Nome() string { return nomeJob }
 //
 // An error on ONE source does not abort the others (the same best-effort spirit
 // as RunScheduler); an error is only returned if ALL sources fail.
-func (h *Handler) Executar(ctx context.Context, _ json.RawMessage) (string, error) {
+func (h *Handler) Executar(ctx context.Context, cfg json.RawMessage) (string, error) {
+	// Without a queue behind it (tests, direct call) the narration is discarded;
+	// the pipeline is literally the same method.
+	return h.executar(ctx, cfg, job.NovoProgresso(nil))
+}
+
+// ExecutarComProgresso implements job.HandlerComProgresso (ADR-0040): the same
+// pipeline as Executar, narrating the 7 steps to the queue item so the owner can
+// see where the run is, which source/item it is on and how many items already
+// failed.
+func (h *Handler) ExecutarComProgresso(ctx context.Context, cfg json.RawMessage, p *job.Progresso) (string, error) {
+	return h.executar(ctx, cfg, p)
+}
+
+func (h *Handler) executar(ctx context.Context, _ json.RawMessage, p *job.Progresso) (string, error) {
 	sources, err := h.library.Listar(ctx)
 	if err != nil {
 		return "", fmt.Errorf("listar fontes da biblioteca: %w", err)
 	}
 
-	escaneadas, falhas := h.escanearTodas(ctx, sources)
+	p.Etapa(1, passosSaude, "escanear as fontes")
+	p.Contagem(0, len(sources))
+	escaneadas, falhas := h.escanearTodas(ctx, sources, p)
 	h.atualizarStorage(sources)
 	if len(sources) > 0 && escaneadas == 0 {
 		return "", fmt.Errorf("todas as %d fonte(s) falharam ao escanear: %s",
 			len(sources), strings.Join(falhas, "; "))
 	}
 
+	p.Etapa(2, passosSaude, "contar as filas de curadoria")
 	revisao, err := h.contador.ContarRevisao(ctx)
 	if err != nil {
 		return montarMensagemSemContagem(len(sources), escaneadas, falhas, err), nil
@@ -189,7 +210,8 @@ func (h *Handler) Executar(ctx context.Context, _ json.RawMessage) (string, erro
 		return montarMensagemSemContagem(len(sources), escaneadas, falhas, err), nil
 	}
 
-	resolvidos := h.rodarAutoMatch(ctx)
+	p.Etapa(3, passosSaude, "auto-match em lote")
+	resolvidos := h.rodarAutoMatch(ctx, p.Registro())
 	if resolvidos > 0 {
 		// Recount: the auto-match may have removed items from the queue -- reflect
 		// the FINAL state, not the one from before it ran. An error here degrades
@@ -200,7 +222,8 @@ func (h *Handler) Executar(ctx context.Context, _ json.RawMessage) (string, erro
 		}
 	}
 
-	aplicados, sinalizados := h.rodarEnriquecimentoRetroativo(ctx)
+	p.Etapa(4, passosSaude, "enriquecimento retroativo")
+	aplicados, sinalizados := h.rodarEnriquecimentoRetroativo(ctx, p.Registro())
 	if sinalizados > 0 {
 		// Recount again: items flagged by this step start appearing in the review
 		// queue -- the final summary must also reflect the state after THIS step,
@@ -210,9 +233,12 @@ func (h *Handler) Executar(ctx context.Context, _ json.RawMessage) (string, erro
 		}
 	}
 
+	p.Etapa(5, passosSaude, "reprocessar artes")
 	artesReprocessadas := h.rodarReprocessamentoArtes(ctx)
+	p.Etapa(6, passosSaude, "descobrir arte local de música")
 	arteLocalMusica := h.rodarDescobertaArteLocalMusica(ctx)
 
+	p.Etapa(7, passosSaude, "reconciliar filhos órfãos")
 	reconciliados := h.rodarReconciliacaoFilhosOrfaos(ctx)
 	if reconciliados > 0 {
 		// Recount (same spirit as the resolvidos/sinalizados above): reconciling
@@ -223,6 +249,7 @@ func (h *Handler) Executar(ctx context.Context, _ json.RawMessage) (string, erro
 		}
 	}
 
+	p.Etapa(8, passosSaude, "recalcular completude do catálogo")
 	avaliados, incompletos := h.rodarRecalculoCompletude(ctx)
 
 	return montarMensagem(len(sources), escaneadas, falhas, revisao, orfas, resolvidos, aplicados, sinalizados, artesReprocessadas, arteLocalMusica, reconciliados, avaliados, incompletos), nil
@@ -232,11 +259,11 @@ func (h *Handler) Executar(ctx context.Context, _ json.RawMessage) (string, erro
 // the review queue) and returns how many items were resolved automatically.
 // Best-effort: a failure here does NOT abort the job -- it only logs and returns
 // 0, so the original scan/count summary still comes out.
-func (h *Handler) rodarAutoMatch(ctx context.Context) int {
+func (h *Handler) rodarAutoMatch(ctx context.Context, registro execqueue.Registro) int {
 	if h.matcher == nil {
 		return 0
 	}
-	resolved, _, err := h.matcher.AutoMatchElegiveis(ctx)
+	resolved, _, err := h.matcher.AutoMatchElegiveis(ctx, registro)
 	if err != nil {
 		log.Printf("saude_biblioteca: auto-match em lote falhou (best-effort, ignorado): %v", err)
 		return 0
@@ -250,11 +277,11 @@ func (h *Handler) rodarAutoMatch(ctx context.Context) int {
 // the job -- it only logs and returns (0, 0), so the original summary still
 // comes out. Called AFTER rodarAutoMatch (same order as the pipeline design:
 // re-scan -> batch auto-match -> retroactive enrichment).
-func (h *Handler) rodarEnriquecimentoRetroativo(ctx context.Context) (aplicados, sinalizados int) {
+func (h *Handler) rodarEnriquecimentoRetroativo(ctx context.Context, registro execqueue.Registro) (aplicados, sinalizados int) {
 	if h.matcher == nil {
 		return 0, 0
 	}
-	aplicados, sinalizados, err := h.matcher.EnriquecerRetroativo(ctx)
+	aplicados, sinalizados, err := h.matcher.EnriquecerRetroativo(ctx, registro)
 	if err != nil {
 		log.Printf("saude_biblioteca: enriquecimento retroativo em lote falhou (best-effort, ignorado): %v", err)
 		return 0, 0
@@ -374,16 +401,21 @@ func (h *Handler) UltimoResultadoStorage() (managedBytes, unmanagedBytes int64, 
 // It returns how many finished successfully and the failure messages of the
 // others (source + reason). Best-effort: a failure does not interrupt the
 // following ones.
-func (h *Handler) escanearTodas(ctx context.Context, sources []library.Source) (int, []string) {
+func (h *Handler) escanearTodas(ctx context.Context, sources []library.Source, p *job.Progresso) (int, []string) {
 	escaneadas := 0
 	var falhas []string
-	for _, src := range sources {
-		if err := h.escanearEAguardar(ctx, src); err != nil {
+	for i, src := range sources {
+		p.Item(src.Path)
+		p.Contagem(i, len(sources))
+		if err := h.escanearEAguardar(ctx, src, p); err != nil {
 			falhas = append(falhas, fmt.Sprintf("%s: %v", src.Path, err))
+			p.Falhou(src.Path, err)
 			continue
 		}
+		p.OkDetalhe(src.Path, "varredura concluída")
 		escaneadas++
 	}
+	p.Contagem(len(sources), len(sources))
 	return escaneadas, falhas
 }
 
@@ -392,16 +424,22 @@ func (h *Handler) escanearTodas(ctx context.Context, sources []library.Source) (
 // on ScanRunner for why: enqueueing+waiting here would deadlock against the very
 // worker that is executing this job). There is no more polling: Executar only
 // returns when the scan has actually finished.
-func (h *Handler) escanearEAguardar(ctx context.Context, src library.Source) error {
+func (h *Handler) escanearEAguardar(ctx context.Context, src library.Source, p *job.Progresso) error {
 	// TriggerSchedule is the reasonable approximation: job.Handler.Executar does
 	// not receive today whether it was triggered manually or by schedule
 	// (job.Handler{Nome, Executar} does not carry that datum, and changing that
 	// interface is out of scope for this layer) -- "schedule" is always true in
 	// the sense of being a SYSTEMIC trigger, never literally "the owner clicked
 	// to scan THIS source".
-	_, err := h.scanner.Executar(ctx, src.ID, scanner.TriggerSchedule, nil)
+	// The SAME registro the job is narrating through (ADR-0040): the file-level
+	// progress of this scan is what the owner sees on the job item, not a
+	// separate queue item (the scan runs inline, see the ScanRunner comment).
+	_, err := h.scanner.Executar(ctx, src.ID, scanner.TriggerSchedule, p.Registro())
 	return err
 }
+
+// passosSaude is how many steps the job announces (Etapa index ranges over it).
+const passosSaude = 8
 
 // montarMensagem composes the final success summary: how many sources scanned
 // (with the detail of partial failures, if any) + the current counts of the

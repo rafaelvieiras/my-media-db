@@ -1517,6 +1517,46 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/queue': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * A fila de execução inteira (ADR-0040) — rodando, esperando e recém-finalizados.
+     * @description Uma requisição para a tela de fila: o item em execução (com etapa, item atual, contadores e tempo decorrido), os itens esperando em ordem FIFO (com posição e tempo de espera) e os últimos finalizados (com duração). Cobre kind=scan e kind=job; `ref_label` traz o nome legível da referência. Somente leitura.
+     */
+    get: operations['getQueue']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/queue/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Um item da fila com o rastro por item (o que cada coisa processada fez).
+     * @description O rastro responde "quais tiveram sucesso e quais falharam" depois que a execução terminou: uma linha por item processado (ok/error/skip).
+     */
+    get: operations['getQueueItem']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/webhooks/jellyfin': {
     parameters: {
       query?: never
@@ -2647,6 +2687,14 @@ export interface components {
       files_total: number
       started_at?: string | null
       last_error?: string
+      /** @description Arquivo sendo processado agora, relativo à raiz da fonte (ADR-0040). */
+      current_item?: string | null
+      /** @description Etapa pós-varredura em andamento ("reconciliando pendentes da biblioteca"). */
+      step_label?: string | null
+      /** @description Tempo esperando na fila; null quando nunca esperou. */
+      wait_ms?: number | null
+      /** @description Tempo decorrido desde o início da varredura. */
+      elapsed_ms?: number | null
     }
     StartScan: {
       job_id: string
@@ -2685,7 +2733,7 @@ export interface components {
       /** @enum {string|null} */
       last_status: 'success' | 'error' | null
       last_message: string | null
-      /** @description Estado em memória do Manager — true enquanto uma execução está em andamento. */
+      /** @description true enquanto há uma execução ativa (queued ou running) deste job. */
       running: boolean
     }
     JobList: {
@@ -2712,6 +2760,84 @@ export interface components {
       finished_at: string | null
       /** @description Resultado curto (sucesso) ou erro (falha), sem stack trace. */
       message: string | null
+      /** @description Tempo esperando na fila (enqueued_at -> started_at). null quando ainda não começou. */
+      wait_ms?: number | null
+      /** @description Tempo executando (started_at -> finished_at). null enquanto não terminou. */
+      duration_ms?: number | null
+      /** @description Quantos itens a execução reportou como concluídos (ADR-0040). */
+      ok?: number
+      /** @description Quantos itens a execução reportou como falhos (ADR-0040). */
+      failed?: number
+    }
+    /** @description Um item da fila de execução (ADR-0028/ADR-0040): scan ou job, com os tempos derivados e o rótulo legível da referência. */
+    QueueItem: {
+      id: string
+      /** @enum {string} */
+      kind: 'scan' | 'job'
+      /** @description library_source.id (kind=scan) ou job_definition.id (kind=job). */
+      ref_id: string
+      /** @description Nome legível da referência (nome do job, caminho da fonte); null se a referência já não existe. */
+      ref_label?: string | null
+      /** @enum {string} */
+      trigger: 'manual' | 'schedule' | 'watch'
+      /** @enum {string} */
+      status: 'queued' | 'running' | 'success' | 'error'
+      /** @description Resultado final (sucesso) ou erro da execução. */
+      message?: string | null
+      /** @description Posição na fila (1 = o próximo a rodar). Ausente no item em execução e nos finalizados. */
+      position?: number | null
+      step_label?: string | null
+      step_index: number
+      step_total: number
+      current_item?: string | null
+      done: number
+      total: number
+      ok: number
+      failed: number
+      enqueued_at: string
+      started_at?: string | null
+      finished_at?: string | null
+      /** @description enqueued_at -> started_at. */
+      wait_ms?: number | null
+      /** @description started_at -> finished_at (só para finalizados). */
+      duration_ms?: number | null
+      /** @description started_at -> agora (só para o que está rodando). */
+      elapsed_ms?: number | null
+    }
+    QueueView: {
+      running?: components['schemas']['QueueItem'] | null
+      queued: components['schemas']['QueueItem'][]
+      recent: components['schemas']['QueueItem'][]
+    }
+    /** @description Uma linha do rastro por item (ADR-0040). */
+    QueueEvent: {
+      seq: number
+      at: string
+      /** @enum {string} */
+      status: 'ok' | 'error' | 'skip'
+      label: string
+      detail?: string | null
+    }
+    QueueItemDetail: {
+      item: components['schemas']['QueueItem']
+      events: components['schemas']['QueueEvent'][]
+    }
+    /** @description Progresso ao vivo de UMA execução de job (o mesmo número que a tela de fila mostra). */
+    JobProgress: {
+      /** @enum {string} */
+      status: 'queued' | 'running' | 'success' | 'error'
+      /** @description Rótulo da etapa atual ("enriquecimento retroativo"). */
+      step_label?: string | null
+      step_index: number
+      step_total: number
+      /** @description O que está sendo processado agora (arquivo, título, fonte). */
+      current_item?: string | null
+      done: number
+      total: number
+      ok: number
+      failed: number
+      /** @description Tempo decorrido desde o início; null quando não está rodando. */
+      elapsed_ms?: number | null
     }
     JobExecutionList: {
       items: components['schemas']['JobExecution'][]
@@ -5368,6 +5494,58 @@ export interface operations {
         }
       }
       404: components['responses']['Error']
+    }
+  }
+  getQueue: {
+    parameters: {
+      query?: {
+        /** @description Quantos itens finalizados trazer (default 20). */
+        recent?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description A fila. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['QueueView']
+        }
+      }
+      400: components['responses']['Error']
+      503: components['responses']['Error']
+    }
+  }
+  getQueueItem: {
+    parameters: {
+      query?: {
+        /** @description Quantos eventos do rastro trazer (default 200). */
+        events?: number
+      }
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Item e rastro. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['QueueItemDetail']
+        }
+      }
+      404: components['responses']['Error']
+      503: components['responses']['Error']
     }
   }
   receiveJellyfinWebhook: {

@@ -87,21 +87,19 @@ var (
 	ErrJaEnfileirado = errors.New("execqueue: já existe um item enfileirado (ou em execução) para esta referência")
 )
 
-// ProgressoFunc is the callback a Runner calls during Executar to report
-// intermediate progress — current/total (granularity decided by the Runner
-// itself: per processed file in the case of a scan) and an optional short
-// message. Written on every call (no throttle — see the note on the
-// AtualizarProgressoQueueItem query).
-type ProgressoFunc func(current, total int, message string)
-
 // Runner is the contract that ANY kind of item implements to be executed by
 // the worker — the one that registers a Runner for "scan" and "job" is a
 // LATER layer (this foundation only defines the interface and the registry).
 // Executar must be blocking (the worker is sequential by design: it only
 // calls the next item after this one returns) and must honor ctx.Done() so it
 // can be canceled on process shutdown.
+//
+// registro is where the Runner reports what it is doing (ADR-0040): the
+// snapshot (counters, step, current item) and the per-item trail. It is never
+// nil — when there is no queue behind the Runner, the worker passes a no-op
+// implementation, so a Runner can always call it unconditionally.
 type Runner interface {
-	Executar(ctx context.Context, refID string, trigger string, progresso ProgressoFunc) (mensagemFinal string, err error)
+	Executar(ctx context.Context, refID string, trigger string, registro Registro) (mensagemFinal string, err error)
 }
 
 // Manager keeps the registered Runners and orchestrates the sequential
@@ -249,6 +247,17 @@ type QueueItemStatus struct {
 	EnqueuedAt      string
 	StartedAt       string
 	FinishedAt      string
+
+	// Observability of the run (ADR-0040) -- same meaning as in ItemDaFila.
+	StepLabel      string
+	StepIndex      int
+	StepTotal      int
+	CurrentItem    string
+	ProgressOK     int
+	ProgressFailed int
+	WaitMS         *int64
+	ElapsedMS      *int64
+	DurationMS     *int64
 }
 
 // Status returns the most recent state of the reference (kind, ref_id): the
@@ -277,11 +286,13 @@ func (m *Manager) Status(ctx context.Context, kind, refID string) (*QueueItemSta
 			return nil, fmt.Errorf("execqueue: obter ultimo item: %w", err)
 		}
 	}
-	return queueItemToStatus(item), nil
+	return queueItemToStatus(item, m.agora()), nil
 }
 
-func queueItemToStatus(item sqlcgen.QueueItem) *QueueItemStatus {
-	return &QueueItemStatus{
+func queueItemToStatus(item sqlcgen.QueueItem, agora time.Time) *QueueItemStatus {
+	iniciado := nullString(item.StartedAt)
+	finalizado := nullString(item.FinishedAt)
+	st := &QueueItemStatus{
 		Existe:          true,
 		ID:              item.ID,
 		Kind:            item.Kind,
@@ -292,9 +303,23 @@ func queueItemToStatus(item sqlcgen.QueueItem) *QueueItemStatus {
 		ProgressTotal:   int(item.ProgressTotal),
 		Message:         nullString(item.Message),
 		EnqueuedAt:      item.EnqueuedAt,
-		StartedAt:       nullString(item.StartedAt),
-		FinishedAt:      nullString(item.FinishedAt),
+		StartedAt:       iniciado,
+		FinishedAt:      finalizado,
+		StepLabel:       nullString(item.StepLabel),
+		StepIndex:       int(item.StepIndex),
+		StepTotal:       int(item.StepTotal),
+		CurrentItem:     nullString(item.CurrentItem),
+		ProgressOK:      int(item.ProgressOk),
+		ProgressFailed:  int(item.ProgressFailed),
 	}
+	// Same derivation the queue view uses (fila.go): one definition of duration
+	// per endpoint family, never two.
+	st.WaitMS = DuracaoMS(item.EnqueuedAt, iniciado)
+	st.DurationMS = DuracaoMS(iniciado, finalizado)
+	if item.Status == StatusRunning {
+		st.ElapsedMS = DecorridoMS(iniciado, agora)
+	}
+	return st
 }
 
 func nullString(s sql.NullString) string {
@@ -384,18 +409,7 @@ func (m *Manager) processarProximo(ctx context.Context) (processou bool, err err
 		return true, nil
 	}
 
-	progresso := func(current, total int, message string) {
-		if perr := m.escrita().AtualizarProgressoQueueItem(ctx, sqlcgen.AtualizarProgressoQueueItemParams{
-			ProgressCurrent: int64(current),
-			ProgressTotal:   int64(total),
-			Message:         sql.NullString{String: message, Valid: message != ""},
-			ID:              item.ID,
-		}); perr != nil {
-			log.Printf("execqueue: erro ao gravar progresso de %q: %v", item.ID, perr)
-		}
-	}
-
-	mensagem, execErr := m.executarComRecover(ctx, runner, item, progresso)
+	mensagem, execErr := m.executarComRecover(ctx, runner, item, newRegistro(ctx, m.escrita, item.ID))
 	if execErr != nil {
 		m.finalizar(ctx, item.ID, StatusError, execErr.Error())
 	} else {
@@ -407,13 +421,13 @@ func (m *Manager) processarProximo(ctx context.Context) (processou bool, err err
 // executarComRecover calls Runner.Executar recovering from a panic — it never
 // leaves an item 'running' stuck forever because a Runner panicked (same
 // pattern as scanner.Manager.run / job.Manager.executar).
-func (m *Manager) executarComRecover(ctx context.Context, runner Runner, item sqlcgen.QueueItem, progresso ProgressoFunc) (mensagem string, err error) {
+func (m *Manager) executarComRecover(ctx context.Context, runner Runner, item sqlcgen.QueueItem, registro Registro) (mensagem string, err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			err = fmt.Errorf("pânico durante a execução: %v", rec)
 		}
 	}()
-	return runner.Executar(ctx, item.RefID, item.Trigger, progresso)
+	return runner.Executar(ctx, item.RefID, item.Trigger, registro)
 }
 
 // finalizar moves an item to success/error — best-effort (an error only goes

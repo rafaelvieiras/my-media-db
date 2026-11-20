@@ -104,9 +104,12 @@ type scanRun struct {
 	// processarLotes -- no longer per batch of 25 (that was what made the counter
 	// look stuck on slow music scans, a real finding from the production
 	// validation of the music vertical).
-	progresso  execqueue.ProgressoFunc
+	progresso  execqueue.Registro
 	filesSeen  int
 	filesTotal int
+	// arquivoAtual is the file being processed right now: the value reported as
+	// Progresso.Item so the screen can name it (ADR-0040).
+	arquivoAtual string
 
 	// novos accumulates the entities CREATED in this scan pass, by type, so that
 	// the post-import (movie auto-match, optional materialization) runs AFTER the
@@ -139,19 +142,47 @@ func (r *scanRun) registrarNovo(e entidadeNova) {
 	r.novos = append(r.novos, e)
 }
 
-// reportarProgresso calls the progress callback (if any) with the current state
-// of filesSeen/filesTotal of this execution.
-func (r *scanRun) reportarProgresso() {
-	r.reportarProgressoMSG("")
+// caminhoRelativo trims the library root from a path before reporting it as the
+// current item: the screen is already inside that library, and a full absolute
+// path on every row of the trail would be noise.
+func (r *scanRun) caminhoRelativo(caminho string) string {
+	if rel, err := filepath.Rel(r.source.Path, caminho); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return rel
+	}
+	return caminho
 }
 
-// reportarProgressoMSG is reportarProgresso with a free-form message (used by the
-// post-scan stage so the owner can see what is going on without inventing a file
-// count).
-func (r *scanRun) reportarProgressoMSG(msg string) {
-	if r.progresso != nil {
-		r.progresso(r.filesSeen, r.filesTotal, msg)
+// reportarProgresso reports the current state of filesSeen/filesTotal of this
+// execution, WITH the file being processed right now (ADR-0040: "which item is
+// it on" is the question the owner actually asks while a scan runs).
+func (r *scanRun) reportarProgresso() {
+	r.reportarProgressoArquivo(r.arquivoAtual)
+}
+
+// reportarProgressoArquivo is reportarProgresso for a known file.
+func (r *scanRun) reportarProgressoArquivo(caminho string) {
+	if r.progresso == nil {
+		return
 	}
+	r.arquivoAtual = caminho
+	r.progresso.Progresso(execqueue.Progresso{
+		Atual: r.filesSeen,
+		Total: r.filesTotal,
+		Item:  caminho,
+	})
+}
+
+// reportarProgressoMSG reports the current counters with a STEP label instead of
+// a file (used by the post-scan stages, which have no file count of their own).
+func (r *scanRun) reportarProgressoMSG(msg string) {
+	if r.progresso == nil {
+		return
+	}
+	r.progresso.Progresso(execqueue.Progresso{
+		Atual: r.filesSeen,
+		Total: r.filesTotal,
+		Etapa: msg,
+	})
 }
 
 // fileFacts are the pre-computed facts of a file (outside the write
@@ -188,7 +219,7 @@ type fileFacts struct {
 // executarScan runs the complete pipeline of a datasource. progresso is the
 // execqueue callback called for each processed file -- it may be nil (queue
 // bypass in tests, see scanner_test.go).
-func (m *Manager) executarScan(ctx context.Context, source library.Source, progresso execqueue.ProgressoFunc) error {
+func (m *Manager) executarScan(ctx context.Context, source library.Source, progresso execqueue.Registro) error {
 	r := &scanRun{
 		m:          m,
 		source:     source,
@@ -262,7 +293,7 @@ func (r *scanRun) processarLotes(ctx context.Context, arquivos []string) error {
 		for _, p := range lote {
 			f, err := r.computarFacts(ctx, p)
 			r.filesSeen++
-			r.reportarProgresso()
+			r.reportarProgressoArquivo(r.caminhoRelativo(p))
 			if err != nil {
 				log.Printf("scanner: ignorando %q: %v", p, err)
 				continue

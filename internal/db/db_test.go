@@ -187,16 +187,22 @@ func TestMigrateDown(t *testing.T) {
 		t.Fatalf("Migrate: %v", err)
 	}
 
-	alvo, err := versaoEmbarcada()
-	if err != nil {
-		t.Fatalf("versaoEmbarcada: %v", err)
-	}
+	// The versions below are LITERAL on purpose: each step names the migration it
+	// reverts, and an offset like `alvo-1` would silently start testing the wrong
+	// migration the moment a new one is added (which is exactly what happened
+	// with 0030 -- the whole cascade shifted by one and every assertion failed).
 	// Down reverts one migration at a time, from the top down to the base.
-	downPara(t, d, alvo-1) // 0029: drops the reason/counts columns of the match alert.
+	downPara(t, d, 29) // 0030: removes the queue observability (step/current item/ok/failed columns and queue_item_event).
+	querFalha(t, d, "SELECT 1 FROM queue_item_event",
+		"tabela queue_item_event ainda existe após o down do 0030")
+	querFalha(t, d, "SELECT step_index FROM queue_item",
+		"coluna step_index ainda existe após o down do 0030")
+
+	downPara(t, d, 28) // 0029: drops the reason/counts columns of the match alert.
 	querFalha(t, d, "SELECT reason FROM match_suggestion",
 		"coluna reason ainda existe após o down do 0029")
 
-	downPara(t, d, alvo-2) // 0028: removes match_suggestion (the "did you mean this?" hint).
+	downPara(t, d, 27) // 0028: removes match_suggestion (the "did you mean this?" hint).
 	querFalha(t, d, "SELECT 1 FROM match_suggestion",
 		"tabela match_suggestion ainda existe após o down do 0028")
 

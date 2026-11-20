@@ -61,7 +61,7 @@ func (f *scanFake) StorageNaoVideo(sourceID string) (managedBytes, unmanagedByte
 // Executar simulates the synchronous scan of ONE source: it fails immediately if
 // startErr is configured; otherwise it "runs" for `duracao` (honoring ctx.Done)
 // and fails with runErr, if configured, at the end.
-func (f *scanFake) Executar(ctx context.Context, refID, _ string, _ execqueue.ProgressoFunc) (string, error) {
+func (f *scanFake) Executar(ctx context.Context, refID, _ string, _ execqueue.Registro) (string, error) {
 	if err := f.startErr[refID]; err != nil {
 		return "", err
 	}
@@ -114,12 +114,12 @@ type matcherFake struct {
 	chamadasReconciliar int
 }
 
-func (m *matcherFake) AutoMatchElegiveis(context.Context) (int, int, error) {
+func (m *matcherFake) AutoMatchElegiveis(context.Context, execqueue.Registro) (int, int, error) {
 	m.chamadasAutoMatch++
 	return m.resolved, m.pending, m.err
 }
 
-func (m *matcherFake) EnriquecerRetroativo(context.Context) (int, int, error) {
+func (m *matcherFake) EnriquecerRetroativo(context.Context, execqueue.Registro) (int, int, error) {
 	m.chamadasRetroativo++
 	return m.aplicados, m.sinalizados, m.errRetroativo
 }

@@ -19,32 +19,71 @@ func (q *Queries) ApagarQueueItem(ctx context.Context, id string) error {
 	return err
 }
 
+const apagarQueueItemEventosExcedentes = `-- name: ApagarQueueItemEventosExcedentes :exec
+DELETE FROM queue_item_event AS qie
+WHERE qie.queue_item_id = ?
+  AND qie.seq <= (SELECT COALESCE(MAX(e.seq), 0) FROM queue_item_event e WHERE e.queue_item_id = ?) - ?
+`
+
+type ApagarQueueItemEventosExcedentesParams struct {
+	QueueItemID   string
+	QueueItemID_2 string
+	Seq           int64
+}
+
+// Retention of the trail (ADR-0040): keeps only the N most recent events of an
+// item. Called right after each insert, so the table never grows with the
+// number of files a scan touched.
+func (q *Queries) ApagarQueueItemEventosExcedentes(ctx context.Context, arg ApagarQueueItemEventosExcedentesParams) error {
+	_, err := q.db.ExecContext(ctx, apagarQueueItemEventosExcedentes, arg.QueueItemID, arg.QueueItemID_2, arg.Seq)
+	return err
+}
+
 const atualizarProgressoQueueItem = `-- name: AtualizarProgressoQueueItem :exec
 UPDATE queue_item
 SET progress_current = ?,
     progress_total = ?,
-    message = ?
+    step_index = ?,
+    step_total = ?,
+    step_label = ?,
+    current_item = ?,
+    progress_ok = ?,
+    progress_failed = ?
 WHERE id = ?
 `
 
 type AtualizarProgressoQueueItemParams struct {
 	ProgressCurrent int64
 	ProgressTotal   int64
-	Message         sql.NullString
+	StepIndex       int64
+	StepTotal       int64
+	StepLabel       sql.NullString
+	CurrentItem     sql.NullString
+	ProgressOk      int64
+	ProgressFailed  int64
 	ID              string
 }
 
-// Writes progress_current/progress_total/message on every report from the
-// progress callback during Runner.Executar (ADR-0028: "updates progress_current/
-// message via callback during the execution -- not only at the end"). No throttle:
-// it writes on every call, a decision documented in
-// internal/execqueue/manager.go (simple and correct; optimize only if it becomes
-// a real I/O problem).
+// Writes the WHOLE progress snapshot (counters, step and current item) on every
+// report from the progress callback during Runner.Executar (ADR-0028: "updates
+// progress_current/message via callback during the execution -- not only at the
+// end"; extended by ADR-0040 with step/current_item/ok/failed). One row per
+// report, no history: the trail of finished items lives in queue_item_event.
+// No throttle (same decision documented in internal/execqueue/manager.go);
+// repeated identical reports are filtered in Go before reaching here.
+// `message` is DELIBERATELY not touched: since ADR-0040 it holds only the final
+// result of the run (set by FinalizarQueueItem); the live narration is
+// step_label/current_item.
 func (q *Queries) AtualizarProgressoQueueItem(ctx context.Context, arg AtualizarProgressoQueueItemParams) error {
 	_, err := q.db.ExecContext(ctx, atualizarProgressoQueueItem,
 		arg.ProgressCurrent,
 		arg.ProgressTotal,
-		arg.Message,
+		arg.StepIndex,
+		arg.StepTotal,
+		arg.StepLabel,
+		arg.CurrentItem,
+		arg.ProgressOk,
+		arg.ProgressFailed,
 		arg.ID,
 	)
 	return err
@@ -58,7 +97,8 @@ INSERT INTO queue_item (
     ?, ?, ?, ?
 )
 RETURNING id, kind, ref_id, trigger, status, progress_current, progress_total,
-    message, enqueued_at, started_at, finished_at
+    message, enqueued_at, started_at, finished_at,
+    step_index, step_total, step_label, current_item, progress_ok, progress_failed
 `
 
 type CriarQueueItemParams struct {
@@ -71,6 +111,13 @@ type CriarQueueItemParams struct {
 // Access to queue_item (ADR-0028): unified execution queue
 // for scan and job. Comments in ASCII and explicit columns -- see the note in
 // entity.sql (sqlc v1.31 offset bug with accents/'*' in a query .sql file).
+//
+// COLUMN ORDER: the new observable-progress columns added by ADR-0040
+// (step_index, step_total, step_label, current_item, progress_ok,
+// progress_failed) come LAST in each SELECT, in the exact order the ALTER
+// TABLE gave them in the table -- with the set AND order matching the table
+// sqlc reuses sqlcgen.QueueItem for every query instead of generating a
+// per-query Row type, which keeps the Go call sites unchanged.
 // Enqueues a new item with status 'queued' (Manager.Enqueue, AFTER the
 // dedupe guard has already confirmed there is no active item for the same reference).
 func (q *Queries) CriarQueueItem(ctx context.Context, arg CriarQueueItemParams) (QueueItem, error) {
@@ -93,8 +140,45 @@ func (q *Queries) CriarQueueItem(ctx context.Context, arg CriarQueueItemParams) 
 		&i.EnqueuedAt,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.StepIndex,
+		&i.StepTotal,
+		&i.StepLabel,
+		&i.CurrentItem,
+		&i.ProgressOk,
+		&i.ProgressFailed,
 	)
 	return i, err
+}
+
+const criarQueueItemEvento = `-- name: CriarQueueItemEvento :exec
+INSERT INTO queue_item_event (id, queue_item_id, seq, status, label, detail)
+VALUES (?, ?, (SELECT COALESCE(MAX(e.seq), 0) + 1 FROM queue_item_event e WHERE e.queue_item_id = ?), ?, ?, ?)
+`
+
+type CriarQueueItemEventoParams struct {
+	ID            string
+	QueueItemID   string
+	QueueItemID_2 string
+	Status        string
+	Label         string
+	Detail        sql.NullString
+}
+
+// Appends one row to the per-item trail (ADR-0040): "this item finished with
+// this outcome". seq is assigned by the database (MAX+1 per item) so the reader
+// can order the trail without depending on `at` (two events can share a
+// millisecond). The caller caps the trail right after inserting
+// (ApagarQueueItemEventosExcedentes).
+func (q *Queries) CriarQueueItemEvento(ctx context.Context, arg CriarQueueItemEventoParams) error {
+	_, err := q.db.ExecContext(ctx, criarQueueItemEvento,
+		arg.ID,
+		arg.QueueItemID,
+		arg.QueueItemID_2,
+		arg.Status,
+		arg.Label,
+		arg.Detail,
+	)
+	return err
 }
 
 const finalizarQueueItem = `-- name: FinalizarQueueItem :one
@@ -104,7 +188,8 @@ SET status = ?,
     message = ?
 WHERE id = ?
 RETURNING id, kind, ref_id, trigger, status, progress_current, progress_total,
-    message, enqueued_at, started_at, finished_at
+    message, enqueued_at, started_at, finished_at,
+    step_index, step_total, step_label, current_item, progress_ok, progress_failed
 `
 
 type FinalizarQueueItemParams struct {
@@ -130,6 +215,12 @@ func (q *Queries) FinalizarQueueItem(ctx context.Context, arg FinalizarQueueItem
 		&i.EnqueuedAt,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.StepIndex,
+		&i.StepTotal,
+		&i.StepLabel,
+		&i.CurrentItem,
+		&i.ProgressOk,
+		&i.ProgressFailed,
 	)
 	return i, err
 }
@@ -140,7 +231,8 @@ SET status = 'running',
     started_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ?
 RETURNING id, kind, ref_id, trigger, status, progress_current, progress_total,
-    message, enqueued_at, started_at, finished_at
+    message, enqueued_at, started_at, finished_at,
+    step_index, step_total, step_label, current_item, progress_ok, progress_failed
 `
 
 // queued -> running transition, at the START of processing by the worker.
@@ -159,8 +251,114 @@ func (q *Queries) IniciarQueueItem(ctx context.Context, id string) (QueueItem, e
 		&i.EnqueuedAt,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.StepIndex,
+		&i.StepTotal,
+		&i.StepLabel,
+		&i.CurrentItem,
+		&i.ProgressOk,
+		&i.ProgressFailed,
 	)
 	return i, err
+}
+
+const listarQueueItemEventos = `-- name: ListarQueueItemEventos :many
+SELECT id, queue_item_id, seq, at, status, label, detail
+FROM queue_item_event
+WHERE queue_item_id = ?
+ORDER BY seq
+LIMIT ?
+`
+
+type ListarQueueItemEventosParams struct {
+	QueueItemID string
+	Limit       int64
+}
+
+// Reads the trail of ONE item, oldest first, limited (the API exposes the most
+// recent slice of the trail; the trail itself is already capped at write time).
+func (q *Queries) ListarQueueItemEventos(ctx context.Context, arg ListarQueueItemEventosParams) ([]QueueItemEvent, error) {
+	rows, err := q.db.QueryContext(ctx, listarQueueItemEventos, arg.QueueItemID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []QueueItemEvent{}
+	for rows.Next() {
+		var i QueueItemEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.QueueItemID,
+			&i.Seq,
+			&i.At,
+			&i.Status,
+			&i.Label,
+			&i.Detail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listarQueueItemsAtivos = `-- name: ListarQueueItemsAtivos :many
+SELECT id, kind, ref_id, trigger, status, progress_current, progress_total,
+    message, enqueued_at, started_at, finished_at,
+    step_index, step_total, step_label, current_item, progress_ok, progress_failed
+FROM queue_item
+WHERE status IN ('queued', 'running')
+ORDER BY enqueued_at, id
+`
+
+// The QUEUE VIEW (ADR-0040, issue #62): every item still waiting or running,
+// FIFO by enqueued_at (same order the worker consumes), with `started_at` NULL
+// marking the ones that never ran. The API exposes this as "running" (at most
+// one, concurrency 1) plus "queued" (with their position).
+func (q *Queries) ListarQueueItemsAtivos(ctx context.Context) ([]QueueItem, error) {
+	rows, err := q.db.QueryContext(ctx, listarQueueItemsAtivos)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []QueueItem{}
+	for rows.Next() {
+		var i QueueItem
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.RefID,
+			&i.Trigger,
+			&i.Status,
+			&i.ProgressCurrent,
+			&i.ProgressTotal,
+			&i.Message,
+			&i.EnqueuedAt,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.StepIndex,
+			&i.StepTotal,
+			&i.StepLabel,
+			&i.CurrentItem,
+			&i.ProgressOk,
+			&i.ProgressFailed,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listarQueueItemsExcedentesPorRef = `-- name: ListarQueueItemsExcedentesPorRef :many
@@ -204,7 +402,8 @@ func (q *Queries) ListarQueueItemsExcedentesPorRef(ctx context.Context, arg List
 
 const listarQueueItemsPorKindRef = `-- name: ListarQueueItemsPorKindRef :many
 SELECT id, kind, ref_id, trigger, status, progress_current, progress_total,
-    message, enqueued_at, started_at, finished_at
+    message, enqueued_at, started_at, finished_at,
+    step_index, step_total, step_label, current_item, progress_ok, progress_failed
 FROM queue_item
 WHERE kind = ? AND ref_id = ?
 ORDER BY enqueued_at DESC
@@ -242,6 +441,67 @@ func (q *Queries) ListarQueueItemsPorKindRef(ctx context.Context, arg ListarQueu
 			&i.EnqueuedAt,
 			&i.StartedAt,
 			&i.FinishedAt,
+			&i.StepIndex,
+			&i.StepTotal,
+			&i.StepLabel,
+			&i.CurrentItem,
+			&i.ProgressOk,
+			&i.ProgressFailed,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listarQueueItemsRecentes = `-- name: ListarQueueItemsRecentes :many
+SELECT id, kind, ref_id, trigger, status, progress_current, progress_total,
+    message, enqueued_at, started_at, finished_at,
+    step_index, step_total, step_label, current_item, progress_ok, progress_failed
+FROM queue_item
+WHERE status IN ('success', 'error')
+ORDER BY enqueued_at DESC
+LIMIT ?
+`
+
+// The recent past of the QUEUE VIEW (ADR-0040): the most recently enqueued
+// FINISHED items across every reference, newest first. Finished items are the
+// ones with a duration to show, which is the second half of what the owner
+// asked for.
+func (q *Queries) ListarQueueItemsRecentes(ctx context.Context, limit int64) ([]QueueItem, error) {
+	rows, err := q.db.QueryContext(ctx, listarQueueItemsRecentes, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []QueueItem{}
+	for rows.Next() {
+		var i QueueItem
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.RefID,
+			&i.Trigger,
+			&i.Status,
+			&i.ProgressCurrent,
+			&i.ProgressTotal,
+			&i.Message,
+			&i.EnqueuedAt,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.StepIndex,
+			&i.StepTotal,
+			&i.StepLabel,
+			&i.CurrentItem,
+			&i.ProgressOk,
+			&i.ProgressFailed,
 		); err != nil {
 			return nil, err
 		}
@@ -258,7 +518,8 @@ func (q *Queries) ListarQueueItemsPorKindRef(ctx context.Context, arg ListarQueu
 
 const listarQueueItemsRunning = `-- name: ListarQueueItemsRunning :many
 SELECT id, kind, ref_id, trigger, status, progress_current, progress_total,
-    message, enqueued_at, started_at, finished_at
+    message, enqueued_at, started_at, finished_at,
+    step_index, step_total, step_label, current_item, progress_ok, progress_failed
 FROM queue_item
 WHERE status = 'running'
 `
@@ -288,6 +549,12 @@ func (q *Queries) ListarQueueItemsRunning(ctx context.Context) ([]QueueItem, err
 			&i.EnqueuedAt,
 			&i.StartedAt,
 			&i.FinishedAt,
+			&i.StepIndex,
+			&i.StepTotal,
+			&i.StepLabel,
+			&i.CurrentItem,
+			&i.ProgressOk,
+			&i.ProgressFailed,
 		); err != nil {
 			return nil, err
 		}
@@ -304,7 +571,8 @@ func (q *Queries) ListarQueueItemsRunning(ctx context.Context) ([]QueueItem, err
 
 const obterQueueItemAtivo = `-- name: ObterQueueItemAtivo :one
 SELECT id, kind, ref_id, trigger, status, progress_current, progress_total,
-    message, enqueued_at, started_at, finished_at
+    message, enqueued_at, started_at, finished_at,
+    step_index, step_total, step_label, current_item, progress_ok, progress_failed
 FROM queue_item
 WHERE kind = ? AND ref_id = ? AND status IN ('queued', 'running')
 ORDER BY enqueued_at DESC
@@ -336,13 +604,20 @@ func (q *Queries) ObterQueueItemAtivo(ctx context.Context, arg ObterQueueItemAti
 		&i.EnqueuedAt,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.StepIndex,
+		&i.StepTotal,
+		&i.StepLabel,
+		&i.CurrentItem,
+		&i.ProgressOk,
+		&i.ProgressFailed,
 	)
 	return i, err
 }
 
 const obterQueueItemAtivoPorKindRef = `-- name: ObterQueueItemAtivoPorKindRef :one
 SELECT id, kind, ref_id, trigger, status, progress_current, progress_total,
-    message, enqueued_at, started_at, finished_at
+    message, enqueued_at, started_at, finished_at,
+    step_index, step_total, step_label, current_item, progress_ok, progress_failed
 FROM queue_item
 WHERE kind = ? AND ref_id = ? AND status IN ('queued', 'running')
 ORDER BY enqueued_at DESC
@@ -373,13 +648,20 @@ func (q *Queries) ObterQueueItemAtivoPorKindRef(ctx context.Context, arg ObterQu
 		&i.EnqueuedAt,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.StepIndex,
+		&i.StepTotal,
+		&i.StepLabel,
+		&i.CurrentItem,
+		&i.ProgressOk,
+		&i.ProgressFailed,
 	)
 	return i, err
 }
 
 const obterQueueItemPorId = `-- name: ObterQueueItemPorId :one
 SELECT id, kind, ref_id, trigger, status, progress_current, progress_total,
-    message, enqueued_at, started_at, finished_at
+    message, enqueued_at, started_at, finished_at,
+    step_index, step_total, step_label, current_item, progress_ok, progress_failed
 FROM queue_item
 WHERE id = ?
 `
@@ -399,13 +681,20 @@ func (q *Queries) ObterQueueItemPorId(ctx context.Context, id string) (QueueItem
 		&i.EnqueuedAt,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.StepIndex,
+		&i.StepTotal,
+		&i.StepLabel,
+		&i.CurrentItem,
+		&i.ProgressOk,
+		&i.ProgressFailed,
 	)
 	return i, err
 }
 
 const obterUltimoQueueItemPorKindRef = `-- name: ObterUltimoQueueItemPorKindRef :one
 SELECT id, kind, ref_id, trigger, status, progress_current, progress_total,
-    message, enqueued_at, started_at, finished_at
+    message, enqueued_at, started_at, finished_at,
+    step_index, step_total, step_label, current_item, progress_ok, progress_failed
 FROM queue_item
 WHERE kind = ? AND ref_id = ?
 ORDER BY enqueued_at DESC
@@ -436,13 +725,20 @@ func (q *Queries) ObterUltimoQueueItemPorKindRef(ctx context.Context, arg ObterU
 		&i.EnqueuedAt,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.StepIndex,
+		&i.StepTotal,
+		&i.StepLabel,
+		&i.CurrentItem,
+		&i.ProgressOk,
+		&i.ProgressFailed,
 	)
 	return i, err
 }
 
 const proximoQueueItemPendente = `-- name: ProximoQueueItemPendente :one
 SELECT id, kind, ref_id, trigger, status, progress_current, progress_total,
-    message, enqueued_at, started_at, finished_at
+    message, enqueued_at, started_at, finished_at,
+    step_index, step_total, step_label, current_item, progress_ok, progress_failed
 FROM queue_item
 WHERE status = 'queued'
 ORDER BY enqueued_at, id
@@ -467,6 +763,12 @@ func (q *Queries) ProximoQueueItemPendente(ctx context.Context) (QueueItem, erro
 		&i.EnqueuedAt,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.StepIndex,
+		&i.StepTotal,
+		&i.StepLabel,
+		&i.CurrentItem,
+		&i.ProgressOk,
+		&i.ProgressFailed,
 	)
 	return i, err
 }

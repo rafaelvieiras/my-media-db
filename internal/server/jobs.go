@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 	"github.com/rafaelvieiras/my-media-db/internal/job"
 )
 
@@ -40,8 +41,9 @@ func (s *Server) jobsUnavailable(w http.ResponseWriter) bool {
 	return false
 }
 
-// jobDTO is the shape of ONE item of GET /jobs: it mirrors job_definition +
-// `running` (in-memory state of the Manager, ephemeral by design).
+// jobDTO is the shape of ONE item of GET /jobs: it mirrors job_definition, plus
+// the live state that comes from the execution queue (ADR-0040, issue #62):
+// `running`, the progress of the current/last run and how long that run took.
 type jobDTO struct {
 	ID           string  `json:"id"`
 	Nome         string  `json:"nome"`
@@ -53,6 +55,28 @@ type jobDTO struct {
 	LastStatus   *string `json:"last_status"`
 	LastMessage  *string `json:"last_message"`
 	Running      bool    `json:"running"`
+	// LastDurationMS is how long the last FINISHED run took (started -> finished).
+	LastDurationMS *int64 `json:"last_duration_ms"`
+	// Progress is the state of the active run (or of the last finished one, when
+	// the job is idle): step, current item, counters and elapsed time. Nil when
+	// the job never ran.
+	Progress *jobProgressDTO `json:"progress"`
+}
+
+// jobProgressDTO is the live progress of ONE job run — the same numbers the
+// queue screen shows, so the owner does not have to open two screens to know
+// what a job is doing.
+type jobProgressDTO struct {
+	Status      string  `json:"status"`
+	StepLabel   *string `json:"step_label"`
+	StepIndex   int     `json:"step_index"`
+	StepTotal   int     `json:"step_total"`
+	CurrentItem *string `json:"current_item"`
+	Done        int     `json:"done"`
+	Total       int     `json:"total"`
+	OK          int     `json:"ok"`
+	Failed      int     `json:"failed"`
+	ElapsedMS   *int64  `json:"elapsed_ms"`
 }
 
 // jobListDTO is the body of GET /jobs.
@@ -69,6 +93,14 @@ type jobExecutionDTO struct {
 	StartedAt  string  `json:"started_at"`
 	FinishedAt *string `json:"finished_at"`
 	Message    *string `json:"message"`
+	// Durations of the run (ADR-0040): how long it waited in the queue and how
+	// long it actually ran. Nil when the corresponding stamps do not exist.
+	WaitMS     *int64 `json:"wait_ms"`
+	DurationMS *int64 `json:"duration_ms"`
+	// Failed is how many items the run reported as failed (the trail length of
+	// each outcome is in GET /queue/{id}).
+	OK     int `json:"ok"`
+	Failed int `json:"failed"`
 }
 
 // jobExecutionListDTO is the body of GET /jobs/{id}/executions.
@@ -93,10 +125,10 @@ func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {
 		respondErroInterno(w)
 		return
 	}
-	rodando := s.jobs.Rodando()
+	estados := s.jobs.EstadoDasExecucoes(r.Context())
 	items := make([]jobDTO, 0, len(defs))
 	for _, def := range defs {
-		items = append(items, jobToDTO(def, rodando[def.ID]))
+		items = append(items, jobToDTO(def, estados[def.ID]))
 	}
 	writeJSON(w, http.StatusOK, jobListDTO{Items: items})
 }
@@ -135,7 +167,7 @@ func (s *Server) patchJob(w http.ResponseWriter, r *http.Request) {
 		respondJobError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, jobToDTO(def, s.jobs.Rodando()[def.ID]))
+	writeJSON(w, http.StatusOK, jobToDTO(def, s.jobs.EstadoDasExecucoes(r.Context())[def.ID]))
 }
 
 // parseJobConfigPatch interprets the RAW map of the PATCH /jobs/{id} body into a
@@ -257,8 +289,8 @@ func parseJobLimit(w http.ResponseWriter, q url.Values) (int, bool) {
 
 // ── Conversion to DTO ──────────────────────────────────────────────────────
 
-func jobToDTO(def sqlcgen.JobDefinition, running bool) jobDTO {
-	return jobDTO{
+func jobToDTO(def sqlcgen.JobDefinition, estado *execqueue.QueueItemStatus) jobDTO {
+	dto := jobDTO{
 		ID:           def.ID,
 		Nome:         def.Nome,
 		Descricao:    nsPtr(def.Descricao),
@@ -268,8 +300,25 @@ func jobToDTO(def sqlcgen.JobDefinition, running bool) jobDTO {
 		LastRunAt:    nsPtr(def.LastRunAt),
 		LastStatus:   nsPtr(def.LastStatus),
 		LastMessage:  nsPtr(def.LastMessage),
-		Running:      running,
 	}
+	if estado == nil {
+		return dto
+	}
+	dto.Running = estado.Status == execqueue.StatusQueued || estado.Status == execqueue.StatusRunning
+	dto.LastDurationMS = estado.DurationMS
+	dto.Progress = &jobProgressDTO{
+		Status:      estado.Status,
+		StepLabel:   stringPtrOuNulo(estado.StepLabel),
+		StepIndex:   estado.StepIndex,
+		StepTotal:   estado.StepTotal,
+		CurrentItem: stringPtrOuNulo(estado.CurrentItem),
+		Done:        estado.ProgressCurrent,
+		Total:       estado.ProgressTotal,
+		OK:          estado.ProgressOK,
+		Failed:      estado.ProgressFailed,
+		ElapsedMS:   estado.ElapsedMS,
+	}
+	return dto
 }
 
 // execToDTO converts a sqlcgen.QueueItem (kind='job') into the usual shape of
@@ -292,6 +341,7 @@ func execToDTO(e sqlcgen.QueueItem) jobExecutionDTO {
 	if e.StartedAt.Valid {
 		startedAt = e.StartedAt.String
 	}
+	iniciadoReal := nsPtr(e.StartedAt)
 	return jobExecutionDTO{
 		ID:         e.ID,
 		JobID:      e.RefID,
@@ -300,6 +350,11 @@ func execToDTO(e sqlcgen.QueueItem) jobExecutionDTO {
 		StartedAt:  startedAt,
 		FinishedAt: nsPtr(e.FinishedAt),
 		Message:    nsPtr(e.Message),
+		// Durations use the REAL stamps (not the enqueued_at fallback above).
+		WaitMS:     execqueue.DuracaoMS(e.EnqueuedAt, valorOuVazio(iniciadoReal)),
+		DurationMS: execqueue.DuracaoMS(valorOuVazio(iniciadoReal), valorOuVazio(nsPtr(e.FinishedAt))),
+		OK:         int(e.ProgressOk),
+		Failed:     int(e.ProgressFailed),
 	}
 }
 

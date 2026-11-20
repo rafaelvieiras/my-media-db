@@ -374,3 +374,12 @@ documented in the organizer's own code). Full detail in
   **lefthook** (polyglot) instead of husky. It runs on the local `pre-push` and on the PR (blocks
   regression + comments). Promoting the Go collectors to the upstream boatman stays as
   follow-up. Documented in [ADR-0016](adr/0016-unified-quality-gate-ratchet.md).
+- **Q1 — The execution queue is observable** (2026-11-19, issue #62). A run has to answer
+  "where is it, what is it on, what is left, what already failed, how long did it take" — for
+  scans and jobs alike. Decision: the queue owns the observability, in its own vocabulary
+  (principle 3, no per-job tables): a **snapshot** in `queue_item` (`step_*`, `current_item`,
+  `progress_ok/failed`), a **bounded trail** in `queue_item_event` (one row per finished item,
+  200 per run), an optional `job.HandlerComProgresso` capability so a handler narrates without
+  breaking the ones that do not, and durations **derived** from the timestamps (one definition,
+  reused by every endpoint). Two read endpoints: `GET /queue` and `GET /queue/{id}`. Recorded in
+  [ADR-0040](adr/0040-queue-observability.md).

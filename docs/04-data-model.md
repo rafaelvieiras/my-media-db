@@ -196,6 +196,32 @@ fact** (e.g.: an `ffprobe` false-positive HDR) through the same mechanism. The
 originally detected data remains in `media_file` (non-destructive); the override merely
 sits on top during composition. It is an exception use, not routine use.
 
+## The execution queue
+
+`queue_item` is the single source of truth for every scan and every job
+([ADR-0028](adr/0028-unified-execution-queue-scan-and-jobs.md)), one row per run:
+
+| Column | Meaning |
+|---|---|
+| `kind`, `ref_id` | `scan` (a `library_source.id`) or `job` (a `job_definition.id`) |
+| `trigger` | `manual`, `schedule` or `watch` |
+| `status` | linear lifecycle: `queued → running → success \| error` |
+| `progress_current/total` | items seen of items known, for the current step |
+| `step_index/step_total/step_label` | where in the run's pipeline it is (`0/0` = no steps) |
+| `current_item` | what is being processed right now (path, title, source) |
+| `progress_ok/progress_failed` | items that succeeded/failed in this run |
+| `message` | the **final** result only (a live narration goes to `step_label`/`current_item`) |
+| `enqueued_at`, `started_at`, `finished_at` | the three stamps every duration is derived from |
+
+`queue_item_event` is the **bounded trail** behind "which items failed": one row per item a
+runner finished (`status` ∈ `ok, error, skip`, a free-text `label`, an optional `detail`),
+`seq` ordered per item and capped at 200 rows per run, pruned at write time
+([ADR-0040](adr/0040-queue-observability.md)). It shares the lifecycle of its parent
+(`ON DELETE CASCADE`) and never outlives the retained history.
+
+Durations are **not** columns: `wait_ms`, `elapsed_ms` and `duration_ms` are derived from the
+three stamps, so a stored value can never disagree with them.
+
 ## `extension_data` — per-vertical extension
 
 Fields that are not universal (e.g.: an episode's `season_number`; in the future a

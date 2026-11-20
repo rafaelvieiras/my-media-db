@@ -245,4 +245,20 @@ type QueueItem struct {
 	EnqueuedAt      string
 	StartedAt       sql.NullString
 	FinishedAt      sql.NullString
+	StepIndex       int64
+	StepTotal       int64
+	StepLabel       sql.NullString
+	CurrentItem     sql.NullString
+	ProgressOk      int64
+	ProgressFailed  int64
+}
+
+type QueueItemEvent struct {
+	ID          string
+	QueueItemID string
+	Seq         int64
+	At          string
+	Status      string
+	Label       string
+	Detail      sql.NullString
 }

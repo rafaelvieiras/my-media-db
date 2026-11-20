@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
+	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 	"github.com/rafaelvieiras/my-media-db/internal/mediainfo"
 )
@@ -96,7 +97,7 @@ func (f libraryGetterFake) Obter(context.Context, string) (library.Source, error
 // call Manager.Executar directly and do not care about the intermediate reporting
 // (see TestExecutarReportaProgressoPorArquivo, which DOES care and uses its own
 // callback).
-func progressoNoOp(int, int, string) {}
+var progressoNoOp = execqueue.RegistroNulo()
 
 // scanSync runs the scan pipeline synchronously, bypassing the queue (execqueue):
 // it calls Manager.Executar directly -- which resolves `src` through a fake

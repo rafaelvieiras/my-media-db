@@ -24,6 +24,13 @@ type scanStatusResponse struct {
 	FilesTotal int     `json:"files_total"`
 	StartedAt  *string `json:"started_at"`
 	LastError  *string `json:"last_error,omitempty"`
+	// Observability of the run (ADR-0040): the file being processed right now,
+	// the post-scan stage, how long it waited in the queue and how long it has
+	// been running. Same numbers the queue screen shows.
+	CurrentItem *string `json:"current_item"`
+	StepLabel   *string `json:"step_label"`
+	WaitMS      *int64  `json:"wait_ms"`
+	ElapsedMS   *int64  `json:"elapsed_ms"`
 }
 
 // startScan handles POST /api/v1/library/{id}/scan: it triggers the scan in the
@@ -72,6 +79,20 @@ func (s *Server) getScanStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	if st.LastError != "" {
 		resp.LastError = &st.LastError
+	}
+	if st.CurrentItem != "" {
+		resp.CurrentItem = &st.CurrentItem
+	}
+	if st.StepLabel != "" {
+		resp.StepLabel = &st.StepLabel
+	}
+	if st.Wait > 0 {
+		ms := st.Wait.Milliseconds()
+		resp.WaitMS = &ms
+	}
+	if st.Elapsed > 0 {
+		ms := st.Elapsed.Milliseconds()
+		resp.ElapsedMS = &ms
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
