@@ -309,12 +309,31 @@ function falhou(key, stdout, stderr, message) {
 
 // ─── Go collectors (run at the root) ─────────────────────────────────────────
 
+// Os pacotes Go DESTE módulo, sem os que chegam dentro de web/node_modules.
+// O pacote npm `flatted` traz um arquivo Go, e para o toolchain ele é um pacote do NOSSO módulo:
+// `./...` o inclui, e ele entrava na cobertura como ~160 statements nunca cobertos (1,0 ponto
+// percentual), era lintado e auditado como se fosse nosso. O job Go do CI NÃO instala
+// web/node_modules, então lá o número sempre esteve certo — sem esta lista, `make gate-local`
+// (que roda no pre-push) media um projeto diferente do que o CI mede e barrava o push.
+let pacotesGoCache;
+async function pacotesGo() {
+  if (pacotesGoCache !== undefined) return pacotesGoCache;
+  const r = await runAsync('go list ./...');
+  const pkgs = r.code === 0 ? r.stdout.trim().split('\n').filter((p) => p && !p.includes('/web/node_modules/')) : [];
+  pacotesGoCache = pkgs.length > 0 ? pkgs : null;
+  return pacotesGoCache;
+}
+
 // Coverage: go test -coverprofile → go tool cover -func → total %.
 // go test/gofmt always exist (they ship with Go). If the tests fail to
 // compile/run, the metric becomes FALHOU (blocking) — it never crashes.
 async function collectGoCoverage() {
   const profile = join(REPORTS, 'go-coverage.out');
-  const t = await runAsync(`go test ./... -coverprofile="${profile}" -covermode=set`);
+  const pkgs = await pacotesGo();
+  if (!pkgs) {
+    return falhou('go_coverage_lines', '', '', 'go list não devolveu pacotes — cobertura NÃO MEDIDA (bloqueante):');
+  }
+  const t = await runAsync(`go test ${pkgs.join(' ')} -coverprofile="${profile}" -covermode=set`);
   if (t.code !== 0) {
     return falhou('go_coverage_lines', t.stdout, t.stderr, 'go test falhou — cobertura NÃO MEDIDA (bloqueante):');
   }
@@ -394,7 +413,11 @@ async function collectGolangciLint() {
   const out = join(REPORTS, 'golangci.json');
   // We write the JSON to a file (not to stdout) because golangci-lint v2
   // also prints a human summary ("N issues.") to stdout, which would dirty the JSON.
-  const r = await runAsync(`golangci-lint run --config .golangci.yml --output.json.path "${out}" ./...`);
+  const pkgs = await pacotesGo();
+  if (!pkgs) {
+    return falhou('go_lint_issues', '', '', 'go list não devolveu pacotes — lint NÃO MEDIDO (bloqueante):');
+  }
+  const r = await runAsync(`golangci-lint run --config .golangci.yml --output.json.path "${out}" ${pkgs.join(' ')}`);
   // exit 1 = found issues (expected); it is only a real failure if the file does
   // not exist.
   if (!existsSync(out)) {
@@ -419,7 +442,11 @@ async function collectGovulncheck() {
     warn('govulncheck não está no PATH — métrica "go_vuln_high" pulada (instale com: go install golang.org/x/vuln/cmd/govulncheck@latest)');
     return null;
   }
-  const r = await runAsync('govulncheck -json ./...');
+  const pkgs = await pacotesGo();
+  if (!pkgs) {
+    return falhou('go_vuln_high', '', '', 'go list não devolveu pacotes — vulnerabilidades NÃO MEDIDAS (bloqueante):');
+  }
+  const r = await runAsync(`govulncheck -json ${pkgs.join(' ')}`);
   if (r.code !== 0 && !r.stdout.trim()) {
     return falhou('go_vuln_high', r.stdout, r.stderr, 'govulncheck falhou sem saída — vulnerabilidades NÃO MEDIDAS (bloqueante):');
   }
