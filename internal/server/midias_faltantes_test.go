@@ -1488,3 +1488,69 @@ func TestGravarNFOEpisodiosErroDeEscrita(t *testing.T) {
 		t.Error("gravarNFOEpisodios sem erro, quero o erro de escrita propagado")
 	}
 }
+
+// semearEpisodioSemNumero seeds a series and ONE episode that the tree cannot number (no season
+// link, so both season and episode come back as 0) -- 430 of those exist in the owner's library,
+// written by whichever manager indexed them.
+func semearEpisodioSemNumero(t *testing.T, d *db.DB) (video string) {
+	t.Helper()
+	semearEntity(t, d, "s1", "tv", "Serie")
+	semearEntity(t, d, "e1", "episode", "Especial")
+	ligarFilhoOrdenado(t, d, "r-e1", "s1", "e1", "tv_episode", 0)
+	libRoot := t.TempDir()
+	video = filepath.Join(libRoot, "Season 01", "Serie - Especial.mkv")
+	semearFile(t, d, "mf1", "s1", video, "present", 0.9, "")
+	if err := escrita(t, d).CriarVinculoEntidade(context.Background(), sqlcgen.CriarVinculoEntidadeParams{
+		MediaFileID: "mf1", EntityID: "e1", Kind: "tv_episode", Ordinal: 0,
+	}); err != nil {
+		t.Fatalf("CriarVinculoEntidade: %v", err)
+	}
+	return video
+}
+
+// TestMaterializarMidiasFaltantesEpisodioSemNumeroMantemONumeroDoArquivo cobre a regra de
+// numeracao do bloco: quando a arvore NAO sabe a temporada/episodio (ambos 0), vale o numero que
+// o arquivo ja declara. O contrario -- omitir a tag porque o modelo nao sabe -- faz o arquivo
+// divergir do documento em TODA execucao: o job reescreveria 360 arquivos por run para nao dizer
+// nada de novo, e o numero que o Kodi le desapareceria.
+func TestMaterializarMidiasFaltantesEpisodioSemNumeroMantemONumeroDoArquivo(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	video := semearEpisodioSemNumero(t, d)
+	nfoPath := localmedia.CaminhoNFODeVideo(video)
+	ctx := context.Background()
+
+	if _, _, err := srv.MaterializarMidiasFaltantes(ctx, "e1"); err != nil {
+		t.Fatalf("1a chamada: %v", err)
+	}
+	corpo, err := os.ReadFile(nfoPath)
+	if err != nil {
+		t.Fatalf("ler %s: %v", nfoPath, err)
+	}
+	if strings.Contains(string(corpo), "<episode>") {
+		t.Fatalf("sem numero na arvore e sem arquivo previo, nao quero <episode> no documento:\n%s", corpo)
+	}
+	// O arquivo ganha a numeracao que o gerenciador anterior tinha (o caso real da biblioteca).
+	editado := strings.Replace(string(corpo), "</episodedetails>",
+		"  <season>4</season>\n  <episode>11</episode>\n</episodedetails>", 1)
+	if err := localmedia.EscreverArquivoAtomico(nfoPath, []byte(editado)); err != nil {
+		t.Fatalf("escrever editado: %v", err)
+	}
+
+	_, nfoGravado, err := srv.MaterializarMidiasFaltantes(ctx, "e1")
+	if err != nil {
+		t.Fatalf("2a chamada: %v", err)
+	}
+	if nfoGravado {
+		t.Error("nfoGravado = true, quero false (o arquivo ja diz o que o documento diria)")
+	}
+	final, err := os.ReadFile(nfoPath)
+	if err != nil {
+		t.Fatalf("reler %s: %v", nfoPath, err)
+	}
+	if !strings.Contains(string(final), "<episode>11</episode>") {
+		t.Errorf("o numero do arquivo foi perdido:\n%s", final)
+	}
+	if !strings.Contains(string(final), "<season>4</season>") {
+		t.Errorf("a temporada do arquivo foi perdida:\n%s", final)
+	}
+}

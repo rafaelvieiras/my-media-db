@@ -70,11 +70,12 @@ func (s *Server) documentoNFODeEpisodios(ctx context.Context, ent sqlcgen.Entity
 		if !encontrada {
 			continue // defensive: a row of the junction without an entity cannot happen
 		}
+		temporada, episodio := numeracaoDoBloco(linha, blocosExistentes, indice)
 		blocos = append(blocos, localmedia.BlocoEpisodioNFO{
 			Entidade:  resolvida,
-			Temporada: int(linha.Temporada),
-			Episodio:  int(linha.Episodio),
-			Usuario:   camposDoBloco(blocosExistentes, int(linha.Temporada), int(linha.Episodio), indice, legado),
+			Temporada: temporada,
+			Episodio:  episodio,
+			Usuario:   camposDoBloco(blocosExistentes, temporada, episodio, indice, legado),
 		})
 		irmaos = append(irmaos, irmao)
 	}
@@ -87,6 +88,27 @@ func (s *Server) documentoNFODeEpisodios(ctx context.Context, ent sqlcgen.Entity
 		return "", nil, nil, err
 	}
 	return destino, corpo, irmaos, nil
+}
+
+// numeracaoDoBloco answers "which season/episode number goes into this block": the one in the model
+// (ADR-0021: entity_relation.sort_index) when it EXISTS, and otherwise the one the file already
+// declares at that position.
+//
+// The second half is not a detail. 430 episodes of the owner's library carry no season/episode at
+// all in the tree (both 0), and the old code already wrote those files: their .nfo has real
+// numbers, put there by whichever manager indexed them. Omitting the tags "because the model does
+// not know" would make every one of those files diverge from the document -- the job would rewrite
+// 360 files on every single run, forever, to say nothing new. Taking the number the file has makes
+// the document converge and changes nothing the media server reads.
+func numeracaoDoBloco(linha sqlcgen.ListarEpisodiosDoMediaFileRow, existentes []localmedia.BlocoUsuarioNFO, indice int) (temporada, episodio int) {
+	temporada, episodio = int(linha.Temporada), int(linha.Episodio)
+	if temporada > 0 && episodio > 0 {
+		return temporada, episodio
+	}
+	if indice < len(existentes) {
+		return existentes[indice].Temporada, existentes[indice].Episodio
+	}
+	return 0, 0
 }
 
 // camposDoBloco picks the preserved user fields of one episode of the file: the block that
