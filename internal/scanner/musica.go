@@ -303,9 +303,9 @@ func (r *scanRun) resolverArtistaMBID(ctx context.Context, tags mediainfo.AudioT
 // Manager.matchTextualFaixa, extracted so it can be reused by the reconciliation
 // of draft tracks outside a scanRun (reconciliar.go).
 func (r *scanRun) matchTextual(ctx context.Context, tags mediainfo.AudioTags, duracaoSegundos float64, langs []string) (string, bool) {
-	faixaID, album, ok := r.m.matchTextualFaixa(ctx, tags, duracaoSegundos, langs)
+	faixaID, album, ok := r.m.matchTextualFaixa(ctx, tags, duracaoSegundos, langs, r.albuns)
 	if ok && album != nil {
-		r.guardarAlbumNoCache(tags, *album)
+		r.albuns.guardarResolvido(chaveDoAlbum(tags), *album)
 	}
 	return faixaID, ok
 }
@@ -322,11 +322,69 @@ func chaveDoAlbum(tags mediainfo.AudioTags) string {
 	return artista + "\x00" + album
 }
 
-// guardarAlbumNoCache stores an album already resolved so the NEXT file of it is local.
-func (r *scanRun) guardarAlbumNoCache(tags mediainfo.AudioTags, alb enrich.AlbumImportado) {
-	if chave := chaveDoAlbum(tags); chave != "" {
-		r.albumCache[chave] = alb
+// cacheDeAlbuns is what ONE scan remembers about albums, both ways: which albums
+// were already RESOLVED (tracklist in memory, zero requests for the rest of the
+// folder) and which ARTISTS were already asked about an album and had no such
+// album (zero requests for the rest of the folder, in this scan).
+//
+// The second half is the one that pays in the field. Measured on a real library:
+// a folder whose tracks do NOT resolve paid 3 artist candidates x 2-3 requests
+// (maxCandidatosArtista, 1 req/s) for EVERY file, because only success was
+// remembered -- the fifth file of a release re-asked exactly what the first four
+// had already answered, wrong artist included. A failure is now a fact of the
+// SCAN (an artist has no album with that name), not of the file, so it is safe to
+// reuse: it cannot change between two files of the same folder that were probed
+// seconds apart.
+type cacheDeAlbuns struct {
+	// resolvidos is the album entity + tracklist of each album key.
+	resolvidos map[string]enrich.AlbumImportado
+	// porArtista maps "artist MBID + album key" to the album it resolved to ("" =
+	// this artist has no album with that name). A candidate recorded here is never
+	// asked again in this scan.
+	porArtista map[string]string
+}
+
+func novoCacheDeAlbuns() *cacheDeAlbuns {
+	return &cacheDeAlbuns{
+		resolvidos: make(map[string]enrich.AlbumImportado),
+		porArtista: make(map[string]string),
 	}
+}
+
+// guardarResolvido stores an album already resolved so the NEXT file of it is local.
+func (c *cacheDeAlbuns) guardarResolvido(chave string, alb enrich.AlbumImportado) {
+	if c == nil || chave == "" {
+		return
+	}
+	c.resolvidos[chave] = alb
+}
+
+// resolvido returns the album already resolved for this key, if any.
+func (c *cacheDeAlbuns) resolvido(chave string) (enrich.AlbumImportado, bool) {
+	if c == nil {
+		return enrich.AlbumImportado{}, false
+	}
+	alb, ok := c.resolvidos[chave]
+	return alb, ok
+}
+
+// albumDoArtista returns what is already known about (artist, album): ok reports
+// whether it was asked before, albumID is "" when that artist has no such album.
+func (c *cacheDeAlbuns) albumDoArtista(artistaMBID, chave string) (albumID string, ok bool) {
+	if c == nil || artistaMBID == "" || chave == "" {
+		return "", false
+	}
+	albumID, ok = c.porArtista[artistaMBID+"\x00"+chave]
+	return albumID, ok
+}
+
+// guardarAlbumDoArtista records the answer for that candidate. albumID "" means the
+// artist has no album with that name.
+func (c *cacheDeAlbuns) guardarAlbumDoArtista(artistaMBID, chave, albumID string) {
+	if c == nil || artistaMBID == "" || chave == "" {
+		return
+	}
+	c.porArtista[artistaMBID+"\x00"+chave] = albumID
 }
 
 // matchPorAlbumEmCache is the check BEFORE any request: if this album was already
@@ -338,7 +396,7 @@ func (r *scanRun) matchPorAlbumEmCache(ctx context.Context, tags mediainfo.Audio
 	if chave == "" {
 		return "", false
 	}
-	alb, ok := r.albumCache[chave]
+	alb, ok := r.albuns.resolvido(chave)
 	if !ok {
 		return "", false
 	}
@@ -369,7 +427,7 @@ func (r *scanRun) matchPorAlbumEmCache(ctx context.Context, tags mediainfo.Audio
 // in the enrich.FaixaAlvo as an ADDITIONAL confirmation signal
 // (matching.ToleranciaDuracaoSegundos) -- it never decides anything on its own in
 // this method.
-func (m *Manager) matchTextualFaixa(ctx context.Context, tags mediainfo.AudioTags, duracaoSegundos float64, langs []string) (string, *enrich.AlbumImportado, bool) {
+func (m *Manager) matchTextualFaixa(ctx context.Context, tags mediainfo.AudioTags, duracaoSegundos float64, langs []string, cache *cacheDeAlbuns) (string, *enrich.AlbumImportado, bool) {
 	if m.musicaProvider == nil || m.musicaImportador == nil {
 		return "", nil, false
 	}
@@ -385,7 +443,7 @@ func (m *Manager) matchTextualFaixa(ctx context.Context, tags mediainfo.AudioTag
 		DuracaoSegundos: duracaoSegundos,
 	}
 
-	if id, album, ok := m.matchPorArtista(ctx, tags, alvo, langs); ok {
+	if id, album, ok := m.matchPorArtista(ctx, tags, alvo, langs, cache); ok {
 		return id, album, true
 	}
 	// Step 4b: the path by ARTIST did not resolve (name missing, tie without
@@ -411,7 +469,7 @@ func nomeArtistaDoAlbum(tags mediainfo.AudioTags) string {
 // first one that works wins -- a tie stops being a give-up and starts being
 // resolved by EVIDENCE (the album that contains the track), without applying
 // anything blindly: if no candidate contains the album, it falls to the next step.
-func (m *Manager) matchPorArtista(ctx context.Context, tags mediainfo.AudioTags, alvo enrich.FaixaAlvo, langs []string) (string, *enrich.AlbumImportado, bool) {
+func (m *Manager) matchPorArtista(ctx context.Context, tags mediainfo.AudioTags, alvo enrich.FaixaAlvo, langs []string, cache *cacheDeAlbuns) (string, *enrich.AlbumImportado, bool) {
 	nomeArtista := nomeArtistaDoAlbum(tags)
 	if nomeArtista == "" {
 		return "", nil, false
@@ -429,16 +487,39 @@ func (m *Manager) matchPorArtista(ctx context.Context, tags mediainfo.AudioTags,
 	if len(artistas) == 0 {
 		return "", nil, false
 	}
+	chave := chaveDoAlbum(tags)
 	for _, artistaMBID := range artistas {
 		if err := ctx.Err(); err != nil {
 			return "", nil, false
 		}
+		// This candidate was already asked about this album IN THIS SCAN: the answer
+		// is a fact of the (artist, album) pair, not of the file. When the album
+		// exists, the local attempt of matchPorAlbumEmCache already looked for this
+		// track inside that very album and did not find it -- asking again would pay
+		// the same requests to learn the same thing.
+		if _, perguntado := cache.albumDoArtista(artistaMBID, chave); perguntado {
+			continue
+		}
 		faixaID, album, _, err := m.musicaImportador.ImportarFaixaPossuidaComAlbum(ctx, sourceMusicBrainz, artistaMBID, alvo, langs)
 		if err != nil {
+			switch {
+			case errors.Is(err, enrich.ErrAlbumDoArtistaAusente):
+				// The source answered, and the answer is negative: a fact of the pair.
+				cache.guardarAlbumDoArtista(artistaMBID, chave, "")
+			case album != nil:
+				// The album exists, the track is not in it: remember the album (the next
+				// file of this folder is answered by its tracklist, locally) and the
+				// candidate, so this exact question is not asked again in this scan.
+				cache.guardarResolvido(chave, *album)
+				cache.guardarAlbumDoArtista(artistaMBID, chave, album.AlbumID)
+			}
 			log.Printf("scanner: import escopado (artista %s, album %q) falhou: %v", artistaMBID, tags.Album, err)
 			continue
 		}
 		if faixaID != "" {
+			if album != nil {
+				cache.guardarAlbumDoArtista(artistaMBID, chave, album.AlbumID)
+			}
 			return faixaID, album, true
 		}
 	}

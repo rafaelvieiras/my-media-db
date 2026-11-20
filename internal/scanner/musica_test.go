@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -213,6 +214,11 @@ type spyMusicaImportador struct {
 	faixaDoCache string
 	doCache      int
 	albumDoCache enrich.AlbumImportado
+	// erroEhAlbumAusente/erroDeRede drive the NEGATIVE cache tests: the network import
+	// fails and the spy answers WHY (an answer from the source, or a transient error).
+	erroEhAlbumAusente bool
+	erroDeRede         bool
+	albumNoErro        *enrich.AlbumImportado
 }
 
 func (s *spyMusicaImportador) Importar(context.Context, string, string, string, []string) (string, bool, error) {
@@ -229,6 +235,15 @@ func (s *spyMusicaImportador) ImportarFaixaPossuida(ctx context.Context, source,
 func (s *spyMusicaImportador) ImportarFaixaPossuidaComAlbum(_ context.Context, _, _ string, alvo enrich.FaixaAlvo, _ []string) (string, *enrich.AlbumImportado, bool, error) {
 	s.chamadas++
 	s.ultimoAlvo = alvo
+	if s.erroEhAlbumAusente {
+		return "", nil, false, fmt.Errorf("%w: album %q", enrich.ErrAlbumDoArtistaAusente, alvo.AlbumNome)
+	}
+	if s.erroDeRede {
+		return "", nil, false, errors.New("timeout falando com a fonte")
+	}
+	if s.albumNoErro != nil {
+		return "", s.albumNoErro, false, fmt.Errorf("%w: album %s", enrich.ErrFaixaForaDoAlbum, s.albumNoErro.AlbumID)
+	}
 	return s.faixaID, s.album, true, nil
 }
 
@@ -1173,5 +1188,102 @@ func TestScanMusicaTentaDeNovoDraftForaDaJanela(t *testing.T) {
 	}
 	if id, _ := mediaFileDe(t, d, arq); id != spy.faixaID {
 		t.Errorf("arquivo apontou para %q, quero %q", id, spy.faixaID)
+	}
+}
+
+// manejarMusicaNegativa monta um scan com DOIS arquivos do MESMO album (as tags sao
+// identicas no que importa: album_artist + album), que e o caso em que o cache por
+// album precisa falar mais alto que o arquivo.
+func manejarMusicaNegativa(t *testing.T, d *db.DB, spy *spyMusicaImportador) (*Manager, string, []string) {
+	t.Helper()
+	root := t.TempDir()
+	arqs := []string{
+		filepath.Join(root, "01 - Track One.mp3"),
+		filepath.Join(root, "02 - Track Two.mp3"),
+	}
+	tags := map[string]mediainfo.AudioTags{}
+	for i, arq := range arqs {
+		escrever(t, arq)
+		tags[arq] = mediainfo.AudioTags{
+			AlbumArtist: "Fake Band", Album: "Fake Album",
+			Title: fmt.Sprintf("Track %d", i+1), TrackNumber: i + 1,
+		}
+	}
+	m := NewManagerComProber(d, proberComTags{porPath: tags})
+	m.ConfigurarMusica(spy, &fakeMusicaProvider{})
+	m.idiomas = func(context.Context) []string { return []string{"en"} }
+	return m, root, arqs
+}
+
+// TestScanMusicaNaoRepeteArtistaSemAlbum e o caso MEDIDO em producao: o artista existe
+// na fonte, mas nao tem album com aquele nome. A resposta e um fato do par
+// (artista, album), entao o segundo arquivo do mesmo album NAO pode repetir a pergunta
+// (eram 3 candidatos x 2-3 requests por arquivo, a 1 req/s).
+func TestScanMusicaNaoRepeteArtistaSemAlbum(t *testing.T) {
+	d := abrirDB(t)
+	spy := &spyMusicaImportador{erroEhAlbumAusente: true}
+	m, root, arqs := manejarMusicaNegativa(t, d, spy)
+
+	src := criarSourceMusica(t, d, root)
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	if spy.chamadas != 1 {
+		t.Errorf("imports pela rede = %d, quero 1 (o segundo arquivo do album ja sabe a resposta)", spy.chamadas)
+	}
+	for _, arq := range arqs {
+		if id, conf := mediaFileDe(t, d, arq); conf != confDraft || id == "" {
+			t.Errorf("%s: quero draft (conf 0), veio %q conf %v", filepath.Base(arq), id, conf)
+		}
+	}
+}
+
+// TestScanMusicaLembraAlbumSemAFaixa cobre o outro desfecho observado: o album EXISTE,
+// a faixa nao esta nele (lado B, bonus). O album resolvido fica lembrado, entao o
+// arquivo seguinte e respondido localmente -- sem uma unica requisicao.
+func TestScanMusicaLembraAlbumSemAFaixa(t *testing.T) {
+	d := abrirDB(t)
+	album := &enrich.AlbumImportado{AlbumID: "album-1", ArtistaMBID: "artista-1"}
+	spy := &spyMusicaImportador{albumNoErro: album, faixaDoCache: ""}
+	m, root, arqs := manejarMusicaNegativa(t, d, spy)
+
+	src := criarSourceMusica(t, d, root)
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	if spy.chamadas != 1 {
+		t.Errorf("imports pela rede = %d, quero 1", spy.chamadas)
+	}
+	// O segundo arquivo tenta o album lembrado em memoria antes de qualquer requisicao.
+	if spy.doCache != 1 {
+		t.Errorf("imports locais = %d, quero 1 (album lembrado)", spy.doCache)
+	}
+	if spy.albumDoCache.AlbumID != "album-1" {
+		t.Errorf("album local = %q, quero album-1", spy.albumDoCache.AlbumID)
+	}
+	for _, arq := range arqs {
+		if _, conf := mediaFileDe(t, d, arq); conf != confDraft {
+			t.Errorf("%s: quero draft (conf 0), veio conf %v", filepath.Base(arq), conf)
+		}
+	}
+}
+
+// TestScanMusicaErroDeRedeNaoEhLembrado garante o limite do cache: falha de rede nao e
+// fato do par (artista, album), entao NAO pode ser lembrada -- o arquivo seguinte tem
+// que tentar de novo.
+func TestScanMusicaErroDeRedeNaoEhLembrado(t *testing.T) {
+	d := abrirDB(t)
+	spy := &spyMusicaImportador{erroDeRede: true}
+	m, root, _ := manejarMusicaNegativa(t, d, spy)
+
+	src := criarSourceMusica(t, d, root)
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	if spy.chamadas != 2 {
+		t.Errorf("imports pela rede = %d, quero 2 (erro transitorio nao pode virar cache)", spy.chamadas)
 	}
 }
