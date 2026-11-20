@@ -31,6 +31,10 @@ type Querier interface {
 	// Removes the entity override (falls back to the value from the editorial/file base).
 	ApagarMediaOverride(ctx context.Context, entityID string) error
 	ApagarQueueItem(ctx context.Context, id string) error
+	// Retention of the trail (ADR-0040): keeps only the N most recent events of an
+	// item. Called right after each insert, so the table never grows with the
+	// number of files a scan touched.
+	ApagarQueueItemEventosExcedentes(ctx context.Context, arg ApagarQueueItemEventosExcedentesParams) error
 	// Purge of the REPLACED draft. The reconciliation re-links the
 	// media_file to the definitive entity and the old draft entity was left behind without
 	// a file and without a link -- it kept showing up in the review queue
@@ -152,12 +156,16 @@ type Querier interface {
 	// Non-destructive: it is a fact from the source, not the owner's data; re-enriching only
 	// reasserts it. Only this column and updated_at change.
 	AtualizarOriginalLanguage(ctx context.Context, arg AtualizarOriginalLanguageParams) error
-	// Writes progress_current/progress_total/message on every report from the
-	// progress callback during Runner.Executar (ADR-0028: "updates progress_current/
-	// message via callback during the execution -- not only at the end"). No throttle:
-	// it writes on every call, a decision documented in
-	// internal/execqueue/manager.go (simple and correct; optimize only if it becomes
-	// a real I/O problem).
+	// Writes the WHOLE progress snapshot (counters, step and current item) on every
+	// report from the progress callback during Runner.Executar (ADR-0028: "updates
+	// progress_current/message via callback during the execution -- not only at the
+	// end"; extended by ADR-0040 with step/current_item/ok/failed). One row per
+	// report, no history: the trail of finished items lives in queue_item_event.
+	// No throttle (same decision documented in internal/execqueue/manager.go);
+	// repeated identical reports are filtered in Go before reaching here.
+	// `message` is DELIBERATELY not touched: since ADR-0040 it holds only the final
+	// result of the run (set by FinalizarQueueItem); the live narration is
+	// step_label/current_item.
 	AtualizarProgressoQueueItem(ctx context.Context, arg AtualizarProgressoQueueItemParams) error
 	// Writes the neutral RELEASE DATE of the work, obtained from the source detail on enrich/
 	// import (same handling as AtualizarOriginalLanguage: a fact of the source, not the
@@ -293,9 +301,22 @@ type Querier interface {
 	// Access to queue_item (ADR-0028): unified execution queue
 	// for scan and job. Comments in ASCII and explicit columns -- see the note in
 	// entity.sql (sqlc v1.31 offset bug with accents/'*' in a query .sql file).
+	//
+	// COLUMN ORDER: the new observable-progress columns added by ADR-0040
+	// (step_index, step_total, step_label, current_item, progress_ok,
+	// progress_failed) come LAST in each SELECT, in the exact order the ALTER
+	// TABLE gave them in the table -- with the set AND order matching the table
+	// sqlc reuses sqlcgen.QueueItem for every query instead of generating a
+	// per-query Row type, which keeps the Go call sites unchanged.
 	// Enqueues a new item with status 'queued' (Manager.Enqueue, AFTER the
 	// dedupe guard has already confirmed there is no active item for the same reference).
 	CriarQueueItem(ctx context.Context, arg CriarQueueItemParams) (QueueItem, error)
+	// Appends one row to the per-item trail (ADR-0040): "this item finished with
+	// this outcome". seq is assigned by the database (MAX+1 per item) so the reader
+	// can order the trail without depending on `at` (two events can share a
+	// millisecond). The caller caps the trail right after inserting
+	// (ApagarQueueItemEventosExcedentes).
+	CriarQueueItemEvento(ctx context.Context, arg CriarQueueItemEventoParams) error
 	// Queries for the GENERIC N:M junction file<->entity (migration
 	// 0009). Comments in ASCII and explicit columns -- see the note in entity.sql
 	// (sqlc v1.31 corrupts query SQL with an accent). The link is anchored on the
@@ -638,6 +659,14 @@ type Querier interface {
 	// investment -- no row in media_override and no asset origin='user'. An entity only
 	// imported (without media_file) is NOT an orphan. owned is always false here (no present).
 	ListarOrfas(ctx context.Context) ([]ListarOrfasRow, error)
+	// Reads the trail of ONE item, oldest first, limited (the API exposes the most
+	// recent slice of the trail; the trail itself is already capped at write time).
+	ListarQueueItemEventos(ctx context.Context, arg ListarQueueItemEventosParams) ([]QueueItemEvent, error)
+	// The QUEUE VIEW (ADR-0040, issue #62): every item still waiting or running,
+	// FIFO by enqueued_at (same order the worker consumes), with `started_at` NULL
+	// marking the ones that never ran. The API exposes this as "running" (at most
+	// one, concurrency 1) plus "queued" (with their position).
+	ListarQueueItemsAtivos(ctx context.Context) ([]QueueItem, error)
 	// History retention (same pattern as ListarJobExecucaoIdsExcedentes in
 	// job.sql): ids of the oldest surplus beyond the N most recent OF THAT
 	// (kind, ref_id) -- pruning applied in Go, one DELETE per id.
@@ -647,6 +676,11 @@ type Querier interface {
 	// future layer; the columns already cover the shape that GET /jobs/{id}/executions
 	// and GET /library/{id}/scan need.
 	ListarQueueItemsPorKindRef(ctx context.Context, arg ListarQueueItemsPorKindRefParams) ([]QueueItem, error)
+	// The recent past of the QUEUE VIEW (ADR-0040): the most recently enqueued
+	// FINISHED items across every reference, newest first. Finished items are the
+	// ones with a duration to show, which is the second half of what the owner
+	// asked for.
+	ListarQueueItemsRecentes(ctx context.Context, limit int64) ([]QueueItem, error)
 	// Used at worker BOOT (Manager.Run, before the loop starts): any item
 	// 'running' found here is an orphan from a previous execution that did not
 	// finish (the process died in the middle) -- the Manager finishes each one as

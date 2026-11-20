@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 	"github.com/rafaelvieiras/my-media-db/internal/matching"
 	"github.com/rafaelvieiras/my-media-db/internal/naming"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
@@ -129,7 +130,7 @@ func (s *Server) autoMatchReview(w http.ResponseWriter, r *http.Request) {
 		ids = listados
 	}
 
-	writeJSON(w, http.StatusOK, s.autoMatchLote(ctx, ids))
+	writeJSON(w, http.StatusOK, s.autoMatchLote(ctx, ids, execqueue.RegistroNulo()))
 }
 
 // idsElegiveisAutoMatch lists the ids of the Review queue eligible for batch
@@ -153,23 +154,35 @@ func (s *Server) idsElegiveisAutoMatch(ctx context.Context) ([]string, error) {
 // job). An id that vanished between the listing and the processing (concurrent purge)
 // is skipped, it does not bring the batch down; a real database error on THIS item
 // becomes "pending" in the result, without aborting the others.
-func (s *Server) autoMatchLote(ctx context.Context, ids []string) autoMatchBatchResultDTO {
+// registro is where each item's outcome is narrated (ADR-0040): the health job
+// passes the registrar of the queue item the owner is watching, the HTTP batch
+// endpoint passes a no-op one (the response already carries the per-item result).
+func (s *Server) autoMatchLote(ctx context.Context, ids []string, registro execqueue.Registro) autoMatchBatchResultDTO {
 	items := make([]autoMatchBatchItemDTO, 0, len(ids))
 	resolvedCount := 0
-	for _, id := range ids {
+	for i, id := range ids {
+		registro.Progresso(execqueue.Progresso{Atual: i, Total: len(ids)})
 		ent, err := s.leitura().ObterEntity(ctx, id)
 		if err != nil {
 			continue // vanished or invalid id in the body -- idempotent, skip it
 		}
+		registro.Progresso(execqueue.Progresso{Item: ent.Title})
 		resultado, err := s.tentarAutoMatch(ctx, ent)
 		if err != nil {
 			// real database error on THIS item: record it as pending and go on with
 			// the batch -- one bad item should not bring down the other 29.
 			items = append(items, autoMatchBatchItemDTO{ID: id, Resolved: false, Method: "none", Score: 0})
+			registro.Evento(execqueue.Evento{Status: execqueue.EventoErro, Label: ent.Title, Detail: err.Error()})
 			continue
 		}
 		if resultado.Resolved {
 			resolvedCount++
+			registro.Evento(execqueue.Evento{Status: execqueue.EventoOK, Label: ent.Title, Detail: resultado.Method})
+		} else {
+			// Not resolved: stays in the queue for the owner. Recorded as a skip
+			// so the trail answers "what did it leave behind" without counting
+			// it as a failure.
+			registro.Evento(execqueue.Evento{Status: execqueue.EventoSkip, Label: ent.Title, Detail: "sem candidato acima do limiar"})
 		}
 		items = append(items, autoMatchBatchItemDTO{
 			ID: id, Resolved: resultado.Resolved, Method: resultado.Method, Score: resultado.Score,
@@ -189,12 +202,12 @@ func (s *Server) autoMatchLote(ctx context.Context, ids []string) autoMatchBatch
 // which *Server satisfies structurally (without libraryhealth importing
 // internal/server). err is only a real database error in the LISTING; a failure on
 // an individual item is already absorbed by autoMatchLote.
-func (s *Server) AutoMatchElegiveis(ctx context.Context) (resolved, pending int, err error) {
+func (s *Server) AutoMatchElegiveis(ctx context.Context, registro execqueue.Registro) (resolved, pending int, err error) {
 	ids, err := s.idsElegiveisAutoMatch(ctx)
 	if err != nil {
 		return 0, 0, err
 	}
-	resultado := s.autoMatchLote(ctx, ids)
+	resultado := s.autoMatchLote(ctx, ids, registro)
 	return resultado.ResolvedCount, resultado.PendingCount, nil
 }
 

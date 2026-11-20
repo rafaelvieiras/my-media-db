@@ -11,6 +11,7 @@ import (
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 )
@@ -357,7 +358,7 @@ func TestAutoMatchElegiveis(t *testing.T) {
 	semearFile(t, d, "f-pendente", "e-draft-pendente", "/lib/Totally Unrelated Thing (2015)/x.mkv", "present", 0, "")
 
 	s := New("v-teste", d)
-	resolved, pending, err := s.AutoMatchElegiveis(context.Background())
+	resolved, pending, err := s.AutoMatchElegiveis(context.Background(), execqueue.RegistroNulo())
 	if err != nil {
 		t.Fatalf("AutoMatchElegiveis: %v", err)
 	}

@@ -225,23 +225,40 @@ func (m *Manager) Historico(ctx context.Context, id string, limit int, before *s
 // like it "already finished" just because the worker has not picked it up yet.
 func (m *Manager) Rodando() map[string]bool {
 	out := make(map[string]bool)
+	for id, st := range m.EstadoDasExecucoes(context.Background()) {
+		if st != nil && (st.Status == execqueue.StatusQueued || st.Status == execqueue.StatusRunning) {
+			out[id] = true
+		}
+	}
+	return out
+}
+
+// EstadoDasExecucoes returns, for EVERY job_definition, the current state of the
+// queue item that represents it: the active one (queued/running) when there is
+// one, otherwise the last finished one, nil when the job never ran. It is what
+// makes GET /jobs answer "how long did it take" and "what is it doing now"
+// without a second request per job (ADR-0040, issue #62).
+//
+// Best-effort in the same spirit as Rodando: an error on one job only logs and
+// leaves that job out, never breaks the listing.
+func (m *Manager) EstadoDasExecucoes(ctx context.Context) map[string]*execqueue.QueueItemStatus {
+	out := make(map[string]*execqueue.QueueItemStatus)
 	if m.fila == nil {
 		return out
 	}
-	ctx := context.Background()
 	defs, err := m.leitura().ListarJobDefinitions(ctx)
 	if err != nil {
-		log.Printf("job: Rodando: erro ao listar job_definition: %v", err)
+		log.Printf("job: EstadoDasExecucoes: erro ao listar job_definition: %v", err)
 		return out
 	}
 	for _, def := range defs {
 		st, err := m.fila.Status(ctx, execqueue.KindJob, def.ID)
 		if err != nil {
-			log.Printf("job: Rodando: erro ao consultar status de %q: %v", def.ID, err)
+			log.Printf("job: EstadoDasExecucoes: erro ao consultar status de %q: %v", def.ID, err)
 			continue
 		}
-		if st.Existe && (st.Status == execqueue.StatusQueued || st.Status == execqueue.StatusRunning) {
-			out[def.ID] = true
+		if st.Existe {
+			out[def.ID] = st
 		}
 	}
 	return out
@@ -300,7 +317,7 @@ func (m *Manager) Executar(ctx context.Context, jobID, trigger string) (string, 
 // the history (podarHistorico) — ALWAYS, on success and on error. execqueue
 // already takes care of IniciarQueueItem/FinalizarQueueItem around this call;
 // this method only handles what is its own.
-func (m *Manager) executarViaRunner(ctx context.Context, refID, _ string, _ execqueue.ProgressoFunc) (string, error) {
+func (m *Manager) executarViaRunner(ctx context.Context, refID, _ string, registro execqueue.Registro) (string, error) {
 	def, err := m.leitura().ObterJobDefinition(ctx, refID)
 	if err != nil {
 		err = fmt.Errorf("erro ao carregar a configuração do job: %w", err)
@@ -323,7 +340,15 @@ func (m *Manager) executarViaRunner(ctx context.Context, refID, _ string, _ exec
 		return "", err
 	}
 
-	mensagem, execErr := handler.Executar(ctx, cfg)
+	// The handler narrates its run when it knows how (optional capability,
+	// ADR-0040); otherwise it runs exactly as before, with 0/0 and no trail.
+	var mensagem string
+	var execErr error
+	if comProgresso, ok := handler.(HandlerComProgresso); ok {
+		mensagem, execErr = comProgresso.ExecutarComProgresso(ctx, cfg, NovoProgresso(registro))
+	} else {
+		mensagem, execErr = handler.Executar(ctx, cfg)
+	}
 
 	status := "success"
 	msg := mensagem
@@ -339,7 +364,7 @@ func (m *Manager) executarViaRunner(ctx context.Context, refID, _ string, _ exec
 
 // jobRunner is a NARROW adapter (it exposes no state of its own, it only wraps
 // *Manager) to satisfy execqueue.Runner: the interface demands a method
-// literally named `Executar(ctx, refID, trigger string, progresso ProgressoFunc)
+// literally named `Executar(ctx, refID, trigger string, registro Registro)
 // (string, error)` -- *Manager* already exposes a public `Executar` with
 // ANOTHER signature (the synchronous enqueueing API above,
 // `Executar(ctx, jobID, trigger string) (string, error)`), and Go does not allow
@@ -350,8 +375,8 @@ func (m *Manager) executarViaRunner(ctx context.Context, refID, _ string, _ exec
 // ConfigurarFila), which only forwards to executarViaRunner.
 type jobRunner struct{ m *Manager }
 
-func (r jobRunner) Executar(ctx context.Context, refID, trigger string, progresso execqueue.ProgressoFunc) (string, error) {
-	return r.m.executarViaRunner(ctx, refID, trigger, progresso)
+func (r jobRunner) Executar(ctx context.Context, refID, trigger string, registro execqueue.Registro) (string, error) {
+	return r.m.executarViaRunner(ctx, refID, trigger, registro)
 }
 
 // atualizarDefinicaoAoFim mirrors the result into job_definition and

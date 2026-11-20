@@ -44,13 +44,13 @@ func TestExecutarReportaProgressoPorArquivo(t *testing.T) {
 
 	var mu sync.Mutex
 	var chamadas [][2]int
-	progresso := func(current, total int, _ string) {
+	registro := &gravadorDeProgresso{aoReportar: func(current, total int, _ string) {
 		mu.Lock()
 		defer mu.Unlock()
 		chamadas = append(chamadas, [2]int{current, total})
-	}
+	}}
 
-	if _, err := m.Executar(context.Background(), src.ID, TriggerManual, progresso); err != nil {
+	if _, err := m.Executar(context.Background(), src.ID, TriggerManual, registro); err != nil {
 		t.Fatalf("Executar: %v", err)
 	}
 
@@ -163,3 +163,18 @@ func aguardarScanConcluido(t *testing.T, m *Manager, sourceID string) Status {
 	t.Fatal("timeout esperando o scan concluir via fila")
 	return Status{}
 }
+
+// gravadorDeProgresso adapts the execqueue.Registro contract to a bare function
+// for the tests in this package: the scan reports through it, and aoReportar
+// receives the counters (the item is not relevant to these assertions).
+type gravadorDeProgresso struct {
+	aoReportar func(current, total int, item string)
+}
+
+func (g *gravadorDeProgresso) Progresso(p execqueue.Progresso) {
+	if g.aoReportar != nil {
+		g.aoReportar(p.Atual, p.Total, p.Item)
+	}
+}
+
+func (g *gravadorDeProgresso) Evento(execqueue.Evento) {}

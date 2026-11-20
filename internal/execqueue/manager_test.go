@@ -24,10 +24,10 @@ func TestMain(m *testing.M) {
 
 // runnerFunc adapts a bare func to the Runner contract -- a minimal fake for
 // the tests in this package (same spirit as handlerFake in internal/job).
-type runnerFunc func(ctx context.Context, refID, trigger string, progresso ProgressoFunc) (string, error)
+type runnerFunc func(ctx context.Context, refID, trigger string, registro Registro) (string, error)
 
-func (f runnerFunc) Executar(ctx context.Context, refID, trigger string, progresso ProgressoFunc) (string, error) {
-	return f(ctx, refID, trigger, progresso)
+func (f runnerFunc) Executar(ctx context.Context, refID, trigger string, registro Registro) (string, error) {
+	return f(ctx, refID, trigger, registro)
 }
 
 // setupManager brings up a Manager with a migrated database (TempDir, same
@@ -170,7 +170,7 @@ func TestRunProcessaSequencialmente(t *testing.T) {
 	entrou := make(chan string, 2)
 	liberar := make(chan struct{})
 
-	r := runnerFunc(func(_ context.Context, refID, _ string, _ ProgressoFunc) (string, error) {
+	r := runnerFunc(func(_ context.Context, refID, _ string, _ Registro) (string, error) {
 		entrou <- refID
 		<-liberar
 		return "ok:" + refID, nil
@@ -245,10 +245,10 @@ func TestProgressoIntermediarioReflete(t *testing.T) {
 	ctx := context.Background()
 
 	prosseguir := make(chan struct{})
-	r := runnerFunc(func(_ context.Context, _ string, _ string, progresso ProgressoFunc) (string, error) {
-		progresso(1, 10, "iniciando")
+	r := runnerFunc(func(_ context.Context, _ string, _ string, registro Registro) (string, error) {
+		registro.Progresso(Progresso{Atual: 1, Total: 10, Etapa: "iniciando"})
 		<-prosseguir
-		progresso(5, 10, "na metade")
+		registro.Progresso(Progresso{Atual: 5})
 		return "concluido", nil
 	})
 	m.RegistrarRunner(KindJob, r)
@@ -296,7 +296,7 @@ func TestRunnerAusenteFinalizaComErroSemTravar(t *testing.T) {
 	}
 
 	var chamouScan int32
-	r := runnerFunc(func(_ context.Context, _ string, _ string, _ ProgressoFunc) (string, error) {
+	r := runnerFunc(func(_ context.Context, _ string, _ string, _ Registro) (string, error) {
 		atomic.AddInt32(&chamouScan, 1)
 		return "ok", nil
 	})

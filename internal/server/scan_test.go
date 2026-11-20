@@ -49,8 +49,12 @@ func setupScanServer(t *testing.T) (*Server, http.Handler) {
 func configurarFilaDeTeste(t *testing.T, s *Server) {
 	t.Helper()
 	fila := execqueue.NewManager(s.db)
-	s.scanner.ConfigurarLibrary(s.library)
-	s.scanner.ConfigurarFila(fila)
+	// Same wiring WithExecQueue does (the queue view reads s.fila, ADR-0040).
+	if s.scanner != nil {
+		s.scanner.ConfigurarLibrary(s.library)
+		s.scanner.ConfigurarFila(fila)
+	}
+	s.fila = fila
 	if s.jobs != nil {
 		s.jobs.ConfigurarFila(fila)
 	}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 )
@@ -326,7 +327,7 @@ func TestEnriquecerRetroativoSemEnrich(t *testing.T) {
 	semearFile(t, d, "f-gap", "e-gap", "/lib/The Matrix (1999)/The Matrix (1999).mkv", "present", 70, "")
 
 	s := New("v-teste", d) // without WithSearchProvider/WithAssetsDir => s.enrich nil
-	aplicados, sinalizados, err := s.EnriquecerRetroativo(context.Background())
+	aplicados, sinalizados, err := s.EnriquecerRetroativo(context.Background(), execqueue.RegistroNulo())
 	if err != nil {
 		t.Fatalf("EnriquecerRetroativo: %v", err)
 	}
@@ -352,7 +353,7 @@ func TestEnriquecerRetroativoAplicaLocal(t *testing.T) {
 	semearEntity(t, d, "e-gap", "movie", "Gap")
 	semearFile(t, d, "f-gap", "e-gap", "/lib/The Matrix (1999)/The Matrix (1999).mkv", "present", 70, "")
 
-	aplicados, sinalizados, err := s.EnriquecerRetroativo(context.Background())
+	aplicados, sinalizados, err := s.EnriquecerRetroativo(context.Background(), execqueue.RegistroNulo())
 	if err != nil {
 		t.Fatalf("EnriquecerRetroativo: %v", err)
 	}
@@ -387,7 +388,7 @@ func TestEnriquecerRetroativoAplicaExterno(t *testing.T) {
 	semearEntity(t, d, "e-gap", "movie", "Gap")
 	semearFile(t, d, "f-gap", "e-gap", "/lib/Blade Runner 2049 (2017)/Blade Runner 2049 (2017).mkv", "present", 70, "")
 
-	aplicados, sinalizados, err := s.EnriquecerRetroativo(context.Background())
+	aplicados, sinalizados, err := s.EnriquecerRetroativo(context.Background(), execqueue.RegistroNulo())
 	if err != nil {
 		t.Fatalf("EnriquecerRetroativo: %v", err)
 	}
@@ -424,7 +425,7 @@ func TestEnriquecerRetroativoSinaliza(t *testing.T) {
 	semearEntity(t, d, "e-gap", "movie", "Gap")
 	semearFile(t, d, "f-gap", "e-gap", "/lib/The Matrix (1999)/The Matrix (1999).mkv", "present", 70, "")
 
-	aplicados, sinalizados, err := s.EnriquecerRetroativo(context.Background())
+	aplicados, sinalizados, err := s.EnriquecerRetroativo(context.Background(), execqueue.RegistroNulo())
 	if err != nil {
 		t.Fatalf("EnriquecerRetroativo: %v", err)
 	}
@@ -475,7 +476,7 @@ func TestEnriquecerRetroativoSemCandidatoSoCarimba(t *testing.T) {
 	semearEntity(t, d, "e-gap", "movie", "Gap")
 	semearFile(t, d, "f-gap", "e-gap", "/lib/The Matrix (1999)/The Matrix (1999).mkv", "present", 70, "")
 
-	aplicados, sinalizados, err := s.EnriquecerRetroativo(context.Background())
+	aplicados, sinalizados, err := s.EnriquecerRetroativo(context.Background(), execqueue.RegistroNulo())
 	if err != nil {
 		t.Fatalf("EnriquecerRetroativo: %v", err)
 	}
@@ -522,7 +523,7 @@ func TestEnriquecerRetroativoLoteMisto(t *testing.T) {
 	semearEntity(t, d, "e-nada", "movie", "Nada")
 	semearFile(t, d, "f-nada", "e-nada", "/lib/Xyzzy Plugh Quux (2010)/Xyzzy Plugh Quux (2010).mkv", "present", 70, "")
 
-	aplicados, sinalizados, err := s.EnriquecerRetroativo(context.Background())
+	aplicados, sinalizados, err := s.EnriquecerRetroativo(context.Background(), execqueue.RegistroNulo())
 	if err != nil {
 		t.Fatalf("EnriquecerRetroativo: %v", err)
 	}
@@ -697,7 +698,7 @@ func TestEnriquecerRetroativoArtistaAplicaExterno(t *testing.T) {
 	ligarFilhoOrdenado(t, d, "r2", "alb1", "fx1", "music_album", 1)
 	semearFile(t, d, "f1", "fx1", "/lib/musica/rio/01.flac", "present", 1, "")
 
-	aplicados, sinalizados, err := s.EnriquecerRetroativo(context.Background())
+	aplicados, sinalizados, err := s.EnriquecerRetroativo(context.Background(), execqueue.RegistroNulo())
 	if err != nil {
 		t.Fatalf("EnriquecerRetroativo: %v", err)
 	}

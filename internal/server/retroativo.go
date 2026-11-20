@@ -5,11 +5,13 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 )
 
 // This file implements the RETROACTIVE EXTERNAL ENRICHMENT, an extension of the
@@ -66,7 +68,7 @@ const carimboRetroativoFormato = "2006-01-02T15:04:05.000Z"
 // saude_biblioteca job, AFTER the existing batch
 // auto-match). err is ONLY a real database error in the LISTING; a failure in an
 // individual item is absorbed (best-effort, it logs and moves on).
-func (s *Server) EnriquecerRetroativo(ctx context.Context) (aplicados, sinalizados int, err error) {
+func (s *Server) EnriquecerRetroativo(ctx context.Context, registro execqueue.Registro) (aplicados, sinalizados int, err error) {
 	// Without a configured provider (or without assetsDir -- same guard as
 	// tentarAutoMatch), NO real attempt can happen: it returns without
 	// touching the database, so as not to stamp last_external_match_attempt_at on
@@ -96,7 +98,11 @@ func (s *Server) EnriquecerRetroativo(ctx context.Context) (aplicados, sinalizad
 		return 0, 0, err
 	}
 
-	for _, row := range rows {
+	if registro == nil {
+		registro = execqueue.RegistroNulo()
+	}
+	for i, row := range rows {
+		registro.Progresso(execqueue.Progresso{Atual: i, Total: len(rows)})
 		ent, err := s.leitura().ObterEntity(ctx, row.ID)
 		if err != nil {
 			// Vanished between the listing and the processing (concurrent purge) --
@@ -104,9 +110,11 @@ func (s *Server) EnriquecerRetroativo(ctx context.Context) (aplicados, sinalizad
 			continue
 		}
 
-		resultado, _, _, tentarErr := s.tentarEnriquecerOuSinalizar(ctx, ent)
+		registro.Progresso(execqueue.Progresso{Item: ent.Title})
+		resultado, metodo, score, tentarErr := s.tentarEnriquecerOuSinalizar(ctx, ent)
 		if tentarErr != nil {
 			log.Printf("saude_biblioteca: enriquecimento retroativo falhou para %s (best-effort, ignorado): %v", ent.ID, tentarErr)
+			registro.Evento(execqueue.Evento{Status: execqueue.EventoErro, Label: ent.Title, Detail: tentarErr.Error()})
 		}
 
 		// Always STAMP the attempt at the end (even if tentarErr != nil): the
@@ -121,11 +129,26 @@ func (s *Server) EnriquecerRetroativo(ctx context.Context) (aplicados, sinalizad
 		switch resultado {
 		case "applied":
 			aplicados++
+			registro.Evento(execqueue.Evento{Status: execqueue.EventoOK, Label: ent.Title, Detail: detalheDoEnriquecimento(metodo, score)})
 		case "flagged":
 			sinalizados++
+			registro.Evento(execqueue.Evento{Status: execqueue.EventoSkip, Label: ent.Title, Detail: "aguardando decisão em Revisão"})
+		default:
+			registro.Evento(execqueue.Evento{Status: execqueue.EventoSkip, Label: ent.Title, Detail: "sem candidato"})
 		}
 	}
+	registro.Progresso(execqueue.Progresso{Atual: len(rows)})
 	return aplicados, sinalizados, nil
+}
+
+// detalheDoEnriquecimento is the short detail of a successful outcome in the
+// trail ("external 100"): the method that won and the score, which is what the
+// owner needs to trust an automatic decision.
+func detalheDoEnriquecimento(metodo string, score float64) string {
+	if metodo == "" {
+		return ""
+	}
+	return metodo + " " + strconv.FormatFloat(score, 'f', 0, 64)
 }
 
 // diasReentativaRetroativa resolves the throttle interval (in days)

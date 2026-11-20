@@ -86,6 +86,38 @@ take **priority** over bulk scan writes: an edit never waits for the whole walk.
 > **re-derivable**, since mediainfo can be extracted again, so
 > `synchronous=NORMAL` is a safe trade-off.
 
+## The execution queue is observable
+
+Every scan and every job runs through **one** persisted queue (`queue_item`, one sequential
+worker — [ADR-0028](adr/0028-unified-execution-queue-scan-and-jobs.md)), and that queue is also the place
+where a run says what it is doing ([ADR-0040](adr/0040-queue-observability.md)):
+
+```
+Runner (scan | job handler)
+   └── Registro ──┬── Progresso  snapshot: counters, step (i/n + label), current item
+                  └── Evento     trail:    one row per finished item (ok | error | skip)
+```
+
+- **The snapshot** lives in `queue_item` (`progress_current/total`, `step_index/step_total/
+  step_label`, `current_item`, `progress_ok/progress_failed`). It always describes the present,
+  so it is cheap to overwrite: one `UPDATE` per report, with identical payloads filtered in
+  memory.
+- **The trail** lives in `queue_item_event`, capped at 200 rows per run and pruned at write
+  time. It is what answers "which items succeeded and which failed" after the run — a bounded
+  answer, not a log.
+- **A job handler opts in** through `job.HandlerComProgresso` (capability by type assertion, the
+  same pattern the providers use). A handler that does not implement it keeps running with
+  `0/0` and no trail, unchanged.
+- **Durations are derived, never stored**: `wait_ms` (`enqueued_at → started_at`), `elapsed_ms`
+  (`started_at → now`) and `duration_ms` (`started_at → finished_at`). One definition in
+  `internal/execqueue`, reused by `GET /jobs`, `GET /jobs/{id}/executions`,
+  `GET /library/{id}/scan`, `GET /queue` and `GET /queue/{id}` — the same number on every
+  screen.
+
+`GET /api/v1/queue` is the whole picture in one request: the running item, the FIFO with
+positions and wait times, and the most recent finished runs, each with a human label for its
+reference (job name, source path).
+
 ## Run modes and the API base
 
 The front end reaches the API through a configurable base, `VITE_API_BASE`:

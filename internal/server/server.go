@@ -118,6 +118,10 @@ type Server struct {
 	// unlike enrich/externalDetail); the concrete handlers (e.g. backup_vacuum)
 	// come in via WithJobHandlers.
 	jobs *job.Manager
+	// fila is the unified execution queue (ADR-0028), kept here so the queue
+	// screen can read it (ADR-0040, issue #62): what runs, what waits, what
+	// finished and how long each took. Nil until WithExecQueue is applied.
+	fila *execqueue.Manager
 	// telemetry computes the operational health snapshot: database size + usage
 	// portrait + process uptime/memory. It only exists when there is a database
 	// (same pattern as s.jobs); without it GET /health/system degrades with 503 —
@@ -370,6 +374,9 @@ func WithExecQueue(fila *execqueue.Manager) Option {
 		}
 		s.scanner.ConfigurarLibrary(s.library)
 		s.scanner.ConfigurarFila(fila)
+		// Kept for the queue screen (ADR-0040): the same Manager the scanner
+		// enqueues through, read-only from the server's point of view.
+		s.fila = fila
 	}
 }
 
@@ -963,6 +970,15 @@ func (s *Server) Handler() (http.Handler, error) {
 				jobs.Patch("/{id}", s.patchJob)
 				jobs.Post("/{id}/run", s.runJob)
 				jobs.Get("/{id}/executions", s.listJobExecutions)
+			})
+
+			// QUEUE screen (ADR-0040, issue #62): the WHOLE queue in one
+			// request — what runs now (with step, current item, counters and
+			// elapsed time), what waits (FIFO, with position and wait time) and
+			// what finished recently (with duration). Read-only.
+			v1.Route("/queue", func(fila chi.Router) {
+				fila.Get("/", s.queueView)
+				fila.Get("/{id}", s.queueItemDetail)
 			})
 
 			// Jellyfin webhook (ADR-0022, depends on the consumption history

@@ -2594,6 +2594,63 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
 
+  /api/v1/queue:
+    get:
+      operationId: getQueue
+      summary: A fila de execução inteira (ADR-0040) — rodando, esperando e recém-finalizados.
+      description: >
+        Uma requisição para a tela de fila: o item em execução (com etapa, item
+        atual, contadores e tempo decorrido), os itens esperando em ordem FIFO
+        (com posição e tempo de espera) e os últimos finalizados (com duração).
+        Cobre kind=scan e kind=job; `ref_label` traz o nome legível da
+        referência. Somente leitura.
+      tags: [queue]
+      parameters:
+        - name: recent
+          in: query
+          description: Quantos itens finalizados trazer (default 20).
+          required: false
+          schema: { type: integer, minimum: 0, default: 20 }
+      responses:
+        "200":
+          description: A fila.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QueueView" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/queue/{id}:
+    get:
+      operationId: getQueueItem
+      summary: Um item da fila com o rastro por item (o que cada coisa processada fez).
+      description: >
+        O rastro responde "quais tiveram sucesso e quais falharam" depois que a
+        execução terminou: uma linha por item processado (ok/error/skip).
+      tags: [queue]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: events
+          in: query
+          description: Quantos eventos do rastro trazer (default 200).
+          required: false
+          schema: { type: integer, minimum: 0, default: 200 }
+      responses:
+        "200":
+          description: Item e rastro.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QueueItemDetail" }
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
   /api/v1/webhooks/jellyfin:
     post:
       operationId: receiveJellyfinWebhook
@@ -4873,6 +4930,18 @@ components:
         files_total: { type: integer }
         started_at: { type: [string, "null"] }
         last_error: { type: string }
+        current_item:
+          type: [string, "null"]
+          description: Arquivo sendo processado agora, relativo à raiz da fonte (ADR-0040).
+        step_label:
+          type: [string, "null"]
+          description: Etapa pós-varredura em andamento ("reconciliando pendentes da biblioteca").
+        wait_ms:
+          type: [integer, "null"]
+          description: Tempo esperando na fila; null quando nunca esperou.
+        elapsed_ms:
+          type: [integer, "null"]
+          description: Tempo decorrido desde o início da varredura.
     StartScan:
       type: object
       required: [job_id, status]
@@ -4958,7 +5027,22 @@ components:
         last_message: { type: [string, "null"] }
         running:
           type: boolean
-          description: Estado em memória do Manager — true enquanto uma execução está em andamento.
+          description: >
+            true enquanto há uma execução ativa (queued ou running) deste job.
+          last_duration_ms:
+            type: [integer, "null"]
+            description: >
+              Quanto durou a ÚLTIMA execução finalizada (started_at ->
+              finished_at), em milissegundos (ADR-0040). null quando o job nunca
+              terminou uma execução.
+          progress:
+            oneOf:
+              - $ref: "#/components/schemas/JobProgress"
+              - type: "null"
+            description: >
+              Estado da execução ativa (ou da última, quando o job está parado):
+              etapa, item atual, contadores e tempo decorrido. null quando o job
+              nunca rodou.
     JobList:
       type: object
       required: [items]
@@ -4999,6 +5083,126 @@ components:
         message:
           type: [string, "null"]
           description: Resultado curto (sucesso) ou erro (falha), sem stack trace.
+        wait_ms:
+          type: [integer, "null"]
+          description: Tempo esperando na fila (enqueued_at -> started_at). null quando ainda não começou.
+        duration_ms:
+          type: [integer, "null"]
+          description: Tempo executando (started_at -> finished_at). null enquanto não terminou.
+        ok:
+          type: integer
+          description: Quantos itens a execução reportou como concluídos (ADR-0040).
+        failed:
+          type: integer
+          description: Quantos itens a execução reportou como falhos (ADR-0040).
+    QueueItem:
+      type: object
+      description: >
+        Um item da fila de execução (ADR-0028/ADR-0040): scan ou job, com os
+        tempos derivados e o rótulo legível da referência.
+      required: [id, kind, ref_id, trigger, status, step_index, step_total, done, total, ok, failed, enqueued_at]
+      properties:
+        id: { type: string }
+        kind:
+          type: string
+          enum: [scan, job]
+        ref_id:
+          type: string
+          description: library_source.id (kind=scan) ou job_definition.id (kind=job).
+        ref_label:
+          type: [string, "null"]
+          description: Nome legível da referência (nome do job, caminho da fonte); null se a referência já não existe.
+        trigger:
+          type: string
+          enum: [manual, schedule, watch]
+        status:
+          type: string
+          enum: [queued, running, success, error]
+        message:
+          type: [string, "null"]
+          description: Resultado final (sucesso) ou erro da execução.
+        position:
+          type: [integer, "null"]
+          description: Posição na fila (1 = o próximo a rodar). Ausente no item em execução e nos finalizados.
+        step_label:
+          type: [string, "null"]
+        step_index: { type: integer }
+        step_total: { type: integer }
+        current_item:
+          type: [string, "null"]
+        done: { type: integer }
+        total: { type: integer }
+        ok: { type: integer }
+        failed: { type: integer }
+        enqueued_at: { type: string }
+        started_at: { type: [string, "null"] }
+        finished_at: { type: [string, "null"] }
+        wait_ms:
+          type: [integer, "null"]
+          description: enqueued_at -> started_at.
+        duration_ms:
+          type: [integer, "null"]
+          description: started_at -> finished_at (só para finalizados).
+        elapsed_ms:
+          type: [integer, "null"]
+          description: started_at -> agora (só para o que está rodando).
+    QueueView:
+      type: object
+      required: [queued, recent]
+      properties:
+        running:
+          oneOf:
+            - $ref: "#/components/schemas/QueueItem"
+            - type: "null"
+        queued:
+          type: array
+          items: { $ref: "#/components/schemas/QueueItem" }
+        recent:
+          type: array
+          items: { $ref: "#/components/schemas/QueueItem" }
+    QueueEvent:
+      type: object
+      description: Uma linha do rastro por item (ADR-0040).
+      required: [seq, at, status, label]
+      properties:
+        seq: { type: integer }
+        at: { type: string }
+        status:
+          type: string
+          enum: [ok, error, skip]
+        label: { type: string }
+        detail: { type: [string, "null"] }
+    QueueItemDetail:
+      type: object
+      required: [item, events]
+      properties:
+        item: { $ref: "#/components/schemas/QueueItem" }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/QueueEvent" }
+    JobProgress:
+      type: object
+      description: Progresso ao vivo de UMA execução de job (o mesmo número que a tela de fila mostra).
+      required: [status, step_index, step_total, done, total, ok, failed]
+      properties:
+        status:
+          type: string
+          enum: [queued, running, success, error]
+        step_label:
+          type: [string, "null"]
+          description: Rótulo da etapa atual ("enriquecimento retroativo").
+        step_index: { type: integer }
+        step_total: { type: integer }
+        current_item:
+          type: [string, "null"]
+          description: O que está sendo processado agora (arquivo, título, fonte).
+        done: { type: integer }
+        total: { type: integer }
+        ok: { type: integer }
+        failed: { type: integer }
+        elapsed_ms:
+          type: [integer, "null"]
+          description: Tempo decorrido desde o início; null quando não está rodando.
     JobExecutionList:
       type: object
       required: [items]

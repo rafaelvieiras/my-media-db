@@ -167,6 +167,13 @@ type Status struct {
 	FilesTotal int
 	StartedAt  time.Time
 	LastError  string
+	// CurrentItem/StepLabel/Elapsed carry the observability of the run to the
+	// API (ADR-0040): the file being processed right now, the post-scan stage
+	// label, and how long it has been running. Empty/zero when unknown.
+	CurrentItem string
+	StepLabel   string
+	Elapsed     time.Duration
+	Wait        time.Duration
 }
 
 // storageResultado is the result of the NON-video file classification of the
@@ -393,7 +400,7 @@ func mapTrigger(trigger string) string {
 // the background goroutine already; the scanner no longer needs its own). A
 // panic inside the pipeline is recovered by the execqueue ITSELF
 // (executarComRecover) -- we do not duplicate recover here.
-func (m *Manager) Executar(ctx context.Context, refID string, _ string, progresso execqueue.ProgressoFunc) (string, error) {
+func (m *Manager) Executar(ctx context.Context, refID string, _ string, progresso execqueue.Registro) (string, error) {
 	if m.library == nil {
 		return "", errors.New("scanner: library getter não configurado (ConfigurarLibrary)")
 	}
@@ -445,6 +452,15 @@ func (m *Manager) Status(sourceID string) Status {
 	}
 	if t, perr := time.Parse(time.RFC3339, ts); perr == nil {
 		st.StartedAt = t
+	}
+
+	st.CurrentItem = qis.CurrentItem
+	st.StepLabel = qis.StepLabel
+	if qis.ElapsedMS != nil {
+		st.Elapsed = time.Duration(*qis.ElapsedMS) * time.Millisecond
+	}
+	if qis.WaitMS != nil {
+		st.Wait = time.Duration(*qis.WaitMS) * time.Millisecond
 	}
 
 	// LastError only on error -- it does not leak qis.Message from a
