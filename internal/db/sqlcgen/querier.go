@@ -392,7 +392,11 @@ type Querier interface {
 	// always showed owned=false in the detail even with a track owned (the listings had
 	// already been fixed before; the detail used a separate path, ListarMediaFilesPorEntity,
 	// which never descends the tree).
-	EntityTemPosseNaArvore(ctx context.Context, id string) (bool, error)
+	//
+	// Anchored at the entity for the same reason as ObterCaminhoDescendentePresente (issue
+	// #73): this runs on EVERY entity detail request, and the whole-tree seed cost ~860 ms
+	// per request on the production database.
+	EntityTemPosseNaArvore(ctx context.Context, parentID string) (bool, error)
 	// At the end of an execution (Manager.Executar): mirrors the result into
 	// job_definition (read redundancy, avoids a JOIN on the listing) and recomputes
 	// next_run_at (nil when disabled or without schedule_cron -- computed in
@@ -862,6 +866,13 @@ type Querier interface {
 	// tree reaches it. sql.ErrNoRows when the entity has no owned descendant at all (it
 	// should not happen for whoever came through ListarEntitiesMusicaComFaixaPossuida,
 	// but the caller treats it as "nothing to do", not an error).
+	//
+	// The recursion is ANCHORED AT THE ENTITY on purpose (issue #73): the previous shape
+	// seeded the CTE with ALL of entity_relation (every pair, both directions) and filtered
+	// by entity afterwards, so SQLite materialized the transitive closure of the whole tree
+	// to answer a question about ONE album. Measured on the production database: 860 ms
+	// before, 86 ms after -- and this query runs several times per album/artist, which was
+	// 70 % of the whole `midias_faltantes` run.
 	ObterCaminhoDescendentePresente(ctx context.Context, entityID string) (string, error)
 	// Dedupe of the COLLECTION entity by tmdb id: reuses the generated column
 	// external_id_tmdb, but RESTRICTED to type='collection'. The collection id
