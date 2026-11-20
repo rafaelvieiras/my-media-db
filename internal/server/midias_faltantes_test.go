@@ -1513,6 +1513,54 @@ func semearEpisodioSemNumero(t *testing.T, d *db.DB) (video string) {
 // o arquivo ja declara. O contrario -- omitir a tag porque o modelo nao sabe -- faz o arquivo
 // divergir do documento em TODA execucao: o job reescreveria 360 arquivos por run para nao dizer
 // nada de novo, e o numero que o Kodi le desapareceria.
+// TestMaterializarMidiasFaltantesEpisodioSemNumeroRecuperaDoNomeDoArquivo cobre a TERCEIRA
+// camada da numeracao: a arvore nao sabe (0/0) e o arquivo (dano de uma execucao anterior) nao
+// declara nada, mas o NOME do video diz SxxEyy. Sem essa camada o documento e o arquivo danificado
+// concordam em "sem numero", o arquivo converge e o dano fica permanente.
+func TestMaterializarMidiasFaltantesEpisodioSemNumeroRecuperaDoNomeDoArquivo(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	semearEntity(t, d, "s1", "tv", "Serie")
+	semearEntity(t, d, "e1", "episode", "Episodio 7")
+	ligarFilhoOrdenado(t, d, "r-e1", "s1", "e1", "tv_episode", 0)
+	libRoot := t.TempDir()
+	video := filepath.Join(libRoot, "Season 01", "Serie.S01E07.mkv")
+	semearFile(t, d, "mf1", "s1", video, "present", 0.9, "")
+	if err := escrita(t, d).CriarVinculoEntidade(context.Background(), sqlcgen.CriarVinculoEntidadeParams{
+		MediaFileID: "mf1", EntityID: "e1", Kind: "tv_episode", Ordinal: 0,
+	}); err != nil {
+		t.Fatalf("CriarVinculoEntidade: %v", err)
+	}
+	nfoPath := localmedia.CaminhoNFODeVideo(video)
+
+	// O dano: um NFO escrito pela versao que omitia a numeracao que o modelo nao tinha.
+	if err := os.MkdirAll(filepath.Dir(video), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	danificado := `<?xml version="1.0" encoding="UTF-8"?>
+<episodedetails>
+  <title>Episodio 7</title>
+</episodedetails>
+`
+	if err := localmedia.EscreverArquivoAtomico(nfoPath, []byte(danificado)); err != nil {
+		t.Fatalf("escrever danificado: %v", err)
+	}
+
+	_, nfoGravado, err := srv.MaterializarMidiasFaltantes(context.Background(), "e1")
+	if err != nil {
+		t.Fatalf("MaterializarMidiasFaltantes: %v", err)
+	}
+	if !nfoGravado {
+		t.Fatal("nfoGravado = false, quero true (o arquivo danificado tem de ser reescrito)")
+	}
+	final, err := os.ReadFile(nfoPath)
+	if err != nil {
+		t.Fatalf("reler %s: %v", nfoPath, err)
+	}
+	if !strings.Contains(string(final), "<season>1</season>") || !strings.Contains(string(final), "<episode>7</episode>") {
+		t.Errorf("numeracao do nome do arquivo nao foi recuperada:\n%s", final)
+	}
+}
+
 func TestMaterializarMidiasFaltantesEpisodioSemNumeroMantemONumeroDoArquivo(t *testing.T) {
 	srv, _, d := setupMidiasFaltantesServer(t)
 	video := semearEpisodioSemNumero(t, d)

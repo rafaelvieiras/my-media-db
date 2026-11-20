@@ -21,9 +21,11 @@ import (
 	"errors"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/localmedia"
+	"github.com/rafaelvieiras/my-media-db/internal/naming"
 )
 
 // documentoNFODeEpisodios assembles the destination path, the expected document and the group
@@ -57,6 +59,20 @@ func (s *Server) documentoNFODeEpisodios(ctx context.Context, ent sqlcgen.Entity
 	blocosExistentes := localmedia.ExtrairBlocosDeEpisodio(existente)
 	legado := camposDoArquivoLegado(blocosExistentes, linhas)
 
+	// Third tier of the numbering: the VIDEO FILE NAME states SxxEyy, and the episodes the
+	// tree cannot number are exactly the ones that lost the tag in a previous write. Without
+	// this tier the document and the damaged file agree on "no number", so the damage is
+	// permanent -- the file converges with a document that says nothing.
+	//
+	// Only for a file that holds ONE episode: with several, the name states the FIRST number
+	// and offsetting by index would be a guess that a wrong NFO does not survive.
+	temporadaArquivo, episodioArquivo := 0, 0
+	if len(linhas) == 1 {
+		if info, ok := naming.ParseEpisode(filepath.Base(mf.Path)); ok && info.Season > 0 && len(info.Episodes) == 1 {
+			temporadaArquivo, episodioArquivo = info.Season, info.Episodes[0]
+		}
+	}
+
 	blocos := make([]localmedia.BlocoEpisodioNFO, 0, len(linhas))
 	for indice, linha := range linhas {
 		irmao, erro := s.leitura().ObterEntity(ctx, linha.ID)
@@ -70,7 +86,7 @@ func (s *Server) documentoNFODeEpisodios(ctx context.Context, ent sqlcgen.Entity
 		if !encontrada {
 			continue // defensive: a row of the junction without an entity cannot happen
 		}
-		temporada, episodio := numeracaoDoBloco(linha, blocosExistentes, indice)
+		temporada, episodio := numeracaoDoBloco(linha, blocosExistentes, indice, temporadaArquivo, episodioArquivo)
 		blocos = append(blocos, localmedia.BlocoEpisodioNFO{
 			Entidade:  resolvida,
 			Temporada: temporada,
@@ -100,13 +116,24 @@ func (s *Server) documentoNFODeEpisodios(ctx context.Context, ent sqlcgen.Entity
 // not know" would make every one of those files diverge from the document -- the job would rewrite
 // 360 files on every single run, forever, to say nothing new. Taking the number the file has makes
 // the document converge and changes nothing the media server reads.
-func numeracaoDoBloco(linha sqlcgen.ListarEpisodiosDoMediaFileRow, existentes []localmedia.BlocoUsuarioNFO, indice int) (temporada, episodio int) {
-	temporada, episodio = int(linha.Temporada), int(linha.Episodio)
-	if temporada > 0 && episodio > 0 {
-		return temporada, episodio
+func numeracaoDoBloco(linha sqlcgen.ListarEpisodiosDoMediaFileRow, existentes []localmedia.BlocoUsuarioNFO, indice, temporadaArquivo, episodioArquivo int) (temporada, episodio int) {
+	// 1. The tree (provider data) always wins.
+	if linha.Temporada > 0 && linha.Episodio > 0 {
+		return int(linha.Temporada), int(linha.Episodio)
 	}
+	// 2. What the file already declares at this block stays (nobody loses a number a previous
+	// manager wrote, and the damaged files from the regression of v0.15.4 are exactly the ones
+	// that declare nothing).
 	if indice < len(existentes) {
-		return existentes[indice].Temporada, existentes[indice].Episodio
+		t, e := existentes[indice].Temporada, existentes[indice].Episodio
+		if t > 0 || e > 0 {
+			return t, e
+		}
+	}
+	// 3. The file name (single-episode file only, see documentoNFODeEpisodios): this is what
+	// RECOVERS the tag that a previous run dropped, and what Kodi reads anyway.
+	if temporadaArquivo > 0 && episodioArquivo > 0 {
+		return temporadaArquivo, episodioArquivo
 	}
 	return 0, 0
 }
