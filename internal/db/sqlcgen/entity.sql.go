@@ -1936,6 +1936,19 @@ func (q *Queries) ObterEntityPorTvdbTipo(ctx context.Context, arg ObterEntityPor
 	return i, err
 }
 
+const obterTituloEntity = `-- name: ObterTituloEntity :one
+SELECT title FROM entity WHERE id = ?
+`
+
+// Just the title, by id: the midias_faltantes job narrates the entity it is on
+// (ADR-0040, issue #69) and the whole row would be waste for a label.
+func (q *Queries) ObterTituloEntity(ctx context.Context, id string) (string, error) {
+	row := q.db.QueryRowContext(ctx, obterTituloEntity, id)
+	var title string
+	err := row.Scan(&title)
+	return title, err
+}
+
 const preencherCamposLocaisReproducaoSeAusentes = `-- name: PreencherCamposLocaisReproducaoSeAusentes :exec
 UPDATE entity SET
     watched = COALESCE(watched, ?),

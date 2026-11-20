@@ -953,6 +953,9 @@ type Querier interface {
 	// active item, it shows the last finished result).
 	ObterQueueItemAtivoPorKindRef(ctx context.Context, arg ObterQueueItemAtivoPorKindRefParams) (QueueItem, error)
 	ObterQueueItemPorId(ctx context.Context, id string) (QueueItem, error)
+	// Just the title, by id: the midias_faltantes job narrates the entity it is on
+	// (ADR-0040, issue #69) and the whole row would be waste for a label.
+	ObterTituloEntity(ctx context.Context, id string) (string, error)
 	// Complement of ObterQueueItemAtivoPorKindRef: the most recent item (ANY
 	// status) of a reference -- used by Manager.Status when there is no active
 	// item, to return the result of the LAST execution (sql.ErrNoRows = there never

@@ -61,6 +61,15 @@ func (s *Server) ContarMediaFilesEmEstadoMissing(ctx context.Context) (int64, er
 	return s.leitura().ContarMediaFilesEmEstadoMissing(ctx)
 }
 
+// TituloDaEntity returns the title of ONE entity, by id -- the narration label of
+// the midias_faltantes job (midiasfaltantes.Titulador, issue #69). A dedicated
+// title-only read instead of ObterEntity: this is called once per entity in the
+// loop, and pulling description/external ids/date columns just to fill a label
+// would be waste.
+func (s *Server) TituloDaEntity(ctx context.Context, entityID string) (string, error) {
+	return s.leitura().ObterTituloEntity(ctx, entityID)
+}
+
 func (s *Server) ListarEntitiesComMediaFilePresente(ctx context.Context) ([]string, error) {
 	diretos, err := s.leitura().ListarEntityIDsComMediaFilePresente(ctx)
 	if err != nil {
