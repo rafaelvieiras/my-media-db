@@ -137,7 +137,7 @@ func (h *Handler) executar(ctx context.Context, _ json.RawMessage, p *job.Progre
 	p.Etapa(1, passoUnico, "materializar mídias faltantes")
 	p.Contagem(0, len(ids))
 
-	var processadas, artesTotal, nfosGravados, falhas int
+	var processadas, artesTotal, nfosGravados, falhas, semPendencias int
 	for i, id := range ids {
 		rotulo := h.rotulo(ctx, id)
 		p.Item(rotulo)
@@ -152,13 +152,24 @@ func (h *Handler) executar(ctx context.Context, _ json.RawMessage, p *job.Progre
 			if nfo {
 				nfosGravados++
 			}
-			h.registrarDesfecho(p, rotulo, artes, nfo)
+			if !h.registrarDesfecho(p, rotulo, artes, nfo) {
+				semPendencias++
+			}
 		}
 		p.Contagem(i+1, len(ids))
 		if (i+1)%cadaQuantosLog == 0 {
 			log.Printf("midias_faltantes: %d/%d processadas, %d arte(s), %d NFO(s), %d falha(s)",
 				i+1, len(ids), artesTotal, nfosGravados, falhas)
 		}
+	}
+
+	// The entities that needed nothing are COUNTED, not written one row each (issue
+	// #73). A trail row costs an INSERT plus the retention DELETE on the same table
+	// -- ~30 ms of writing on the production array -- and 19.000 identical "nada
+	// faltando no disco" rows say nothing that one number does not. The interesting
+	// rows (art or NFO written, failures) keep their own line.
+	if semPendencias > 0 {
+		p.Ignorado(fmt.Sprintf("%d entity(ies)", semPendencias), "nada faltando no disco")
 	}
 
 	// The media_file 'missing' case: best-effort count -- a failure here (database
@@ -179,12 +190,17 @@ func (h *Handler) executar(ctx context.Context, _ json.RawMessage, p *job.Progre
 
 // registrarDesfecho tells the trail what happened to ONE entity that did not
 // fail: something was written (ok, with the detail of what) or nothing was
-// missing (skip). The distinction matters when the run is read backwards -- "300
-// arts over 19.018 entities" only makes sense next to how many needed nothing.
-func (h *Handler) registrarDesfecho(p *job.Progresso, rotulo string, artes []string, nfo bool) {
+// missing (returns false, and the CALLER counts it). The distinction matters when
+// the run is read backwards -- "300 arts over 19.018 entities" only makes sense
+// next to how many needed nothing.
+//
+// The "nothing was missing" case deliberately does NOT write a trail row: with
+// 19.018 entities that would be 19.018 rows saying the same thing, each one an
+// INSERT plus the retention DELETE on the production array (issue #73). The caller
+// reports the total once, at the end.
+func (h *Handler) registrarDesfecho(p *job.Progresso, rotulo string, artes []string, nfo bool) bool {
 	if len(artes) == 0 && !nfo {
-		p.Ignorado(rotulo, "nada faltando no disco")
-		return
+		return false
 	}
 	var detalhe string
 	if len(artes) > 0 && nfo {
@@ -195,6 +211,7 @@ func (h *Handler) registrarDesfecho(p *job.Progresso, rotulo string, artes []str
 		detalhe = "nfo"
 	}
 	p.OkDetalhe(rotulo, detalhe)
+	return true
 }
 
 // joinArtes renders the materialized kinds as "poster, fanart" -- short, because

@@ -3,6 +3,8 @@ package job
 import (
 	"context"
 	"encoding/json"
+	"sync"
+	"time"
 
 	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 )
@@ -34,15 +36,44 @@ type HandlerComProgresso interface {
 // breaks the work it observes.
 type Progresso struct {
 	registro execqueue.Registro
+
+	// intervaloSnapshot is the minimum time between two writes of the progress
+	// SNAPSHOT (Contagem/Item) into the queue row. Zero means no throttle.
+	//
+	// Issue #73: the snapshot was written on EVERY report, and each report is a
+	// committed UPDATE on the same row. Measured on the production array, one
+	// insert+prune+update round trip costs ~30 ms, so the job that visits 19.018
+	// entities paid ~30 ms of writing per entity to move a counter the UI reads
+	// every 4 s. The trail (Ok/Falhou/Ignorado) is NOT throttled: those rows are
+	// the record of what happened, and a handler is expected to report only what
+	// matters.
+	intervaloSnapshot time.Duration
+	agora             func() time.Time
+	mu                sync.Mutex
+	ultimoSnapshot    time.Time
 }
 
-// NovoProgresso builds a Progresso over a queue registrar. Exported for tests
-// and for callers that run a handler outside the queue.
+// NovoProgresso builds a Progresso over a queue registrar, with NO throttle.
+// Exported for tests and for callers that run a handler outside the queue: a
+// caller that holds the registrar itself can afford every report.
 func NovoProgresso(registro execqueue.Registro) *Progresso {
+	return &Progresso{registro: registroOuNulo(registro), agora: time.Now}
+}
+
+// NovoProgressoComIntervalo builds a Progresso that writes the progress snapshot
+// at most once per intervalo (the queue's own choice for a handler it runs, see
+// Manager). A non-positive intervalo means no throttle.
+func NovoProgressoComIntervalo(registro execqueue.Registro, intervalo time.Duration) *Progresso {
+	p := NovoProgresso(registro)
+	p.intervaloSnapshot = intervalo
+	return p
+}
+
+func registroOuNulo(registro execqueue.Registro) execqueue.Registro {
 	if registro == nil {
-		registro = execqueue.RegistroNulo()
+		return execqueue.RegistroNulo()
 	}
-	return &Progresso{registro: registro}
+	return registro
 }
 
 // Etapa announces the step the run is entering: "step 2 of 7: retroactive
@@ -63,17 +94,39 @@ func (p *Progresso) Etapa(indice, total int, rotulo string) {
 }
 
 // Contagem reports how many items of the CURRENT step are done, out of how many.
+// The LAST item always reaches the queue (atual == total): the throttle may drop
+// intermediate positions, never the final one.
 func (p *Progresso) Contagem(atual, total int) {
-	if p == nil {
+	if !p.deveSincronizar(atual >= total) {
 		return
 	}
 	p.registro.Progresso(execqueue.Progresso{Atual: atual, Total: total})
 }
 
-// Item names what is being processed right now ("Automatik — 1985", "source
-// /media/videos"): the answer to "which one is it on".
-func (p *Progresso) Item(rotulo string) {
+// deveSincronizar answers "does this report reach the queue now?". forcar is true
+// for a report that must never be lost (the end of a step).
+func (p *Progresso) deveSincronizar(forcar bool) bool {
 	if p == nil {
+		return false
+	}
+	if p.intervaloSnapshot <= 0 {
+		return true
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	agora := p.agora()
+	if !forcar && agora.Sub(p.ultimoSnapshot) < p.intervaloSnapshot {
+		return false
+	}
+	p.ultimoSnapshot = agora
+	return true
+}
+
+// Item names what is being processed right now ("Automatik — 1985", "source
+// /media/videos"): the answer to "which one is it on". Throttled together with
+// Contagem -- both write the same row, so one report per interval carries both.
+func (p *Progresso) Item(rotulo string) {
+	if !p.deveSincronizar(false) {
 		return
 	}
 	p.registro.Progresso(execqueue.Progresso{Item: rotulo})

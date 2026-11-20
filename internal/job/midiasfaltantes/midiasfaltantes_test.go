@@ -277,23 +277,35 @@ func TestExecutarComProgressoNarraContagemEItem(t *testing.T) {
 		t.Error("o uuid não deveria aparecer como item quando o título está disponível")
 	}
 
-	// Trilha: um desfecho por entity, com o tipo certo.
+	// Trilha: uma linha por entity COM trabalho, mais UM resumo das que não tinham
+	// nada (issue #73: 19.000 linhas idênticas de "nada faltando" custavam mais que o
+	// próprio trabalho, e diziam o mesmo que um número).
 	eventos := registro.Eventos()
 	if len(eventos) != 3 {
-		t.Fatalf("eventos = %d, quero 3 (um por entity)", len(eventos))
+		t.Fatalf("eventos = %d, quero 3 (2 com trabalho + 1 resumo dos que não tinham)", len(eventos))
 	}
 	porRotulo := map[string]execqueue.Evento{}
-	for _, e := range eventos {
+	var resumo *execqueue.Evento
+	for i, e := range eventos {
 		porRotulo[e.Label] = e
+		if e.Status == execqueue.EventoSkip {
+			resumo = &eventos[i]
+		}
 	}
 	if e := porRotulo["Mortal Kombat (1995)"]; e.Status != execqueue.EventoOK || !strings.Contains(e.Detail, "poster") {
 		t.Errorf("evento de e1 = %+v, quero ok com o detalhe das artes", e)
 	}
-	if e := porRotulo["A Jornada Começa"]; e.Status != execqueue.EventoSkip {
-		t.Errorf("evento de e2 = %+v, quero skip (nada faltando)", e)
-	}
 	if e := porRotulo["Duran Duran"]; e.Status != execqueue.EventoOK || !strings.Contains(e.Detail, "nfo") {
 		t.Errorf("evento de e3 = %+v, quero ok mencionando o nfo", e)
+	}
+	if _, existe := porRotulo["A Jornada Começa"]; existe {
+		t.Error("a entity sem nada faltando não deveria ter linha própria na trilha (só o resumo)")
+	}
+	if resumo == nil {
+		t.Fatal("faltou o resumo das entities sem nada faltando")
+	}
+	if resumo.Label != "1 entity(ies)" || !strings.Contains(resumo.Detail, "nada faltando") {
+		t.Errorf("resumo = %+v, quero \"1 entity(ies)\" com \"nada faltando no disco\"", *resumo)
 	}
 }
 
