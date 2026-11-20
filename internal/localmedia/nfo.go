@@ -8,7 +8,10 @@ package localmedia
 // EscreverArquivoAtomico, in naming.go).
 
 import (
+	"bytes"
 	"encoding/xml"
+	"errors"
+	"io"
 	"sort"
 
 	"github.com/rafaelvieiras/my-media-db/internal/resolver"
@@ -108,22 +111,30 @@ type nfoDoc struct {
 	// without this, a .nfo written before that format change would have the
 	// old tag preserved forever alongside the new <ratings>, duplicating the
 	// score on every rewrite.
-	RatingLegacy *xmlElementoBruto  `xml:"rating,omitempty"`
-	UniqueIDs    []nfoUniqueID      `xml:"uniqueid,omitempty"`
-	Actors       []nfoActor         `xml:"actor,omitempty"`
-	Directors    []string           `xml:"director,omitempty"`
-	Credits      []string           `xml:"credits,omitempty"`
-	Studios      []string           `xml:"studio,omitempty"`
-	Status       string             `xml:"status,omitempty"`
-	Thumb        string             `xml:"thumb,omitempty"`
-	Fanart       *nfoFanart         `xml:"fanart,omitempty"`
-	UserRating   *float64           `xml:"userrating,omitempty"`
-	PlayCount    *int               `xml:"playcount,omitempty"`
-	Watched      *bool              `xml:"watched,omitempty"`
-	LastPlayed   string             `xml:"lastplayed,omitempty"`
-	DateAdded    string             `xml:"dateadded,omitempty"`
-	Resume       *nfoResume         `xml:"resume,omitempty"`
-	Extras       []xmlElementoBruto `xml:",any"`
+	RatingLegacy *xmlElementoBruto `xml:"rating,omitempty"`
+	UniqueIDs    []nfoUniqueID     `xml:"uniqueid,omitempty"`
+	Actors       []nfoActor        `xml:"actor,omitempty"`
+	Directors    []string          `xml:"director,omitempty"`
+	Credits      []string          `xml:"credits,omitempty"`
+	Studios      []string          `xml:"studio,omitempty"`
+	Status       string            `xml:"status,omitempty"`
+	Thumb        string            `xml:"thumb,omitempty"`
+	Fanart       *nfoFanart        `xml:"fanart,omitempty"`
+	UserRating   *float64          `xml:"userrating,omitempty"`
+	PlayCount    *int              `xml:"playcount,omitempty"`
+	Watched      *bool             `xml:"watched,omitempty"`
+	LastPlayed   string            `xml:"lastplayed,omitempty"`
+	DateAdded    string            `xml:"dateadded,omitempty"`
+	Resume       *nfoResume        `xml:"resume,omitempty"`
+	// Season/Episode are the episode NUMBERING inside the tree (ADR-0021): required by
+	// Kodi/Jellyfin in an NFO that documents more than one episode in the same video file
+	// (issue #80), absent for movie/tvshow. They are NAMED fields so that a value written
+	// by an older version does NOT survive through the Extras catch-all (an episode NFO
+	// used to keep the number parsed out of the FILE NAME forever, even when it disagreed
+	// with the entity).
+	Season  *int               `xml:"season,omitempty"`
+	Episode *int               `xml:"episode,omitempty"`
+	Extras  []xmlElementoBruto `xml:",any"`
 }
 
 // CamposUsuarioNFO groups the LOCAL fields of the .nfo (see nfoDoc) that only
@@ -153,6 +164,11 @@ func ExtrairCamposUsuario(existente []byte) CamposUsuarioNFO {
 	if err := xml.Unmarshal(existente, &doc); err != nil {
 		return CamposUsuarioNFO{}
 	}
+	return camposDe(doc)
+}
+
+// camposDe extracts the local/user fields of one already parsed nfoDoc.
+func camposDe(doc nfoDoc) CamposUsuarioNFO {
 	out := CamposUsuarioNFO{
 		UserRating: doc.UserRating,
 		PlayCount:  doc.PlayCount,
@@ -163,6 +179,47 @@ func ExtrairCamposUsuario(existente []byte) CamposUsuarioNFO {
 	}
 	if doc.Resume != nil {
 		out.Resume = &struct{ Position, Total float64 }{Position: doc.Resume.Position, Total: doc.Resume.Total}
+	}
+	return out
+}
+
+// BlocoUsuarioNFO is one parsed block of an existing EPISODE .nfo: the numbering it declares
+// (0 when the tags are absent) and the local fields it carries.
+type BlocoUsuarioNFO struct {
+	Temporada int
+	Episodio  int
+	Campos    CamposUsuarioNFO
+}
+
+// ExtrairBlocosDeEpisodio reads EVERY <episodedetails> block of an existing .nfo -- a
+// multi-episode file has several, concatenated after one XML header (see
+// MontarNFOEpisodios). It exists so a rewrite preserves the watched/rating state of EACH
+// episode of the file instead of only the first one: the caller matches the blocks by
+// (temporada, episodio). Best-effort, like ExtrairCamposUsuario: a corrupted file yields
+// whatever was readable before the defect, never an error -- writing an NFO must never fail
+// because of the previous one.
+func ExtrairBlocosDeEpisodio(existente []byte) []BlocoUsuarioNFO {
+	if len(existente) == 0 {
+		return nil
+	}
+	dec := xml.NewDecoder(bytes.NewReader(existente))
+	var out []BlocoUsuarioNFO
+	for {
+		var doc nfoDoc
+		if err := dec.Decode(&doc); err != nil {
+			break // io.EOF, or the file stopped being valid XML: keep what was read
+		}
+		if doc.XMLName.Local != raizEpisode {
+			continue
+		}
+		bloco := BlocoUsuarioNFO{Campos: camposDe(doc)}
+		if doc.Season != nil {
+			bloco.Temporada = *doc.Season
+		}
+		if doc.Episode != nil {
+			bloco.Episodio = *doc.Episode
+		}
+		out = append(out, bloco)
 	}
 	return out
 }
@@ -209,6 +266,68 @@ var ordemUniqueIDDefault = []string{"tmdb", "imdb", "tvdb"}
 // elements as NAMED (so they do not fall into Extras) in case a previous .nfo
 // has them.
 func MontarNFO(e resolver.Entidade, usuario CamposUsuarioNFO) ([]byte, error) {
+	corpo, err := xml.MarshalIndent(docDe(e, usuario), "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	saida := make([]byte, 0, len(xml.Header)+len(corpo)+1)
+	saida = append(saida, []byte(xml.Header)...)
+	saida = append(saida, corpo...)
+	saida = append(saida, '\n')
+	return saida, nil
+}
+
+// BlocoEpisodioNFO is one <episodedetails> block of the .nfo of a video FILE: the resolved
+// episode entity, its numbering and the local fields preserved from the previous file.
+// Temporada/Episodio are 0 when the tree has no number for the episode (a special without a
+// season/episode link) -- the tags are then omitted, never written as 0.
+type BlocoEpisodioNFO struct {
+	Entidade  resolver.Entidade
+	Temporada int
+	Episodio  int
+	Usuario   CamposUsuarioNFO
+}
+
+// MontarNFOEpisodios builds the .nfo of a video file that holds one or more episodes
+// (issue #80). A multi-episode file (S02E01-E02-E03) is ONE file with ONE .nfo -- Kodi
+// derives the episode numbers from the FILE NAME, so the document has to carry one
+// <episodedetails> block per episode, in file order (Kodi's own library export writes it
+// exactly like this; the concatenated roots are technically invalid XML and there is an open
+// upstream issue about it, but it is what Kodi, Jellyfin and every NFO parser out there
+// read).
+//
+// With a single block the output is byte-identical to MontarNFO (plus the numbering), so the
+// 12 thousand single-episode files keep their shape.
+func MontarNFOEpisodios(blocos []BlocoEpisodioNFO) ([]byte, error) {
+	if len(blocos) == 0 {
+		return nil, errors.New("localmedia: nenhum episodio para montar o NFO")
+	}
+	saida := make([]byte, 0, 1024*len(blocos))
+	saida = append(saida, []byte(xml.Header)...)
+	for _, b := range blocos {
+		doc := docDe(b.Entidade, b.Usuario)
+		if b.Temporada > 0 {
+			temporada := b.Temporada
+			doc.Season = &temporada
+		}
+		if b.Episodio > 0 {
+			episodio := b.Episodio
+			doc.Episode = &episodio
+		}
+		corpo, err := xml.MarshalIndent(doc, "", "  ")
+		if err != nil {
+			return nil, err
+		}
+		saida = append(saida, corpo...)
+		saida = append(saida, '\n')
+	}
+	return saida, nil
+}
+
+// docDe assembles the nfoDoc of ONE entity: the mapping table of doc 09 plus the local fields
+// preserved from a previous write. Shared by MontarNFO (one document) and
+// MontarNFOEpisodios (one block per episode).
+func docDe(e resolver.Entidade, usuario CamposUsuarioNFO) nfoDoc {
 	doc := nfoDoc{
 		XMLName:       xml.Name{Local: nomeRaizNFO(e.Type)},
 		Title:         e.Title,
@@ -239,16 +358,7 @@ func MontarNFO(e resolver.Entidade, usuario CamposUsuarioNFO) ([]byte, error) {
 	if usuario.Resume != nil {
 		doc.Resume = &nfoResume{Position: usuario.Resume.Position, Total: usuario.Resume.Total}
 	}
-
-	corpo, err := xml.MarshalIndent(doc, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	saida := make([]byte, 0, len(xml.Header)+len(corpo)+1)
-	saida = append(saida, []byte(xml.Header)...)
-	saida = append(saida, corpo...)
-	saida = append(saida, '\n')
-	return saida, nil
+	return doc
 }
 
 // derefStr dereferences a *string ("" when nil).
@@ -340,4 +450,51 @@ func nomesDeCompanies(companies []richfields.Company) []string {
 		out = append(out, c.Name)
 	}
 	return out
+}
+
+// CanonicalizarNFOEpisodios re-emits the blocks of an EXISTING episode .nfo in the same
+// canonical layout MontarNFOEpisodios produces, WITHOUT changing any value. It exists because
+// the same document can be written in more than one layout: an .nfo written before the numbered
+// fields existed keeps <season>/<episode> among the unknown tags, as they arrived from whatever
+// manager wrote the file, in the middle of other tags -- semantically identical, byte-different.
+// Comparing the canonical form (instead of the raw bytes) against the document we would write is
+// what keeps the first run after the upgrade from rewriting the ~12 thousand single-episode
+// files, while a file whose NUMBERING or block count really differs still does not converge.
+//
+// A file that is not valid XML, or that has no <episodedetails> block, returns an error: the
+// caller rewrites from scratch.
+func CanonicalizarNFOEpisodios(existente []byte) ([]byte, error) {
+	if len(existente) == 0 {
+		return nil, errors.New("localmedia: NFO vazio")
+	}
+	dec := xml.NewDecoder(bytes.NewReader(existente))
+	saida := make([]byte, 0, len(existente))
+	blocos := 0
+	for {
+		var doc nfoDoc
+		err := dec.Decode(&doc)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if doc.XMLName.Local != raizEpisode {
+			continue
+		}
+		if blocos == 0 {
+			saida = append(saida, []byte(xml.Header)...)
+		}
+		corpo, err := xml.MarshalIndent(doc, "", "  ")
+		if err != nil {
+			return nil, err
+		}
+		saida = append(saida, corpo...)
+		saida = append(saida, '\n')
+		blocos++
+	}
+	if blocos == 0 {
+		return nil, errors.New("localmedia: NFO sem episodedetails")
+	}
+	return saida, nil
 }

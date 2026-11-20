@@ -422,3 +422,26 @@ func TestIndiceRotacaoLivreMusica(t *testing.T) {
 		t.Errorf("indice sem nenhum arquivo = %d, quero 1", got)
 	}
 }
+
+// TestCaminhoNFODeVideo fixes the rule that names an episode/movie .nfo after the VIDEO (Kodi's
+// convention): the extension is swapped, the rest of the path is untouched.
+func TestCaminhoNFODeVideo(t *testing.T) {
+	casos := []struct{ entrada, quero string }{
+		{"/lib/Show.S01E01.mkv", "/lib/Show.S01E01.nfo"},
+		{"/lib/pasta/Show.S01E01E02.mkv", "/lib/pasta/Show.S01E01E02.nfo"},
+		{"/lib/Filme.2020.1080p.mp4", "/lib/Filme.2020.1080p.nfo"},
+		{"/lib/pasta/semext", "/lib/pasta/semext.nfo"},
+	}
+	for _, c := range casos {
+		if got := CaminhoNFODeVideo(c.entrada); got != c.quero {
+			t.Errorf("CaminhoNFODeVideo(%q) = %q, quero %q", c.entrada, got, c.quero)
+		}
+	}
+	// sem extensao informada, o kind decide a padrao (poster -> .jpg)
+	if got := NomeArquivoArteMusica(KindPoster, true, 0, ""); got != "folder.jpg" {
+		t.Errorf("NomeArquivoArteMusica sem extensao = %q, quero folder.jpg", got)
+	}
+	if got := IndiceRotacaoLivreMusica([]string{"/m/folder2.jpg"}, KindPoster, ""); got != 3 {
+		t.Errorf("IndiceRotacaoLivreMusica sem extensao = %d, quero 3", got)
+	}
+}

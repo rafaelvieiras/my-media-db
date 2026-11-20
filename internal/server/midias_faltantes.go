@@ -455,6 +455,24 @@ func (s *Server) gravarNFOSeFaltante(ctx context.Context, ent sqlcgen.Entity, gr
 	nfoPathAntigo := ent.NfoPath.String
 	temNfoRegistrado := ent.NfoPath.Valid && nfoPathAntigo != ""
 
+	// An EPISODE's .nfo belongs to the FILE, not to the entity (issue #80): the convergence
+	// check and the write have to look at the whole group of episodes that share the file.
+	if ent.Type == tipoEntEpisodio {
+		convergente, cerr := s.nfoDeEpisodiosConvergente(ctx, ent)
+		if cerr != nil {
+			log.Printf("gravarNFOSeFaltante: falha ao conferir a convergencia do NFO do episodio %q (assumindo reescrita): %v", ent.ID, cerr)
+		} else if convergente {
+			return false, nil
+		}
+		if _, werr := s.gravarNFOEpisodios(ctx, ent, grupos); werr != nil {
+			if errors.Is(werr, errSemDestino) {
+				return false, nil
+			}
+			return false, werr
+		}
+		return true, nil
+	}
+
 	resolvida, encontrada, err := s.resolverEntity(ctx, ent.ID, "", false)
 	if err != nil {
 		return false, err

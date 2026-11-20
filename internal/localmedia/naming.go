@@ -469,6 +469,15 @@ func NomeBaseVideo(path string) string {
 	return strings.TrimSuffix(nome, filepath.Ext(nome))
 }
 
+// CaminhoNFODeVideo is the .nfo that belongs to a VIDEO file: the full path with the extension
+// swapped for ".nfo", which is Kodi's rule (the NFO is named exactly like the video) and the
+// same name NomeArquivoNFO builds for an episode/movie. It exists so the caller that has the
+// media_file path in hand does not have to re-split it (issue #80: the .nfo belongs to the
+// FILE, not to the entity).
+func CaminhoNFODeVideo(videoPath string) string {
+	return strings.TrimSuffix(videoPath, filepath.Ext(videoPath)) + ".nfo"
+}
+
 // EhPastaExclusiva says whether `dir` is the folder of a SINGLE video
 // (media_file.path) of ANY entity — a folder with 1 isolated movie/episode
 // uses the bare name; a folder with 2+ videos (multiple editions of the same

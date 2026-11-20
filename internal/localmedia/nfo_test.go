@@ -464,3 +464,130 @@ func TestExtrairCamposUsuarioArquivoAusenteOuInvalido(t *testing.T) {
 		t.Errorf("XML invalido = %+v, quero zero-value", usuario)
 	}
 }
+
+// episodioFixture builds a minimal episode entity for the multi-block tests.
+func episodioFixture(id, titulo string) resolver.Entidade {
+	return resolver.Entidade{ID: id, Type: "episode", Title: titulo, ExternalIDs: map[string]string{"tmdb": "1"}}
+}
+
+// TestMontarNFOEpisodiosUmBlocoPorEpisodio covers the Kodi convention of a multi-episode file
+// (issue #80): ONE document, one XML header, one <episodedetails> block per episode IN FILE
+// ORDER, each carrying its own numbering and title.
+func TestMontarNFOEpisodiosUmBlocoPorEpisodio(t *testing.T) {
+	corpo, err := MontarNFOEpisodios([]BlocoEpisodioNFO{
+		{Entidade: episodioFixture("e1", "Primeiro"), Temporada: 2, Episodio: 1},
+		{Entidade: episodioFixture("e2", "Segundo"), Temporada: 2, Episodio: 2},
+	})
+	if err != nil {
+		t.Fatalf("MontarNFOEpisodios: %v", err)
+	}
+	texto := string(corpo)
+	if strings.Count(texto, "<episodedetails>") != 2 {
+		t.Errorf("blocos = %d, quero 2:\n%s", strings.Count(texto, "<episodedetails>"), texto)
+	}
+	if strings.Count(texto, "<?xml") != 1 {
+		t.Errorf("cabecalhos XML = %d, quero 1", strings.Count(texto, "<?xml"))
+	}
+	if !strings.Contains(texto, "<title>Primeiro</title>") || !strings.Contains(texto, "<title>Segundo</title>") {
+		t.Errorf("titulos ausentes:\n%s", texto)
+	}
+	if !strings.Contains(texto, "<season>2</season>") || !strings.Contains(texto, "<episode>1</episode>") || !strings.Contains(texto, "<episode>2</episode>") {
+		t.Errorf("numeracao ausente:\n%s", texto)
+	}
+	// ordem do ARQUIVO: o bloco do primeiro episodio vem antes
+	if strings.Index(texto, "Primeiro") > strings.Index(texto, "Segundo") {
+		t.Error("blocos fora de ordem (o do primeiro episodio tem que vir primeiro)")
+	}
+}
+
+// TestMontarNFOEpisodiosSemNumeroNaoEscreveZero covers a special without a season/episode link:
+// the tags are omitted, never written as 0 (0 would tell Kodi a numbering the tree does not have).
+func TestMontarNFOEpisodiosSemNumeroNaoEscreveZero(t *testing.T) {
+	corpo, err := MontarNFOEpisodios([]BlocoEpisodioNFO{{Entidade: episodioFixture("e1", "Especial")}})
+	if err != nil {
+		t.Fatalf("MontarNFOEpisodios: %v", err)
+	}
+	texto := string(corpo)
+	if strings.Contains(texto, "<season>") || strings.Contains(texto, "<episode>") {
+		t.Errorf("numeracao escrita sem numero na arvore:\n%s", texto)
+	}
+	if _, err := MontarNFOEpisodios(nil); err == nil {
+		t.Error("MontarNFOEpisodios(nil) sem erro, quero erro")
+	}
+}
+
+// TestExtrairBlocosDeEpisodioParaConvergencia covers the read side: every block of an existing
+// multi-block document is parsed with its numbering, so a rewrite preserves the watched state
+// of EACH episode instead of only the first one.
+func TestExtrairBlocosDeEpisodioParaConvergencia(t *testing.T) {
+	existente := `<?xml version="1.0" encoding="UTF-8"?>
+<episodedetails>
+  <title>Primeiro</title>
+  <season>2</season>
+  <episode>1</episode>
+  <playcount>3</playcount>
+</episodedetails>
+<episodedetails>
+  <title>Segundo</title>
+  <season>2</season>
+  <episode>2</episode>
+  <watched>true</watched>
+</episodedetails>
+`
+	blocos := ExtrairBlocosDeEpisodio([]byte(existente))
+	if len(blocos) != 2 {
+		t.Fatalf("blocos = %d, quero 2", len(blocos))
+	}
+	if blocos[0].Temporada != 2 || blocos[0].Episodio != 1 || blocos[1].Episodio != 2 {
+		t.Errorf("numeracao = %+v / %+v, quero (2,1) e (2,2)", blocos[0], blocos[1])
+	}
+	if blocos[0].Campos.PlayCount == nil || *blocos[0].Campos.PlayCount != 3 {
+		t.Errorf("playcount do 1o bloco = %v, quero 3", blocos[0].Campos.PlayCount)
+	}
+	if blocos[1].Campos.Watched == nil || !*blocos[1].Campos.Watched {
+		t.Errorf("watched do 2o bloco = %v, quero true", blocos[1].Campos.Watched)
+	}
+	if blocos := ExtrairBlocosDeEpisodio(nil); blocos != nil {
+		t.Errorf("ExtrairBlocosDeEpisodio(nil) = %v, quero nil", blocos)
+	}
+	// um arquivo corrompido nao propaga erro: entrega o que deu para ler
+	if blocos := ExtrairBlocosDeEpisodio([]byte("<episodedetails><title>x</title></episo")); len(blocos) != 0 {
+		t.Errorf("arquivo truncado devolveu %d blocos, quero 0", len(blocos))
+	}
+}
+
+// TestCanonicalizarNFOEpisodiosMantemConteudo cobre o motivo de existir: o MESMO documento em
+// outro layout (o <season>/<episode> no meio das tags desconhecidas, como um gerenciador
+// antigo escreveu) canonicaliza para os mesmos bytes que MontarNFOEpisodios produz -- e e isso
+// que impede o primeiro run depois da mudanca de reescrever ~12 mil arquivos de episodio.
+func TestCanonicalizarNFOEpisodiosMantemConteudo(t *testing.T) {
+	antigo := `<?xml version="1.0" encoding="UTF-8"?>
+<episodedetails>
+  <title>Primeiro</title>
+  <season>2</season>
+  <episode>1</episode>
+  <showtitle>Serie</showtitle>
+</episodedetails>
+`
+	canonico, err := CanonicalizarNFOEpisodios([]byte(antigo))
+	if err != nil {
+		t.Fatalf("CanonicalizarNFOEpisodios: %v", err)
+	}
+	esperado, err := MontarNFOEpisodios([]BlocoEpisodioNFO{
+		{Entidade: resolver.Entidade{ID: "e1", Type: "episode", Title: "Primeiro"}, Temporada: 2, Episodio: 1,
+			Usuario: CamposUsuarioNFO{Extras: ExtrairCamposUsuario([]byte(antigo)).Extras}},
+	})
+	if err != nil {
+		t.Fatalf("MontarNFOEpisodios: %v", err)
+	}
+	if string(canonico) != string(esperado) {
+		t.Errorf("canonico != esperado:\n--- canonico ---\n%s\n--- esperado ---\n%s", canonico, esperado)
+	}
+	// vazio/sem bloco: erro, para o chamador reescrever do zero
+	if _, err := CanonicalizarNFOEpisodios(nil); err == nil {
+		t.Error("CanonicalizarNFOEpisodios(nil) sem erro")
+	}
+	if _, err := CanonicalizarNFOEpisodios([]byte("<movie><title>x</title></movie>")); err == nil {
+		t.Error("CanonicalizarNFOEpisodios(sem episodedetails) sem erro")
+	}
+}

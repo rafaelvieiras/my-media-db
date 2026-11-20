@@ -571,6 +571,13 @@ func (s *Server) gravarNFO(ctx context.Context, ent sqlcgen.Entity, e resolver.E
 // aggregated the entity (the midias_faltantes job does, once per entity) must not pay for
 // it again -- nor for a third aggregation inside each materializarKindVencedor.
 func (s *Server) gravarNFOComGrupos(ctx context.Context, ent sqlcgen.Entity, e resolver.Entidade, grupos map[string][]artworkItem) (nfoWriteResult, error) {
+	// An EPISODE does not own its .nfo: the FILE does (issue #80). A multi-episode file
+	// (S02E01-E02-E03) has one entity per episode and ONE .nfo, whose document carries one
+	// <episodedetails> block per episode -- writing only this entity's block is what made the
+	// siblings overwrite each other on every run.
+	if ent.Type == tipoEntEpisodio {
+		return s.gravarNFOEpisodios(ctx, ent, grupos)
+	}
 	dir, nomeBaseVideo, _, ok, err := s.resolverDestino(ctx, ent)
 	if err != nil {
 		return nfoWriteResult{}, err
