@@ -115,6 +115,17 @@ func (s *Server) MaterializarMidiasFaltantes(ctx context.Context, entityID strin
 	// six times per entity and five of the results were thrown away.
 	grupos := s.montarGruposArtwork(ctx, ent.ID)
 
+	// ONE destination resolution per entity, BEFORE any download (issue #79): an entity
+	// without a destination folder cannot materialize anything, and paying for the download
+	// before discovering that was 301 network fetches per run that wrote nothing and were
+	// reported as success. "No destination" is a legitimate no-op (an entity whose only
+	// media_file vanished, music without an owned track): false without an error.
+	if _, _, _, ok, derr := s.resolverDestino(ctx, ent); derr != nil {
+		return nil, false, derr
+	} else if !ok {
+		return nil, false, nil
+	}
+
 	// materializarPosterDeArtista runs BEFORE the kindsMidiasFaltantes loop on purpose:
 	// it uses the NOT-YET-MATERIALIZED winner of the `thumb` kind (with SrcURL, to
 	// download) -- if it ran later, the loop below itself (kindsMidiasFaltantes includes
@@ -129,6 +140,9 @@ func (s *Server) MaterializarMidiasFaltantes(ctx context.Context, entityID strin
 	for _, kind := range kindsMidiasFaltantes {
 		if kind == kindPoster && ent.Type == tipoEntArtista {
 			continue // already handled by materializarPosterDeArtista above (thumb->poster alias) -- reprocessing here would count the same artwork twice in artesBaixadas
+		}
+		if kind == kindThumb && ent.Type == tipoEntArtista {
+			continue // the artist picture IS the thumb: the alias above already wrote it as the poster (folder.jpg); writing the thumb too would put the same image in the folder twice under two names
 		}
 		ok, kerr := s.materializarKindVencedor(ctx, ent, kind, grupos)
 		if kerr != nil {
@@ -256,7 +270,11 @@ func (s *Server) convergirNomeCanonico(ctx context.Context, ent sqlcgen.Entity, 
 	}
 	ext := filepath.Ext(alvo.LocalPath.String)
 	kind, nomeBase := s.kindNomeEBase(ctx, ent, alvo.Kind, nomeBaseVideo)
-	destino := filepath.Join(dir, localmedia.NomeArquivoArte(kind, true, 0, pastaExclusiva, nomeBase, ext))
+	nome := localmedia.NomeArquivoArte(kind, true, 0, pastaExclusiva, nomeBase, ext)
+	if ehMusica(ent.Type) {
+		nome = localmedia.NomeArquivoArteMusica(alvo.Kind, true, 0, ext)
+	}
+	destino := filepath.Join(dir, nome)
 	if destino == alvo.LocalPath.String {
 		if arquivoLocalAindaExiste(alvo.LocalPath.String) {
 			return destino, nil
@@ -272,24 +290,20 @@ func (s *Server) convergirNomeCanonico(ctx context.Context, ent sqlcgen.Entity, 
 	return destino, nil
 }
 
-// materializarAssetOuCache calls materializarAsset (writes to the REAL library folder) and
-// treats errSemDestino as a "cache only" success: a music album/artist
-// has no DIRECT media_file (only the track, descendant, links -- ADR-0027), so
-// resolverDestino never finds a folder for them -- gravarAssetNaPastaReal would always
-// return errSemDestino. That does not invalidate the gain of the fix: the asset was
-// already created in the internal CACHE by baixarEMaterializarArte (BEFORE this call, or
-// already existed via ObterAsset), which is all that has_poster/the card need
-// (entity.sql: EXISTS asset of the kind, without requiring local_path). Materializing
-// music cover/picture in the REAL folder (a file next to the tracks) is OUT of scope here
-// -- it would require resolving a "canonical directory" for album/artist from the files of
-// the descendant tracks, its own decision not covered by the reported bug (absence of the
-// cover/picture in the card). For movie/tv/season/episode (which always have a resolvable
-// destination, the only eligible types before) the behavior does not change --
-// errSemDestino never occurs for them here.
+// materializarAssetOuCache calls materializarAsset (writes to the REAL library folder).
+//
+// "No destination" (errSemDestino) is NOT success (issue #79): it means nothing was written,
+// and reporting it as materialized made the job print "301 arte(s) materializada(s)" on every
+// run while not a single image reached the library -- and kept re-downloading the artwork every
+// run, because the asset local_path stayed empty. The callers now resolve the destination BEFORE
+// downloading (MaterializarMidiasFaltantes), so errSemDestino here means a transient condition
+// (the folder vanished between the two calls) and the honest answer is false, not true. The
+// asset binary stays in the internal CACHE (baixarEMaterializarArte wrote it there), which is
+// all has_poster/the card need.
 func (s *Server) materializarAssetOuCache(ctx context.Context, ent sqlcgen.Entity, asset sqlcgen.Asset) (bool, error) {
 	if _, err := s.materializarAsset(ctx, ent, asset); err != nil {
 		if errors.Is(err, errSemDestino) {
-			return true, nil
+			return false, nil
 		}
 		return false, err
 	}
@@ -428,6 +442,13 @@ func (s *Server) nfoConvergenteNoDisco(ctx context.Context, ent sqlcgen.Entity, 
 // here, but defensive) degrades to (false, nil).
 func (s *Server) gravarNFOSeFaltante(ctx context.Context, ent sqlcgen.Entity, grupos map[string][]artworkItem) (bool, error) {
 	if ent.Type == tipoEntTemporada {
+		return false, nil
+	}
+	// Music album/artist: the destination folder NOW resolves (pastaDeMusica, issue #79), but
+	// this codebase has no music NFO convention yet (MontarNFO only covers
+	// movie/tv/episode) -- without this guard the job would write a nameless ".nfo" next to
+	// the tracks.
+	if ehMusica(ent.Type) {
 		return false, nil
 	}
 

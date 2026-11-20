@@ -545,15 +545,23 @@ func TestMaterializarMidiasFaltantesNfoLegadoConvergeERemoveOrfao(t *testing.T) 
 // semearArvoreMusica builds artist->album->track (entity_relation) with ONE present
 // media_file on the track (the only way music links a media_file, ADR-0027) and returns the
 // ids (artistaID, albumID).
-func semearArvoreMusica(t *testing.T, d *db.DB) (artistaID, albumID string) {
+// semearArvoreMusica creates artist -> album -> track inside a REAL temporary folder and
+// returns the ids plus the album folder (the artist folder is its parent). The folder has to
+// exist on disk because the destination of a music entity is derived from the track path and
+// the job now refuses to download when there is nowhere to write (issue #79).
+func semearArvoreMusica(t *testing.T, d *db.DB) (artistaID, albumID, albumDir string) {
 	t.Helper()
+	albumDir = filepath.Join(t.TempDir(), "Artists", "Duran Duran", "Rio (1982)")
+	if err := os.MkdirAll(albumDir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", albumDir, err)
+	}
 	semearEntity(t, d, "art1", "artista", "Duran Duran")
 	semearEntity(t, d, "alb1", "album", "Rio")
 	semearEntity(t, d, "fx1", "faixa", "Hungry Like the Wolf")
 	ligarFilhoOrdenado(t, d, "r1", "art1", "alb1", "music_artista_principal", 0)
 	ligarFilhoOrdenado(t, d, "r2", "alb1", "fx1", "music_album", 1)
-	semearFile(t, d, "f1", "fx1", "/lib/musica/rio/01.flac", "present", 1, "")
-	return "art1", "alb1"
+	semearFile(t, d, "f1", "fx1", filepath.Join(albumDir, "01 - Hungry Like the Wolf.flac"), "present", 1, "")
+	return "art1", "alb1", albumDir
 }
 
 // TestListarEntitiesComMediaFilePresenteMusica covers the extension of the eligible universe
@@ -562,7 +570,7 @@ func semearArvoreMusica(t *testing.T, d *db.DB) (artistaID, albumID string) {
 // music never has on artist/album) was considered.
 func TestListarEntitiesComMediaFilePresenteMusica(t *testing.T) {
 	srv, _, d := setupMidiasFaltantesServer(t)
-	artistaID, albumID := semearArvoreMusica(t, d)
+	artistaID, albumID, _ := semearArvoreMusica(t, d)
 	semearEntity(t, d, "art2", "artista", "Sem Posse")
 
 	ids, err := srv.ListarEntitiesComMediaFilePresente(context.Background())
@@ -608,7 +616,7 @@ func semearInventarioArte(t *testing.T, d *db.DB, meID, entityID, source, kind, 
 // (materializarAssetOuCache).
 func TestMaterializarMidiasFaltantesAlbumBaixaCapaDoMusicbrainz(t *testing.T) {
 	srv, _, d := setupMidiasFaltantesServer(t)
-	_, albumID := semearArvoreMusica(t, d)
+	_, albumID, albumDir := semearArvoreMusica(t, d)
 	imgSrv := servidorImagem(t, nil)
 	semearInventarioArte(t, d, "me-mb", albumID, "musicbrainz", "poster", imgSrv.URL+"/img")
 
@@ -630,6 +638,18 @@ func TestMaterializarMidiasFaltantesAlbumBaixaCapaDoMusicbrainz(t *testing.T) {
 	if len(assets) != 1 || assets[0].Kind != "poster" {
 		t.Errorf("assets do album = %+v, quero 1 asset kind=poster", assets)
 	}
+	// issue #79: the cover has to LAND in the album folder, as folder.<ext> -- before, it was
+	// downloaded every run and written nowhere (local_path stayed empty).
+	quero := filepath.Join(albumDir, "folder.png")
+	if !assets[0].LocalPath.Valid || assets[0].LocalPath.String != quero {
+		t.Errorf("local_path = %v, quero %q", assets[0].LocalPath, quero)
+	}
+	if _, err := os.Stat(quero); err != nil {
+		t.Errorf("arquivo fisico ausente em %s: %v", quero, err)
+	}
+	if assets[0].IsPrincipal != 1 {
+		t.Errorf("is_principal = %d, quero 1 (primeira arte do kind)", assets[0].IsPrincipal)
+	}
 }
 
 // TestMaterializarMidiasFaltantesArtistaBaixaPosterViaThumb covers the ARTIST case: fanart.tv
@@ -638,7 +658,7 @@ func TestMaterializarMidiasFaltantesAlbumBaixaCapaDoMusicbrainz(t *testing.T) {
 // kind as the poster, otherwise the artist card would NEVER have has_poster=true.
 func TestMaterializarMidiasFaltantesArtistaBaixaPosterViaThumb(t *testing.T) {
 	srv, _, d := setupMidiasFaltantesServer(t)
-	artistaID, _ := semearArvoreMusica(t, d)
+	artistaID, _, albumDir := semearArvoreMusica(t, d)
 	imgSrv := servidorImagem(t, nil)
 	semearInventarioArte(t, d, "me-fa", artistaID, "fanarttv", "thumb", imgSrv.URL+"/img")
 
@@ -662,9 +682,18 @@ func TestMaterializarMidiasFaltantesArtistaBaixaPosterViaThumb(t *testing.T) {
 		if a.Kind == "poster" {
 			temPoster = true
 		}
+		if a.Kind == "thumb" && a.LocalPath.Valid {
+			t.Errorf("thumb materializado em %q -- o artista só recebe o poster (o thumb É a mesma imagem)", a.LocalPath.String)
+		}
 	}
 	if !temPoster {
 		t.Errorf("assets do artista = %+v, quero um asset kind=poster (derivado do thumb)", assets)
+	}
+	// issue #79: the artist picture lands in the ARTIST folder (one level above the album),
+	// as folder.<ext> -- the name the music library already uses.
+	quero := filepath.Join(filepath.Dir(albumDir), "folder.png")
+	if _, err := os.Stat(quero); err != nil {
+		t.Errorf("arquivo fisico ausente em %s: %v", quero, err)
 	}
 }
 
@@ -673,7 +702,7 @@ func TestMaterializarMidiasFaltantesArtistaBaixaPosterViaThumb(t *testing.T) {
 // folder).
 func TestMaterializarPosterDeArtistaIdempotente(t *testing.T) {
 	srv, _, d := setupMidiasFaltantesServer(t)
-	artistaID, _ := semearArvoreMusica(t, d)
+	artistaID, _, _ := semearArvoreMusica(t, d)
 	imgSrv := servidorImagem(t, nil)
 	semearInventarioArte(t, d, "me-fa", artistaID, "fanarttv", "thumb", imgSrv.URL+"/img")
 
@@ -702,7 +731,7 @@ func TestMaterializarPosterDeArtistaIdempotente(t *testing.T) {
 // so no poster is created, with no error.
 func TestMaterializarPosterDeArtistaSemInventarioNaoFazNada(t *testing.T) {
 	srv, _, d := setupMidiasFaltantesServer(t)
-	artistaID, _ := semearArvoreMusica(t, d)
+	artistaID, _, _ := semearArvoreMusica(t, d)
 
 	artes, _, err := srv.MaterializarMidiasFaltantes(context.Background(), artistaID)
 	if err != nil {
@@ -723,7 +752,7 @@ func TestMaterializarPosterDeArtistaSemInventarioNaoFazNada(t *testing.T) {
 // materializarKindVencedor) instead of propagating an error -- with no asset created.
 func TestMaterializarPosterDeArtistaFalhaDownloadNaoPropaga(t *testing.T) {
 	srv, _, d := setupMidiasFaltantesServer(t)
-	artistaID, _ := semearArvoreMusica(t, d)
+	artistaID, _, _ := semearArvoreMusica(t, d)
 	imgSrv := servidorImagem(t, nil)
 	semearInventarioArte(t, d, "me-fa", artistaID, "fanarttv", "thumb", imgSrv.URL+"/texto")
 
@@ -925,5 +954,155 @@ func TestMaterializarMidiasFaltantesNfoIgualNaoRegrava(t *testing.T) {
 	}
 	if corpo := lerNFO(t, libDir, "Matrix.1999"); corpo != corpoAntes {
 		t.Error("conteúdo do nfo mudou sem o banco mudar")
+	}
+}
+
+// TestMaterializarMidiasFaltantesMusicaSemPastaNaoBaixa covers issue #79 from the other side:
+// when the destination folder does not exist on disk (the remote mount is offline, the album
+// folder was renamed outside the app), the job must NOT download the artwork -- it used to
+// fetch it, write nothing, and report the kind as materialized, every single run.
+func TestMaterializarMidiasFaltantesMusicaSemPastaNaoBaixa(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	// the seeded track points inside a folder that is created and then removed: the database
+	// still says "present", the disk does not have it.
+	_, albumID, albumDir := semearArvoreMusica(t, d)
+	if err := os.RemoveAll(albumDir); err != nil {
+		t.Fatalf("RemoveAll(%s): %v", albumDir, err)
+	}
+	hits := 0
+	imgSrv := servidorImagem(t, &hits)
+	semearInventarioArte(t, d, "me-mb", albumID, "musicbrainz", "poster", imgSrv.URL+"/img")
+
+	artes, nfo, err := srv.MaterializarMidiasFaltantes(context.Background(), albumID)
+	if err != nil {
+		t.Fatalf("MaterializarMidiasFaltantes(%s): %v", albumID, err)
+	}
+	if len(artes) != 0 {
+		t.Errorf("artesBaixadas = %v, quero nenhuma (sem pasta de destino)", artes)
+	}
+	if nfo {
+		t.Error("nfoGravado = true, quero false (musica nao tem NFO)")
+	}
+	if hits != 0 {
+		t.Errorf("downloads = %d, quero 0 (nao baixar sem destino)", hits)
+	}
+	if assets := decodeAssetList(t, srv, albumID); len(assets) != 0 {
+		t.Errorf("assets do album = %+v, quero nenhum", assets)
+	}
+}
+
+// TestMaterializarMidiasFaltantesArtistaNaRaizNaoBaixa covers the guard of pastaDeMusica: when
+// the tracks are NOT inside an album subfolder (the album folder IS the library root), going up
+// one level to find the artist folder would drop the picture in the root of the library -- worse
+// than not writing it, so the job skips the artist.
+func TestMaterializarMidiasFaltantesArtistaNaRaizNaoBaixa(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	raiz := t.TempDir()
+	semearSource(t, d, "srcMusica", raiz)
+	semearEntity(t, d, "artRaiz", "artista", "Sem Album")
+	semearEntity(t, d, "albRaiz", "album", "Solto")
+	semearEntity(t, d, "fxRaiz", "faixa", "Faixa Solta")
+	ligarFilhoOrdenado(t, d, "r1", "artRaiz", "albRaiz", "music_artista_principal", 0)
+	ligarFilhoOrdenado(t, d, "r2", "albRaiz", "fxRaiz", "music_album", 1)
+	semearFile(t, d, "f1", "fxRaiz", filepath.Join(raiz, "01 - Faixa Solta.flac"), "present", 1, "")
+
+	// the ALBUM still has a destination: its folder IS the root, and a cover there is the
+	// cover of that album (nothing is overwritten, the name does not collide).
+	imgSrv := servidorImagem(t, nil)
+	semearInventarioArte(t, d, "me-fa", "artRaiz", "fanarttv", "thumb", imgSrv.URL+"/img")
+
+	artes, _, err := srv.MaterializarMidiasFaltantes(context.Background(), "artRaiz")
+	if err != nil {
+		t.Fatalf("MaterializarMidiasFaltantes: %v", err)
+	}
+	if len(artes) != 0 {
+		t.Errorf("artesBaixadas = %v, quero nenhuma (nao escrever na raiz da biblioteca)", artes)
+	}
+	if _, err := os.Stat(filepath.Join(raiz, "folder.png")); !os.IsNotExist(err) {
+		t.Errorf("folder.png existe na raiz da biblioteca (stat err=%v), quero ausente", err)
+	}
+}
+
+// TestMaterializarMidiasFaltantesAlbumConvergeNomeParaFolder covers the legacy case: an album
+// whose cover is already materialized in the album folder under the VIDEO name (poster.jpg, the
+// name an older version or another manager could have written). The job converges it on the
+// music name -- folder.jpg -- renaming the same bytes, so the folder ends up with ONE name per
+// artwork (ADR-0043).
+func TestMaterializarMidiasFaltantesAlbumConvergeNomeParaFolder(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	_, albumID, albumDir := semearArvoreMusica(t, d)
+	legado := filepath.Join(albumDir, "poster.jpg")
+	if err := os.WriteFile(legado, []byte("jpeg-fake"), 0o644); err != nil {
+		t.Fatalf("WriteFile(%s): %v", legado, err)
+	}
+	ctx := context.Background()
+	esc := escrita(t, d)
+	if _, err := esc.CriarAsset(ctx, sqlcgen.CriarAssetParams{
+		ID: "aLegado", EntityID: albumID, Kind: "poster", Origin: "local", PathOrUri: legado,
+	}); err != nil {
+		t.Fatalf("CriarAsset: %v", err)
+	}
+	if err := esc.AtualizarAssetLocalPath(ctx, sqlcgen.AtualizarAssetLocalPathParams{
+		LocalPath: nsOf(legado), ID: "aLegado",
+	}); err != nil {
+		t.Fatalf("AtualizarAssetLocalPath: %v", err)
+	}
+	if err := esc.MarcarAssetPrincipal(ctx, "aLegado"); err != nil {
+		t.Fatalf("MarcarAssetPrincipal: %v", err)
+	}
+
+	artes, _, err := srv.MaterializarMidiasFaltantes(ctx, albumID)
+	if err != nil {
+		t.Fatalf("MaterializarMidiasFaltantes: %v", err)
+	}
+	canonico := filepath.Join(albumDir, "folder.jpg")
+	if _, err := os.Stat(canonico); err != nil {
+		t.Errorf("arquivo ausente em %s: %v", canonico, err)
+	}
+	if _, err := os.Stat(legado); !os.IsNotExist(err) {
+		t.Errorf("poster.jpg ainda existe (stat err=%v), quero renomeado para folder.jpg", err)
+	}
+	assets := decodeAssetList(t, srv, albumID)
+	if len(assets) != 1 || !assets[0].LocalPath.Valid || assets[0].LocalPath.String != canonico {
+		t.Errorf("assets = %+v, quero 1 com local_path %q", assets, canonico)
+	}
+	achou := false
+	for _, k := range artes {
+		if k == "poster" {
+			achou = true
+		}
+	}
+	if !achou {
+		t.Errorf("artesBaixadas = %v, quero conter poster (a convergencia de nome e trabalho)", artes)
+	}
+}
+
+// TestMaterializarMidiasFaltantesAlbumMultiDiscoGravaNoAlbum covers a multi-disc release: the
+// tracks live in "CD 1"/"Digital Media 01" subfolders, but the cover belongs to the ALBUM --
+// it lands on the album folder, not duplicated inside each disc folder.
+func TestMaterializarMidiasFaltantesAlbumMultiDiscoGravaNoAlbum(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	albumDir := filepath.Join(t.TempDir(), "Artists", "Duran Duran", "Rio (1982)")
+	discoDir := filepath.Join(albumDir, "Digital Media 01")
+	if err := os.MkdirAll(discoDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	semearEntity(t, d, "art1", "artista", "Duran Duran")
+	semearEntity(t, d, "alb1", "album", "Rio")
+	semearEntity(t, d, "fx1", "faixa", "Hungry Like the Wolf")
+	ligarFilhoOrdenado(t, d, "r1", "art1", "alb1", "music_artista_principal", 0)
+	ligarFilhoOrdenado(t, d, "r2", "alb1", "fx1", "music_album", 1)
+	semearFile(t, d, "f1", "fx1", filepath.Join(discoDir, "01 - Hungry Like the Wolf.flac"), "present", 1, "")
+	imgSrv := servidorImagem(t, nil)
+	semearInventarioArte(t, d, "me-mb", "alb1", "musicbrainz", "poster", imgSrv.URL+"/img")
+
+	if _, _, err := srv.MaterializarMidiasFaltantes(context.Background(), "alb1"); err != nil {
+		t.Fatalf("MaterializarMidiasFaltantes: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(albumDir, "folder.png")); err != nil {
+		t.Errorf("capa do album ausente em %s: %v", albumDir, err)
+	}
+	if _, err := os.Stat(filepath.Join(discoDir, "folder.png")); err == nil {
+		t.Error("capa gravada DENTRO da pasta do disco -- deve ficar no album")
 	}
 }

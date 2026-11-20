@@ -153,6 +153,82 @@ func NomeArquivoArte(kind string, principal bool, indiceRotacao int, pastaExclus
 	return baseComPrefixo(kind, pastaExclusiva, nomeBaseVideo) + sufixoRotacao(principal, indiceRotacao) + ext
 }
 
+// ── Music folders (album/artist) ─────────────────────────────────────────
+//
+// In music there is no video file lending its name to the artwork: the FOLDER already
+// identifies the work, and the convention the library has on disk (what Ember/MediaElch
+// write and Kodi/Jellyfin read) is a set of BARE names, not the "<video>-poster" shape of
+// the video convention (doc 08):
+//
+//	folder.jpg    album cover / artist picture   cdart.png   disc art
+//	backdrop.jpg  artist fanart                  logo.png    (clear)logo
+//	banner.jpg    artist banner
+//
+// Those are the names the music library already uses, so writing "poster.jpg" next to an
+// existing "folder.jpg" would duplicate the same artwork under two names instead of
+// converging with what the owner has.
+//
+// Both spellings of the two kinds the artwork aggregator uses (assets.go: "logo", "disc")
+// and the ones of this package (KindClearlogo, KindDiscart) are mapped to the same name.
+var baseMusicaDeKind = map[string]string{
+	KindPoster:    "folder",
+	KindFanart:    "backdrop",
+	KindBackdrop:  "backdrop",
+	KindBanner:    "banner",
+	KindClearlogo: "logo",
+	"logo":        "logo",
+	KindDiscart:   "cdart",
+	"disc":        "cdart",
+	KindLandscape: "landscape",
+	KindThumb:     "thumb",
+}
+
+// baseMusica is the kind->bare-name lookup of a music folder; an unknown kind keeps its
+// own name (extensible, e.g. a future "folder-artist").
+func baseMusica(kind string) string {
+	if base, ok := baseMusicaDeKind[kind]; ok {
+		return base
+	}
+	return kind
+}
+
+// NomeArquivoArteMusica builds the NAME (without directory) of an artwork file in a MUSIC
+// folder (album/artist). Unlike NomeArquivoArte there is no pastaExclusiva decision: a
+// music folder IS the work's own folder, so the name is always the bare one; the rotation
+// suffix still applies to a non-principal artwork (folder2.jpg, folder3.jpg...), with the
+// same never-reindex rule of doc 08.
+func NomeArquivoArteMusica(kind string, principal bool, indiceRotacao int, ext string) string {
+	if ext == "" {
+		ext = ExtensaoPadrao(kind)
+	}
+	return baseMusica(kind) + sufixoRotacao(principal, indiceRotacao) + ext
+}
+
+// IndiceRotacaoLivreMusica is IndiceRotacaoLivre for the music naming: same next-free-index
+// rule, with the prefix coming from baseMusica instead of baseComPrefixo.
+func IndiceRotacaoLivreMusica(caminhosExistentes []string, kind, ext string) int {
+	if ext == "" {
+		ext = ExtensaoPadrao(kind)
+	}
+	prefixo := baseMusica(kind)
+	maior := 0
+	for _, caminho := range caminhosExistentes {
+		nome := strings.TrimSuffix(filepath.Base(caminho), ext)
+		sufixo := strings.TrimPrefix(nome, prefixo)
+		if sufixo == "" || sufixo == nome {
+			continue // bare name (index 0) or it does not match the prefix
+		}
+		n, err := strconv.Atoi(sufixo)
+		if err != nil || n <= 0 {
+			continue
+		}
+		if n > maior {
+			maior = n
+		}
+	}
+	return maior + 1
+}
+
 // NomeSeasonBase formats the "season{NN}" (NN = season_number zero-padded to 2
 // digits) that NomeArquivoArte expects in nomeBaseVideo when kind==
 // KindSeasonPoster — the single source of that format.
