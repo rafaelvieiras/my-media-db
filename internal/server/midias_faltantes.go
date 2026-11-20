@@ -110,12 +110,17 @@ func (s *Server) MaterializarMidiasFaltantes(ctx context.Context, entityID strin
 		return nil, false, err
 	}
 
+	// ONE aggregation for the whole entity (issue #73). The kind loop used to call
+	// montarGruposArtwork itself, so the same three queries plus the same JSON parse ran
+	// six times per entity and five of the results were thrown away.
+	grupos := s.montarGruposArtwork(ctx, ent.ID)
+
 	// materializarPosterDeArtista runs BEFORE the kindsMidiasFaltantes loop on purpose:
 	// it uses the NOT-YET-MATERIALIZED winner of the `thumb` kind (with SrcURL, to
 	// download) -- if it ran later, the loop below itself (kindsMidiasFaltantes includes
 	// "thumb") would already have materialized the thumb as a LOCAL asset without SrcURL,
 	// and the alias would find nothing to download.
-	if ok, kerr := s.materializarPosterDeArtista(ctx, ent); kerr != nil {
+	if ok, kerr := s.materializarPosterDeArtista(ctx, ent, grupos); kerr != nil {
 		log.Printf("midias_faltantes: falha ao materializar o poster da entity artista %q (best-effort, ignorado): %v", entityID, kerr)
 	} else if ok {
 		artesBaixadas = append(artesBaixadas, kindPoster)
@@ -125,7 +130,7 @@ func (s *Server) MaterializarMidiasFaltantes(ctx context.Context, entityID strin
 		if kind == kindPoster && ent.Type == tipoEntArtista {
 			continue // already handled by materializarPosterDeArtista above (thumb->poster alias) -- reprocessing here would count the same artwork twice in artesBaixadas
 		}
-		ok, kerr := s.materializarKindVencedor(ctx, ent, kind)
+		ok, kerr := s.materializarKindVencedor(ctx, ent, kind, grupos)
 		if kerr != nil {
 			log.Printf("midias_faltantes: falha ao materializar o kind %q da entity %q (best-effort, ignorado): %v", kind, entityID, kerr)
 			continue
@@ -135,7 +140,7 @@ func (s *Server) MaterializarMidiasFaltantes(ctx context.Context, entityID strin
 		}
 	}
 
-	nfoGravado, nerr := s.gravarNFOSeFaltante(ctx, ent)
+	nfoGravado, nerr := s.gravarNFOSeFaltante(ctx, ent, grupos)
 	if nerr != nil {
 		log.Printf("midias_faltantes: falha ao gravar o NFO da entity %q (best-effort, ignorado): %v", entityID, nerr)
 	}
@@ -150,8 +155,7 @@ func (s *Server) MaterializarMidiasFaltantes(ctx context.Context, entityID strin
 // It returns ok=false without an error when there is no candidate for the kind OR the
 // winner is already materialized (local_path filled) -- both "nothing to
 // do", not a failure.
-func (s *Server) materializarKindVencedor(ctx context.Context, ent sqlcgen.Entity, kind string) (bool, error) {
-	grupos := s.montarGruposArtwork(ctx, ent.ID)
+func (s *Server) materializarKindVencedor(ctx context.Context, ent sqlcgen.Entity, kind string, grupos map[string][]artworkItem) (bool, error) {
 	candidatos := grupos[kind]
 	if len(candidatos) == 0 {
 		return false, nil
@@ -304,11 +308,10 @@ func (s *Server) materializarAssetOuCache(ctx context.Context, ent sqlcgen.Entit
 // reuses a local asset from ANOTHER kind): the already materialized thumb cannot become a
 // poster just by swapping the database row, because materializarAsset names the file in
 // the real folder by the kind.
-func (s *Server) materializarPosterDeArtista(ctx context.Context, ent sqlcgen.Entity) (bool, error) {
+func (s *Server) materializarPosterDeArtista(ctx context.Context, ent sqlcgen.Entity, grupos map[string][]artworkItem) (bool, error) {
 	if ent.Type != tipoEntArtista {
 		return false, nil
 	}
-	grupos := s.montarGruposArtwork(ctx, ent.ID)
 	if len(grupos[kindPoster]) > 0 {
 		return false, nil // it already has a poster (the normal kindsMidiasFaltantes loop takes care of the rest)
 	}
@@ -423,7 +426,7 @@ func (s *Server) nfoConvergenteNoDisco(ctx context.Context, ent sqlcgen.Entity, 
 // propagates on a real failure (database/disk); "no destination folder"
 // (errSemDestino -- entity without a present media_file, it should never happen
 // here, but defensive) degrades to (false, nil).
-func (s *Server) gravarNFOSeFaltante(ctx context.Context, ent sqlcgen.Entity) (bool, error) {
+func (s *Server) gravarNFOSeFaltante(ctx context.Context, ent sqlcgen.Entity, grupos map[string][]artworkItem) (bool, error) {
 	if ent.Type == tipoEntTemporada {
 		return false, nil
 	}
@@ -450,7 +453,7 @@ func (s *Server) gravarNFOSeFaltante(ctx context.Context, ent sqlcgen.Entity) (b
 	// database updated after the write), OR the right destination
 	// but the file missing -- it falls into the normal flow below, which always writes at
 	// the freshly calculated destination (gravarNFO is idempotent by content).
-	resultado, err := s.gravarNFO(ctx, ent, resolvida)
+	resultado, err := s.gravarNFOComGrupos(ctx, ent, resolvida, grupos)
 	if err != nil {
 		if errors.Is(err, errSemDestino) {
 			return false, nil

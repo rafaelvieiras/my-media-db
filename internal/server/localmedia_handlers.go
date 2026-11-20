@@ -315,13 +315,18 @@ func (s *Server) locaisExistentesDoKind(ctx context.Context, entityID, kind, exc
 // of an episode.
 //
 // tv/season are ALWAYS an "exclusive folder": the series root never has a video directly
-// inside it (the episodes live in season subfolders) -- so EhPastaExclusiva (which counts
-// videos PRESENT directly in the directory) would always return false there, forcing the
-// series poster/fanart to be born prefixed by the oldest video name (exactly the reported
-// bug: "poster.jpg saved as ...-S01E01-...-poster.jpg"). Kodi has no concept of
-// "edition"/ambiguity for WORK-LEVEL artwork of a series -- it is always a bare
+// inside it (the episodes live in season subfolders) -- so the exclusivity rule (which
+// counts videos PRESENT directly in the directory) would always return false there,
+// forcing the series poster/fanart to be born prefixed by the oldest video name (exactly
+// the reported bug: "poster.jpg saved as ...-S01E01-...-poster.jpg"). Kodi has no concept
+// of "edition"/ambiguity for WORK-LEVEL artwork of a series -- it is always a bare
 // poster.jpg/fanart.jpg (the numeric rotation of multiple artworks still goes through
 // sufixoRotacao, independently of this flag).
+//
+// The exclusivity answer is ONE indexed count (issue #73). It used to load every present
+// media_file of the library into memory (~150 ms, 20.075 rows) to count the files of a
+// single folder, and this function runs 2 to 5 times per entity in the midias_faltantes
+// job: about 50.000 full table scans per run, which was most of its 2 hours.
 func (s *Server) resolverDestino(ctx context.Context, ent sqlcgen.Entity) (dir, nomeBaseVideo string, pastaExclusiva, ok bool, err error) {
 	localFiles, ancestors, err := s.carregarMediaFilesLocalmedia(ctx, ent)
 	if err != nil {
@@ -342,16 +347,38 @@ func (s *Server) resolverDestino(ctx context.Context, ent sqlcgen.Entity) (dir, 
 		return dir, nomeBaseVideo, true, true, nil
 	}
 
-	todosPresentes, err := s.leitura().ListarMediaFilesPresentes(ctx)
+	pastaExclusiva, err = s.pastaExclusivaNoDisco(ctx, dir)
 	if err != nil {
 		return "", "", false, false, err
 	}
-	todosLocal := make([]localmedia.MediaFile, 0, len(todosPresentes))
-	for _, f := range todosPresentes {
-		todosLocal = append(todosLocal, localmedia.MediaFile{Path: f.Path, State: f.State})
-	}
-	pastaExclusiva = localmedia.EhPastaExclusiva(dir, todosLocal)
 	return dir, nomeBaseVideo, pastaExclusiva, true, nil
+}
+
+// pastaExclusivaNoDisco answers "does `dir` hold exactly ONE present media file?" with one
+// indexed range scan on media_file.path instead of the whole library in memory (issue #73).
+// Same rule as localmedia.EhPastaExclusiva, which stays for callers that already have the
+// files in hand; here the only caller wants one folder.
+//
+// The prefix pair is "dir/" and "dir0": '/' + 1 is '0', so the range covers exactly the
+// paths that start with "dir/". No file system access and no LIKE, so a folder whose name
+// contains `%` or `_` cannot change the answer.
+func (s *Server) pastaExclusivaNoDisco(ctx context.Context, dir string) (bool, error) {
+	// A destination is always a folder under a source root; the guard keeps a degenerate
+	// value (empty, or the file system root itself) from turning into a prefix that covers
+	// the whole disk.
+	if limpo := strings.TrimSuffix(dir, "/"); limpo != "" && limpo != "/" {
+		dir = limpo
+	} else {
+		return false, nil
+	}
+	n, err := s.leitura().ContarMediaFilesPresentesNaPasta(ctx, sqlcgen.ContarMediaFilesPresentesNaPastaParams{
+		Prefixo:    dir + "/",
+		PrefixoFim: dir + "0",
+	})
+	if err != nil {
+		return false, err
+	}
+	return localmedia.PastaExclusivaPorContagem(int(n)), nil
 }
 
 // carregarMediaFilesLocalmedia returns (mediaFiles, ancestors) in the shape of the
@@ -508,6 +535,14 @@ func (s *Server) writeEntityNfo(w http.ResponseWriter, r *http.Request) {
 // best-effort: a missing or corrupted file does not prevent the write, it only results in a
 // zero-value (nothing to preserve).
 func (s *Server) gravarNFO(ctx context.Context, ent sqlcgen.Entity, e resolver.Entidade) (nfoWriteResult, error) {
+	return s.gravarNFOComGrupos(ctx, ent, e, s.montarGruposArtwork(ctx, ent.ID))
+}
+
+// gravarNFOComGrupos is gravarNFO with the artwork groups already in hand: the two
+// materializations below need the poster and the fanart winner, and a caller that already
+// aggregated the entity (the midias_faltantes job does, once per entity) must not pay for
+// it again -- nor for a third aggregation inside each materializarKindVencedor.
+func (s *Server) gravarNFOComGrupos(ctx context.Context, ent sqlcgen.Entity, e resolver.Entidade, grupos map[string][]artworkItem) (nfoWriteResult, error) {
 	dir, nomeBaseVideo, _, ok, err := s.resolverDestino(ctx, ent)
 	if err != nil {
 		return nfoWriteResult{}, err
@@ -516,10 +551,10 @@ func (s *Server) gravarNFO(ctx context.Context, ent sqlcgen.Entity, e resolver.E
 		return nfoWriteResult{}, errSemDestino
 	}
 
-	if _, err := s.materializarKindVencedor(ctx, ent, kindPoster); err != nil {
+	if _, err := s.materializarKindVencedor(ctx, ent, kindPoster, grupos); err != nil {
 		log.Printf("gravarNFO: falha ao materializar poster da entity %q (best-effort, ignorado): %v", ent.ID, err)
 	}
-	if _, err := s.materializarKindVencedor(ctx, ent, kindFanart); err != nil {
+	if _, err := s.materializarKindVencedor(ctx, ent, kindFanart, grupos); err != nil {
 		log.Printf("gravarNFO: falha ao materializar fanart da entity %q (best-effort, ignorado): %v", ent.ID, err)
 	}
 
