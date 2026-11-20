@@ -47,7 +47,10 @@ Open a discussion first.
 5. **Use Conventional Commits**: `type: summary` in the imperative, subject of 100
    characters or fewer. The release pipeline reads these messages to pick the next
    version number, so `feat:` and `fix:` matter.
-6. **Open the pull request** and reference the issue.
+6. **Open the pull request** and reference the issue. A documentation-only pull
+   request (`*.md`, `docs/`, `LICENSE`) skips the quality gate and the browser
+   tests on purpose: the gate reports the skip instead of a table of numbers that
+   cannot have moved, and a `docs:` commit never publishes a release.
 
 ## Development with hot reload
 
