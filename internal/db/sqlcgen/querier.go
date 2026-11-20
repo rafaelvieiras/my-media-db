@@ -426,6 +426,21 @@ type Querier interface {
 	// junction arm below already covers them (media_file_entity is how an episode owns a
 	// file, see ADR-0006). The other columns mirror ObterEntityCard.
 	ListarCardsDeEpisodiosDaSerie(ctx context.Context, parentID string) ([]ListarCardsDeEpisodiosDaSerieRow, error)
+	// CARDS of ALL children of one entity, for ONE relation kind, in ONE query -- the
+	// batch that replaces the ObterEntityCard loop of montarMembros (GET
+	// /entities/{id}/members, the season page). Why it exists: ObterEntityCard
+	// materializes the transitive closure of the WHOLE relation tree on every call, so a
+	// season with 296 episodes paid 296 closures -- 219 s on a library served from a
+	// network share, measured (issue #89).
+	//
+	// The recursion is ANCHORED AT THE CHILDREN of this parent (same fix as
+	// ObterCaminhoDescendentePresente, issue #73): the tree arm only ever answers
+	// "does this child have a descendant with a file?", which is what a season card needs
+	// (its episodes) and what an episode card cannot use. Columns mirror ObterEntityCard
+	// exactly -- same file_count rule (direct file + junction, NO tree), same completeness
+	// cache, plus extension_data_json so the caller projects the episode numbering without
+	// a second read per episode.
+	ListarCardsDeMembros(ctx context.Context, arg ListarCardsDeMembrosParams) ([]ListarCardsDeMembrosRow, error)
 	// All credits of a work, for the detail. Orders by kind, billing order and
 	// id (stable).
 	ListarCreditosDaEntity(ctx context.Context, entityID string) ([]Credit, error)

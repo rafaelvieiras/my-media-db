@@ -247,6 +247,53 @@ FROM entity e
 LEFT JOIN entity_catalog_completeness ecc ON ecc.entity_id = e.id
 WHERE e.id = ?;
 
+-- name: ListarCardsDeMembros :many
+-- CARDS of ALL children of one entity, for ONE relation kind, in ONE query -- the
+-- batch that replaces the ObterEntityCard loop of montarMembros (GET
+-- /entities/{id}/members, the season page). Why it exists: ObterEntityCard
+-- materializes the transitive closure of the WHOLE relation tree on every call, so a
+-- season with 296 episodes paid 296 closures -- 219 s on a library served from a
+-- network share, measured (issue #89).
+--
+-- The recursion is ANCHORED AT THE CHILDREN of this parent (same fix as
+-- ObterCaminhoDescendentePresente, issue #73): the tree arm only ever answers
+-- "does this child have a descendant with a file?", which is what a season card needs
+-- (its episodes) and what an episode card cannot use. Columns mirror ObterEntityCard
+-- exactly -- same file_count rule (direct file + junction, NO tree), same completeness
+-- cache, plus extension_data_json so the caller projects the episode numbering without
+-- a second read per episode.
+WITH RECURSIVE arvore(ancestor_id, descendant_id) AS (
+    SELECT r.parent_id, r.child_id FROM entity_relation r
+    WHERE r.parent_id = sqlc.arg('parent_id') AND r.kind = sqlc.arg('kind')
+    UNION
+    SELECT a.ancestor_id, er.child_id FROM arvore a JOIN entity_relation er ON er.parent_id = a.descendant_id
+)
+SELECT
+    e.id, e.type, e.title, e.status, e.release_date, e.extension_data_json,
+    EXISTS (
+        SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present'
+        UNION ALL
+        SELECT 1 FROM media_file_entity mfe JOIN media_file mf ON mf.id = mfe.media_file_id
+            WHERE mfe.entity_id = e.id AND mf.state = 'present'
+        UNION ALL
+        SELECT 1 FROM arvore t JOIN media_file m ON m.entity_id = t.descendant_id AND m.state = 'present'
+            WHERE t.ancestor_id = e.id
+    ) AS owned,
+    (SELECT COUNT(*) FROM (
+        SELECT m.id FROM media_file m WHERE m.entity_id = e.id
+        UNION ALL
+        SELECT DISTINCT mfe.media_file_id FROM media_file_entity mfe WHERE mfe.entity_id = e.id
+    )) AS file_count,
+    (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
+    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster,
+    ecc.complete AS completeness_complete,
+    ecc.missing_json AS completeness_missing_json
+FROM entity_relation r
+JOIN entity e ON e.id = r.child_id
+LEFT JOIN entity_catalog_completeness ecc ON ecc.entity_id = e.id
+WHERE r.parent_id = sqlc.arg('parent_id') AND r.kind = sqlc.arg('kind')
+ORDER BY r.sort_index IS NULL, r.sort_index, r.id;
+
 -- name: ObterEntityPorImdb :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
