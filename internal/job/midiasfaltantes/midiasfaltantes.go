@@ -15,6 +15,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
+
+	"github.com/rafaelvieiras/my-media-db/internal/job"
 )
 
 // nomeJob is the Handler.Nome() -- it matches the slug seeded in job_definition
@@ -52,22 +55,52 @@ type ContadorMissing interface {
 	ContarMediaFilesEmEstadoMissing(ctx context.Context) (int64, error)
 }
 
+// Titulador is the subset of *server.Server that the Handler consumes for the
+// NARRATION ONLY: the title of one entity, so the queue's `current_item` shows
+// "Mortal Kombat (1995)" instead of a bare UUID (issue #69). It is optional on
+// purpose -- a nil Titulador (tests, direct call) makes the narration fall back
+// to the id and changes nothing in the work.
+//
+// A dedicated small interface instead of widening EntityLister: the eligible
+// universe comes from four different queries merged in the server, so a name
+// there would mean a join in all four; a title-by-id read is one indexed lookup
+// per entity, and this job is network-bound, not database-bound.
+type Titulador interface {
+	TituloDaEntity(ctx context.Context, entityID string) (string, error)
+}
+
+// passoUnico is the single step of this job: it processes one flat list, so the
+// owner only needs "3 of 19018", never a step count.
+const passoUnico = 1
+
+// cadaQuantosLog is how many entities pass between heartbeat log lines. The
+// queue snapshot answers "where am I now"; the log answers "where was it when it
+// died" -- a run of this job lasts hours, and `docker logs` outlives the item.
+const cadaQuantosLog = 100
+
 // Handler is the Handler of the midias_faltantes job.
 type Handler struct {
 	entities       EntityLister
 	materializador Materializador
 	contador       ContadorMissing
+	titulador      Titulador
 }
 
 // New creates the Handler from the lister of eligible entities, the
-// materializer and the 'missing' media_file counter -- injected by the caller
-// (server.WithMidiasFaltantesJob), the same pattern as libraryhealth.New.
-func New(entities EntityLister, materializador Materializador, contador ContadorMissing) *Handler {
-	return &Handler{entities: entities, materializador: materializador, contador: contador}
+// materializer, the 'missing' media_file counter and the title lookup -- injected
+// by the caller (server.WithMidiasFaltantesJob), the same pattern as
+// libraryhealth.New.
+func New(entities EntityLister, materializador Materializador, contador ContadorMissing, titulador Titulador) *Handler {
+	return &Handler{entities: entities, materializador: materializador, contador: contador, titulador: titulador}
 }
 
 // Nome returns the stable slug of the job.
 func (h *Handler) Nome() string { return nomeJob }
+
+// The narration capability is OPTIONAL (ADR-0040): this assertion makes the
+// discovery by type assertion in job.Manager a compile-time fact, so a signature
+// drift breaks the build instead of silently going back to 0/0 (issue #69).
+var _ job.HandlerComProgresso = (*Handler)(nil)
 
 // Executar processes EVERY eligible entity in a single execution (no dedicated
 // pagination -- the real cost is network/download, not iterating the database,
@@ -77,24 +110,54 @@ func (h *Handler) Nome() string { return nomeJob }
 // best-effort, it only logs and moves on (same spirit as the rest of the job
 // system); an error is only returned if the listing of eligible entities itself
 // fails (with no universe there is nothing to process).
-func (h *Handler) Executar(ctx context.Context, _ json.RawMessage) (string, error) {
+// Executar is the plain Handler entry point: without a queue behind it (tests,
+// direct call) the narration is discarded and the pipeline is literally the same
+// method.
+func (h *Handler) Executar(ctx context.Context, cfg json.RawMessage) (string, error) {
+	return h.executar(ctx, cfg, job.NovoProgresso(nil))
+}
+
+// ExecutarComProgresso implements job.HandlerComProgresso (ADR-0040, issue #69):
+// the same pipeline as Executar, narrating the loop to the queue item so the
+// owner can see how many entities are done out of how many, which one is being
+// processed and which ones failed.
+func (h *Handler) ExecutarComProgresso(ctx context.Context, cfg json.RawMessage, p *job.Progresso) (string, error) {
+	return h.executar(ctx, cfg, p)
+}
+
+func (h *Handler) executar(ctx context.Context, _ json.RawMessage, p *job.Progresso) (string, error) {
 	ids, err := h.entities.ListarEntitiesComMediaFilePresente(ctx)
 	if err != nil {
 		return "", fmt.Errorf("listar entities elegiveis: %w", err)
 	}
 
+	// The universe is known before the loop, so the total is honest from the first
+	// second -- the whole point of issue #69: a 2h38 run used to report 0/0 until
+	// it ended.
+	p.Etapa(1, passoUnico, "materializar mídias faltantes")
+	p.Contagem(0, len(ids))
+
 	var processadas, artesTotal, nfosGravados, falhas int
-	for _, id := range ids {
+	for i, id := range ids {
+		rotulo := h.rotulo(ctx, id)
+		p.Item(rotulo)
 		artes, nfo, err := h.materializador.MaterializarMidiasFaltantes(ctx, id)
 		if err != nil {
 			falhas++
+			p.Falhou(rotulo, err)
 			log.Printf("midias_faltantes: falha ao materializar a entity %q (best-effort, ignorado): %v", id, err)
-			continue
+		} else {
+			processadas++
+			artesTotal += len(artes)
+			if nfo {
+				nfosGravados++
+			}
+			h.registrarDesfecho(p, rotulo, artes, nfo)
 		}
-		processadas++
-		artesTotal += len(artes)
-		if nfo {
-			nfosGravados++
+		p.Contagem(i+1, len(ids))
+		if (i+1)%cadaQuantosLog == 0 {
+			log.Printf("midias_faltantes: %d/%d processadas, %d arte(s), %d NFO(s), %d falha(s)",
+				i+1, len(ids), artesTotal, nfosGravados, falhas)
 		}
 	}
 
@@ -112,6 +175,46 @@ func (h *Handler) Executar(ctx context.Context, _ json.RawMessage) (string, erro
 	}
 
 	return montarMensagem(len(ids), processadas, artesTotal, nfosGravados, falhas, missing), nil
+}
+
+// registrarDesfecho tells the trail what happened to ONE entity that did not
+// fail: something was written (ok, with the detail of what) or nothing was
+// missing (skip). The distinction matters when the run is read backwards -- "300
+// arts over 19.018 entities" only makes sense next to how many needed nothing.
+func (h *Handler) registrarDesfecho(p *job.Progresso, rotulo string, artes []string, nfo bool) {
+	if len(artes) == 0 && !nfo {
+		p.Ignorado(rotulo, "nada faltando no disco")
+		return
+	}
+	var detalhe string
+	if len(artes) > 0 && nfo {
+		detalhe = fmt.Sprintf("%s + nfo", joinArtes(artes))
+	} else if len(artes) > 0 {
+		detalhe = joinArtes(artes)
+	} else {
+		detalhe = "nfo"
+	}
+	p.OkDetalhe(rotulo, detalhe)
+}
+
+// joinArtes renders the materialized kinds as "poster, fanart" -- short, because
+// the trail row is a label, not a report.
+func joinArtes(artes []string) string {
+	return strings.Join(artes, ", ")
+}
+
+// rotulo is what the owner reads as the current item: the entity title when the
+// lookup works, the id otherwise. A failure here is never the run's failure --
+// the narration must not break the work it observes.
+func (h *Handler) rotulo(ctx context.Context, id string) string {
+	if h.titulador == nil {
+		return id
+	}
+	titulo, err := h.titulador.TituloDaEntity(ctx, id)
+	if err != nil || titulo == "" {
+		return id
+	}
+	return titulo
 }
 
 // montarMensagem composes the final summary: how many eligible entities, how

@@ -36,6 +36,11 @@ SELECT id, type, title, original_title, description, release_date,
 FROM entity
 WHERE id = ?;
 
+-- name: ObterTituloEntity :one
+-- Just the title, by id: the midias_faltantes job narrates the entity it is on
+-- (ADR-0040, issue #69) and the whole row would be waste for a label.
+SELECT title FROM entity WHERE id = ?;
+
 -- name: ObterEntityPorTmdb :one
 -- Lookup by external tmdb id via generated column + index (doc 04, search without GIN).
 SELECT id, type, title, original_title, description, release_date,
