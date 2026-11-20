@@ -87,7 +87,7 @@ jobs:
           fi
           # FAIL OPEN: an unreadable diff means "assume code", which runs everything.
           if ! files=$(git diff --name-only "$range"); then
-            echo "diff de '${range}' falhou: assumindo código alterado."
+            echo "diff of '${range}' failed: assuming code changed."
             echo "code=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -97,8 +97,8 @@ jobs:
             case "$file" in
               # Documentation and the README logo: nothing in the binary, nothing in
               # the front end, nothing in the tooling. `docs/*` covers docs/adr too.
-              *.md | docs/* | LICENSE | assets/*) echo "documentação: $file" ;;
-              *) echo "código: $file"; code=true ;;
+              *.md | docs/* | LICENSE | assets/*) echo "documentation: $file" ;;
+              *) echo "code: $file"; code=true ;;
             esac
           done <<< "$files"
           echo "code=${code}" >> "$GITHUB_OUTPUT"

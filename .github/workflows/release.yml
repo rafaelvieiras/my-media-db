@@ -76,18 +76,38 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx semantic-release
 
+      # NO TAG IS NOT ALWAYS A FAILURE. The release rules in .releaserc.json say that
+      # `docs:`, `test:`, `style:`, `chore:` and `ci:` publish nothing, so "no tag on
+      # HEAD" is the CORRECT outcome there -- and it used to fail the job anyway, which
+      # turned every documentation push into a red Release run.
+      #
+      # The two cases are distinguishable: `prepareCmd` of @semantic-release/exec writes
+      # the intended version to this step's output only when a release IS being prepared,
+      # and that happens BEFORE the tag is created. So an empty output means "nothing to
+      # release"; a filled output with no tag means "a release was attempted and the tag
+      # never landed", which stays a hard failure.
       - name: Read the published version from the tag on HEAD
         id: version
+        env:
+          INTENDED: ${{ steps.semantic.outputs.version }}
         run: |
           tag="$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
-          if [ -z "$tag" ]; then
-            echo "::error::semantic-release did not publish a tag for this commit (see the step log above)"
+          if [ -n "$tag" ]; then
+            echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -n "$INTENDED" ]; then
+            echo "::error::semantic-release prepared version ${INTENDED} but no tag is on HEAD (see the step log above)"
             exit 1
           fi
-          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "Nothing to release for this commit: no publishable type in .releaserc.json."
+          echo "::notice::Nothing to publish on this push (docs/test/style/chore/ci). The image is not rebuilt."
+          echo "version=" >> "$GITHUB_OUTPUT"
 
       - name: Warn that the release notes were not pushed
-        if: steps.semantic.outcome == 'failure'
+        # Only meaningful when something WAS released: with no version there is no
+        # release whose notes could be missing.
+        if: steps.semantic.outcome == 'failure' && steps.version.outputs.version != ''
         run: |
           echo "::warning::semantic-release failed after publishing the tag and the GitHub Release (the release notes push, issue #46). Version ${{ steps.version.outputs.version }} and its image are still released."
 
