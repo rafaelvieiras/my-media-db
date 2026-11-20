@@ -140,6 +140,19 @@ func TestJornadaAcoesForcadasGerenciar(t *testing.T) {
 		t.Errorf("nfo_gravado ausente/tipo errado na resposta de materialize-missing-media: %v", materializado["nfo_gravado"])
 	}
 
+	// (3b) IDEMPOTENCY: the job runs this same path on 19.018 entities every night, so
+	// the second call over an entity that is already materialized must be a no-op — and
+	// it is the path that decides "nothing to do" (NFO already convergent at the same
+	// destination, every artwork kind already in the library). Without this the run would
+	// rewrite the whole library twice.
+	segunda := c.obj(http.MethodPost, "/api/v1/entities/"+id+"/materialize-missing-media", nil, http.StatusOK)
+	if artes, ok := segunda["artes_baixadas"].([]any); !ok || len(artes) != 0 {
+		t.Errorf("2a chamada de materialize-missing-media baixou artes de novo: %v (deveria ser vazio)", segunda["artes_baixadas"])
+	}
+	if gravado, ok := segunda["nfo_gravado"].(bool); !ok || gravado {
+		t.Errorf("2a chamada de materialize-missing-media gravou o NFO de novo: %v (deveria ser false)", segunda["nfo_gravado"])
+	}
+
 	// 404 for a nonexistent entity on the 3 routes — a guard shared by the 3 actions.
 	for _, rota := range []string{"/refresh-files", "/materialize-missing-media"} {
 		if status, _ := c.bruto(http.MethodPost, "/api/v1/entities/inexistente"+rota, nil); status != http.StatusNotFound {

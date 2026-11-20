@@ -417,6 +417,12 @@ func EhPastaExclusiva(dir string, mediaFiles []MediaFile) bool {
 	return n == 1
 }
 
+// PastaExclusivaPorContagem is the SQL-backed form of EhPastaExclusiva: the same rule
+// ("exactly ONE present media file sits directly in the folder"), answered with a count of
+// that folder instead of the whole library in a slice. Keeping the bare number 1 in one
+// place is the point -- the two forms must never disagree.
+func PastaExclusivaPorContagem(n int) bool { return n == 1 }
+
 // EscreverArquivoAtomico writes `dados` to `destino` through a temporary file
 // in the SAME directory (suffix ".tmp-<random>") + os.Rename — the only I/O
 // point of this package. It never lets a reader see a partial write nor leaves

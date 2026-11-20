@@ -221,4 +221,20 @@ func TestJornadaMidiasLocais(t *testing.T) {
 	if got := str(t, nfo2, "nfo_path"); got != nfoPath {
 		t.Errorf("2a chamada de /nfo mudou o caminho: %q != %q (deveria ser idempotente)", got, nfoPath)
 	}
+
+	// (6) The path the nightly JOB takes (MaterializarMidiasFaltantes), over a library that
+	// is already in place: the NFO above is convergent at the canonical destination and the
+	// poster is already materialized in the folder. It must answer "nothing to do" and
+	// write nothing -- that answer is where a run over 19.018 entities spends its time, and
+	// a single false positive there rewrites the owner's whole library every night.
+	job := c.obj(http.MethodPost, "/api/v1/entities/"+id+"/materialize-missing-media", nil, http.StatusOK)
+	if gravado, _ := job["nfo_gravado"].(bool); gravado {
+		t.Errorf("materialize-missing-media regravou um NFO ja convergente (%s)", nfoPath)
+	}
+	if artes, _ := job["artes_baixadas"].([]any); len(artes) != 0 {
+		t.Errorf("materialize-missing-media baixou artes com tudo em disco: %v", job["artes_baixadas"])
+	}
+	if _, err := os.Stat(nfoPath); err != nil {
+		t.Errorf("o NFO convergente sumiu depois da passada do job: %v", err)
+	}
 }

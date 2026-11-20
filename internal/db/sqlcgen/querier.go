@@ -233,6 +233,19 @@ type Querier interface {
 	// requires state='present'). Read only, it changes no behavior.
 	ContarMediaFilesEmEstadoMissing(ctx context.Context) (int64, error)
 	ContarMediaFilesPorState(ctx context.Context) ([]ContarMediaFilesPorStateRow, error)
+	// Answers "does this folder hold exactly one present media file?" for ONE folder, which is
+	// the only thing resolverDestino needed from the whole library (issue #73).
+	//
+	// It replaced ListarMediaFilesPresentes there: that query loaded all 20.075 present rows
+	// into Go structs, took ~150 ms, and resolverDestino runs 2 to 5 times per entity -- about
+	// 50.000 full scans of the table in one midias_faltantes run.
+	//
+	// The range `path >= prefixo AND path < prefixo_fim` (prefixo = "dir/", prefixo_fim =
+	// "dir0", because '0' is the byte after '/') uses the UNIQUE index on path as a range scan.
+	// `instr(substr(path, ...), '/') = 0` then keeps only the files DIRECTLY inside the folder,
+	// which is what filepath.Dir(path) == dir meant. The LIMIT 2 stops at the second hit: the
+	// answer is a boolean, not a number.
+	ContarMediaFilesPresentesNaPasta(ctx context.Context, arg ContarMediaFilesPresentesNaPastaParams) (int64, error)
 	ContarRascunhosVazios(ctx context.Context) (int64, error)
 	// CRUD for asset (poster/fanart/... referenced by an entity).
 	// Comments in ASCII and explicit columns -- see the note in entity.sql.
