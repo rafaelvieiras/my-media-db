@@ -21,7 +21,6 @@ import (
 	"errors"
 	"log"
 	"os"
-	"path/filepath"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/localmedia"
@@ -66,9 +65,13 @@ func (s *Server) documentoNFODeEpisodios(ctx context.Context, ent sqlcgen.Entity
 	//
 	// Only for a file that holds ONE episode: with several, the name states the FIRST number
 	// and offsetting by index would be a guess that a wrong NFO does not survive.
+	//
+	// ParseEpisodeNoCaminho is the same stack the scanner uses (name first, then an
+	// episode-only number anchored on the season folder), so the NFO and the tree cannot
+	// disagree about a file.
 	temporadaArquivo, episodioArquivo := 0, 0
 	if len(linhas) == 1 {
-		if info, ok := naming.ParseEpisode(filepath.Base(mf.Path)); ok && info.Season > 0 && len(info.Episodes) == 1 {
+		if info, ok := naming.ParseEpisodeNoCaminho(mf.Path); ok && info.Season > 0 && len(info.Episodes) == 1 {
 			temporadaArquivo, episodioArquivo = info.Season, info.Episodes[0]
 		}
 	}
