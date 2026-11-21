@@ -371,6 +371,13 @@ func (idx *Index) resolverAbsoluto(n, temporadaDaPasta int, titulo string) (abso
 	if vencedor, ok := vencedorPorTitulo(candidatos, titulo); ok {
 		return vencedor, true
 	}
+	// The file STATES a title and it matches no candidate at all: the number points at a
+	// different block of the release, or the name is simply not in the provider's list. Falling
+	// back to a priority here is how two files end up on ONE episode (measured: "Um Mutante dos
+	// Diabos" stole the episode of "O Valor de um Homem 1"). Review, not a guess.
+	if tituloDeclarado(titulo) && nenhumaSemelhanca(candidatos, titulo) {
+		return absolutoDerivado{}, false
+	}
 	// 2) the season of the folder, taking the candidates in priority order.
 	var reserva absolutoDerivado
 	temReserva := false
@@ -392,6 +399,29 @@ func (idx *Index) resolverAbsoluto(n, temporadaDaPasta int, titulo string) (abso
 type candidatoPorTitulo struct {
 	ep     absolutoDerivado
 	titulo string
+}
+
+// tituloDeclarado tells whether the file states a TITLE to compare: at least two meaningful
+// words. One word is the series name ("X-Men - 02.mkv"), which matches nothing and would
+// condemn every file with no episode title to review.
+func tituloDeclarado(titulo string) bool {
+	palavras := 0
+	for _, p := range palavrasSignificativas(titulo) {
+		if !soDigitos([]rune(p)) {
+			palavras++
+		}
+	}
+	return palavras >= 2
+}
+
+// nenhumaSemelhanca tells whether NO candidate shares a word with the file title.
+func nenhumaSemelhanca(cands []candidatoPorTitulo, titulo string) bool {
+	for _, c := range cands {
+		if semelhancaDeTitulo(titulo, c.titulo) > 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // vencedorPorTitulo returns the single candidate whose episode name best matches the name of

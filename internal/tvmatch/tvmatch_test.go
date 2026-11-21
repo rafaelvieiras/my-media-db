@@ -251,3 +251,22 @@ func TestTituloDoArquivoVenceAFilaDaPasta(t *testing.T) {
 		t.Fatalf("com titulo, absoluto 2 = %v (%v), quero y (o titulo desempata)", ids, ok)
 	}
 }
+
+// TestAbsolutoComTituloQueNaoExisteVaiParaRevisao cobre o desempate perigoso: o arquivo declara
+// um titulo e NENHUM candidato compartilha palavra com ele. Cair na prioridade foi como dois
+// arquivos terminaram no MESMO episodio em producao ("Um Mutante dos Diabos" roubou o episodio
+// de "O Valor de um Homem 1"). Revisao, nao chute.
+func TestAbsolutoComTituloQueNaoExisteVaiParaRevisao(t *testing.T) {
+	idx := NovoIndex()
+	idx.IndexarEpisodioComTitulo("a", "O Valor de um Homem (Parte 1)", map[string]any{"numbering": map[string]any{
+		"official": map[string]any{"season": float64(4), "number": float64(1)}}})
+	idx.IndexarEpisodioComTitulo("b", "Proteus (Parte 1)", map[string]any{"numbering": map[string]any{
+		"official": map[string]any{"season": float64(4), "number": float64(2)}}})
+	if ids, _, ok := CasarComPasta(idx, naming.EpisodeInfo{Absolute: []int{53}, IsAbsolute: true}, 4, "X-Men - 53 - Um Mutante dos Diabos"); ok {
+		t.Fatalf("absoluto 53 = %v, quero não casar (nenhum episódio tem esse título)", ids)
+	}
+	// Sem titulo declarado o arquivo nao tem como votar: a pasta continua decidindo.
+	if ids, _, ok := CasarComPasta(idx, naming.EpisodeInfo{Absolute: []int{2}, IsAbsolute: true}, 4, "X-Men - 02"); !ok || ids[0] != "b" {
+		t.Fatalf("sem titulo, absoluto 2 = %v (%v), quero b pela ordem", ids, ok)
+	}
+}
