@@ -42,6 +42,16 @@ func (s *Server) sugestaoDeMatch(ctx context.Context, ent resolver.Entidade) *re
 		if row.Dismissed != 0 {
 			return nil // the owner already said no: do not ask again, do not query again
 		}
+		if sugestaoVencida(row, ent) {
+			// The row describes a state that no longer exists: it was stored while the item
+			// had NO identity and its candidate is the identity the item HAS now. Showing it
+			// asks "is this the right item?" about the item itself, which is what the owner
+			// saw on Ragnarok (tmdb 45615 suggested to tmdb 45615). The row is dropped on
+			// read, so it cleans itself even when the identity arrived by a path that does
+			// not call esquecerSugestao (the scan's auto-import).
+			s.esquecerSugestao(ctx, ent.ID)
+			return nil
+		}
 		return sugestaoDTO(row, ent)
 	case !errors.Is(err, sql.ErrNoRows):
 		log.Printf("server: ler sugestão de match de %s falhou (%v)", ent.ID, err)
@@ -54,12 +64,36 @@ func (s *Server) sugestaoDeMatch(ctx context.Context, ent resolver.Entidade) *re
 	if !ok {
 		return nil
 	}
+	if sugestaoIgualAIdentidade(sug.Resultado.Source, sug.Resultado.SourceID, ent) {
+		return nil
+	}
 	criada, err := s.gravarSugestao(ctx, ent.ID, sug)
 	if err != nil {
 		log.Printf("server: gravar sugestão de match de %s falhou (%v)", ent.ID, err)
 		return nil
 	}
 	return sugestaoDTO(criada, ent)
+}
+
+// sugestaoVencida answers "is this stored hint about a state the item already left?":
+// the candidate IS the identity the item carries now, and the row is one of the NAME hints
+// (the "did you mean this?").
+//
+// The TREE hints (empty_tree/tree_mismatch) are excluded on purpose: by design they
+// describe the item's CURRENT match, with CanApply=false, and the screen renders them with
+// its own sentence ("the match is already this one") -- dropping them would delete the
+// alert about a provider tree that does not fit the files.
+func sugestaoVencida(row sqlcgen.MatchSuggestion, ent resolver.Entidade) bool {
+	if row.Reason == enrich.MotivoArvoreVazia || row.Reason == enrich.MotivoArvoreIncompativel {
+		return false
+	}
+	return ent.ExternalIDs[row.Source] == row.SourceID
+}
+
+// sugestaoIgualAIdentidade is the same guard on the WRITE side: a fresh hint whose candidate
+// is already the item's identity is not a hint (applying it would be a no-op).
+func sugestaoIgualAIdentidade(source, sourceID string, ent resolver.Entidade) bool {
+	return source != "" && ent.ExternalIDs[source] == sourceID
 }
 
 // sugerirCandidato runs the cheaper-variant search for the type of the item: series and
