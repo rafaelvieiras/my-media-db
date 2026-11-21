@@ -382,6 +382,11 @@ func (s *Server) resolverDestino(ctx context.Context, ent sqlcgen.Entity) (dir, 
 // Same rule as localmedia.EhPastaExclusiva, which stays for callers that already have the
 // files in hand; here the only caller wants one folder.
 //
+// It reads the NAMES, not a count (issue #96): extra material does not count, because a
+// movie plus its trailer is still the movie's own folder. With a bare count, every movie
+// that ships a trailer looked "ambiguous" and its artwork was born prefixed by a video name
+// — the TRAILER's name, since the trailer was the older file. See ExclusiveFolderByNames.
+//
 // The prefix pair is "dir/" and "dir0": '/' + 1 is '0', so the range covers exactly the
 // paths that start with "dir/". No file system access and no LIKE, so a folder whose name
 // contains `%` or `_` cannot change the answer.
@@ -394,14 +399,18 @@ func (s *Server) pastaExclusivaNoDisco(ctx context.Context, dir string) (bool, e
 	} else {
 		return false, nil
 	}
-	n, err := s.leitura().ContarMediaFilesPresentesNaPasta(ctx, sqlcgen.ContarMediaFilesPresentesNaPastaParams{
+	caminhos, err := s.leitura().ListarNomesPresentesNaPasta(ctx, sqlcgen.ListarNomesPresentesNaPastaParams{
 		Prefixo:    dir + "/",
 		PrefixoFim: dir + "0",
 	})
 	if err != nil {
 		return false, err
 	}
-	return localmedia.PastaExclusivaPorContagem(int(n)), nil
+	nomes := make([]string, len(caminhos))
+	for i, caminho := range caminhos {
+		nomes[i] = filepath.Base(caminho)
+	}
+	return localmedia.ExclusiveFolderByNames(nomes), nil
 }
 
 // carregarMediaFilesLocalmedia returns (mediaFiles, ancestors) in the shape of the

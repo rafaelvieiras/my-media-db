@@ -724,6 +724,52 @@ func (q *Queries) ListarMediaFilesPresentes(ctx context.Context) ([]ListarMediaF
 	return items, nil
 }
 
+const listarNomesPresentesNaPasta = `-- name: ListarNomesPresentesNaPasta :many
+SELECT path
+FROM media_file
+WHERE state = 'present'
+  AND path >= ?1
+  AND path < ?2
+  AND instr(substr(path, length(?1) + 1), '/') = 0
+LIMIT 200
+`
+
+type ListarNomesPresentesNaPastaParams struct {
+	Prefixo    string
+	PrefixoFim string
+}
+
+// The file names that sit DIRECTLY in one folder (issue #96). resolverDestino needs more
+// than a count: the exclusivity rule must ignore extra material (a movie plus its trailer
+// is still the movie's own folder), and only the names can tell one from the other.
+//
+// Same indexed range scan as ContarMediaFilesPresentesNaPasta (prefixo = "dir/",
+// prefixo_fim = "dir0", because '0' is the byte after '/'), with a LIMIT so one pathological
+// folder cannot turn a per-entity read into a library scan. A folder with more than 100-odd
+// videos is already not exclusive, so the answer cannot change beyond that point.
+func (q *Queries) ListarNomesPresentesNaPasta(ctx context.Context, arg ListarNomesPresentesNaPastaParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listarNomesPresentesNaPasta, arg.Prefixo, arg.PrefixoFim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		items = append(items, path)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listarSeasonIDsComEpisodioPresente = `-- name: ListarSeasonIDsComEpisodioPresente :many
 SELECT DISTINCT er.parent_id AS entity_id
 FROM entity_relation er

@@ -302,6 +302,23 @@ SELECT EXISTS (
     JOIN media_file m ON m.entity_id = t.descendant_id AND m.state = 'present'
 ) AS tem_posse;
 
+-- name: ListarNomesPresentesNaPasta :many
+-- The file names that sit DIRECTLY in one folder (issue #96). resolverDestino needs more
+-- than a count: the exclusivity rule must ignore extra material (a movie plus its trailer
+-- is still the movie's own folder), and only the names can tell one from the other.
+--
+-- Same indexed range scan as ContarMediaFilesPresentesNaPasta (prefixo = "dir/",
+-- prefixo_fim = "dir0", because '0' is the byte after '/'), with a LIMIT so one pathological
+-- folder cannot turn a per-entity read into a library scan. A folder with more than 100-odd
+-- videos is already not exclusive, so the answer cannot change beyond that point.
+SELECT path
+FROM media_file
+WHERE state = 'present'
+  AND path >= sqlc.arg(prefixo)
+  AND path < sqlc.arg(prefixo_fim)
+  AND instr(substr(path, length(sqlc.arg(prefixo)) + 1), '/') = 0
+LIMIT 200;
+
 -- name: ContarMediaFilesPresentesNaPasta :one
 -- Answers "does this folder hold exactly one present media file?" for ONE folder, which is
 -- the only thing resolverDestino needed from the whole library (issue #73).

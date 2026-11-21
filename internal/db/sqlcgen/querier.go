@@ -693,6 +693,15 @@ type Querier interface {
 	// Self-hosted library: full scan tolerated (same spirit as
 	// montarPosseAgregada, internal/server/entities.go).
 	ListarMediaFilesPresentes(ctx context.Context) ([]ListarMediaFilesPresentesRow, error)
+	// The file names that sit DIRECTLY in one folder (issue #96). resolverDestino needs more
+	// than a count: the exclusivity rule must ignore extra material (a movie plus its trailer
+	// is still the movie's own folder), and only the names can tell one from the other.
+	//
+	// Same indexed range scan as ContarMediaFilesPresentesNaPasta (prefixo = "dir/",
+	// prefixo_fim = "dir0", because '0' is the byte after '/'), with a LIMIT so one pathological
+	// folder cannot turn a per-entity read into a library scan. A folder with more than 100-odd
+	// videos is already not exclusive, so the answer cannot change beyond that point.
+	ListarNomesPresentesNaPasta(ctx context.Context, arg ListarNomesPresentesNaPastaParams) ([]string, error)
 	// ORPHAN queue: entities auto-created by the scanner (status='cataloged') that HAVE at
 	// least one media_file, with NONE 'present' (all 'missing'), and NO owner
 	// investment -- no row in media_override and no asset origin='user'. An entity only

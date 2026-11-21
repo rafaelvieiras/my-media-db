@@ -32,6 +32,7 @@ import (
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/enrich"
+	"github.com/rafaelvieiras/my-media-db/internal/localmedia"
 	"github.com/rafaelvieiras/my-media-db/internal/naming"
 	"github.com/rafaelvieiras/my-media-db/internal/tvext"
 	"github.com/rafaelvieiras/my-media-db/internal/tvmatch"
@@ -613,24 +614,14 @@ func tituloDoArquivo(base string) string {
 	return base
 }
 
-// palavrasDeExtra are the names that mark extra material inside a season folder.
-// Without them, a "Season 01/featurette bonus.mkv" would become a provisional
-// episode — which would be a lie about the library.
-var palavrasDeExtra = []string{
-	"featurette", "sample", "trailer", "teaser", "extras", "bonus", "deleted",
-	"behind the scenes", "behind-the-scenes", "bloopers", "outtakes", "interview",
-	"making of", "making-of", "promo", "recap",
-}
-
-// pareceExtra tells whether the file name marks extra material.
+// pareceExtra tells whether the file name marks extra material inside a season
+// folder (a "Season 01/featurette bonus.mkv" must not become a provisional
+// episode — that would be a lie about the library). The word list lives in
+// localmedia.ExtraWords, ONE list for the whole codebase: the same marks
+// decide which file NAMES an entity when it exports its NFO and artwork
+// (localmedia.ArquivoMaisAntigo, issue #96), and two lists would drift.
 func pareceExtra(base string) bool {
-	l := strings.ToLower(base)
-	for _, p := range palavrasDeExtra {
-		if strings.Contains(l, p) {
-			return true
-		}
-	}
-	return false
+	return localmedia.IsExtraFileName(base)
 }
 
 // acharOuCriarProvisorios returns the ids of the provisional episodes for the file:

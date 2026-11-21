@@ -483,3 +483,69 @@ func TestCaminhoNFODeVideo(t *testing.T) {
 		t.Errorf("IndiceRotacaoLivreMusica sem extensao = %d, quero 3", got)
 	}
 }
+
+// TestArquivoMaisAntigoPrefereOItemSobreOExtra is issue #96: the trailer of a movie
+// is frequently the OLDER file, and it used to name the exported NFO and artwork.
+func TestArquivoMaisAntigoPrefereOItemSobreOExtra(t *testing.T) {
+	e := Entity{ID: "e1", Type: "movie"}
+	files := []MediaFile{
+		{EntityID: "e1", Path: "/lib/Filme (2001)/Filme (2001)-trailer.mp4", State: estadoPresente, CreatedAt: "2026-11-17T14:05:18.297Z"},
+		{EntityID: "e1", Path: "/lib/Filme (2001)/Filme (2001).mkv", State: estadoPresente, CreatedAt: "2026-11-17T14:05:18.299Z"},
+	}
+	mf, ok := ArquivoMaisAntigo(e, files, nil)
+	if !ok {
+		t.Fatal("ArquivoMaisAntigo = false, queria o filme")
+	}
+	if mf.Path != "/lib/Filme (2001)/Filme (2001).mkv" {
+		t.Fatalf("arquivo nomeador = %q, queria o FILME", mf.Path)
+	}
+}
+
+// TestArquivoMaisAntigoUsaOExtraQuandoEhSoOQueExiste: the fallback keeps a destination
+// for an entity whose only file is extra material (nothing that used to be written is
+// lost by this rule).
+func TestArquivoMaisAntigoUsaOExtraQuandoEhSoOQueExiste(t *testing.T) {
+	e := Entity{ID: "e1", Type: "movie"}
+	files := []MediaFile{
+		{EntityID: "e1", Path: "/lib/So Trailer (2020)/So Trailer (2020)-trailer.mp4", State: estadoPresente, CreatedAt: "2026-11-17T14:05:18.297Z"},
+	}
+	mf, ok := ArquivoMaisAntigo(e, files, nil)
+	if !ok || mf.Path != "/lib/So Trailer (2020)/So Trailer (2020)-trailer.mp4" {
+		t.Fatalf("ArquivoMaisAntigo = (%q, %v), queria o unico arquivo existente", mf.Path, ok)
+	}
+}
+
+// TestExclusiveFolderByNamesIgnoraExtra: extra material does not make the folder
+// ambiguous; two REAL videos still do.
+func TestExclusiveFolderByNamesIgnoraExtra(t *testing.T) {
+	casos := []struct {
+		nome  string
+		nomes []string
+		quer  bool
+	}{
+		{"filme + trailer", []string{"Filme (2001).mkv", "Filme (2001)-trailer.mp4"}, true},
+		{"filme + trailer + sample", []string{"Filme.mkv", "Filme-trailer.mp4", "Filme-sample.mkv"}, true},
+		{"dois videos reais", []string{"Filme.mkv", "Filme - 4K.mkv"}, false},
+		{"so trailer", []string{"Filme-trailer.mp4"}, true},
+		{"pasta vazia", nil, false},
+	}
+	for _, c := range casos {
+		if got := ExclusiveFolderByNames(c.nomes); got != c.quer {
+			t.Errorf("%s: ExclusiveFolderByNames = %v, queria %v", c.nome, got, c.quer)
+		}
+	}
+}
+
+// TestEhPastaExclusivaConcordaComAPorNomes: the two Go forms must never disagree.
+func TestEhPastaExclusivaConcordaComAPorNomes(t *testing.T) {
+	files := []MediaFile{
+		{Path: "/lib/F/F.mkv", State: estadoPresente},
+		{Path: "/lib/F/F-trailer.mp4", State: estadoPresente},
+	}
+	if !EhPastaExclusiva("/lib/F", files) {
+		t.Fatal("EhPastaExclusiva = false, queria true (trailer nao conta)")
+	}
+	if !ExclusiveFolderByNames([]string{"F.mkv", "F-trailer.mp4"}) {
+		t.Fatal("ExclusiveFolderByNames = false, queria true")
+	}
+}
