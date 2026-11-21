@@ -21,6 +21,8 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"path/filepath"
+	"strings"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/mediainfo"
@@ -146,7 +148,7 @@ func (m *Manager) religarArquivoSerie(ctx context.Context, mf sqlcgen.MediaFile,
 	var episodeIDs []string
 	if res.index != nil {
 		if ep, ok := naming.ParseEpisodeNoCaminho(mf.Path); ok {
-			if ids, _, matched := tvmatch.CasarComPasta(res.index, ep, temporadaDaPasta(mf.Path)); matched {
+			if ids, _, matched := tvmatch.CasarComPasta(res.index, ep, temporadaDaPasta(mf.Path), strings.TrimSuffix(filepath.Base(mf.Path), filepath.Ext(mf.Path))); matched {
 				episodeIDs = ids
 				confianca = res.conf
 			}

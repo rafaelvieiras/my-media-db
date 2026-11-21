@@ -28,7 +28,11 @@ type Index struct {
 	// byDono is the OWNER order (ADR-0033): the pair maps to the ORDERED list of
 	// episode ids, because a merged release entry puts several episodes on the same
 	// (season, number). Nil/empty when the owner declared no order.
-	byDono      map[[2]int][]string
+	byDono map[[2]int][]string
+	// titulos is episode id → title. The title is the only evidence the FILE carries about
+	// WHICH episode it is, and it is what settles an absolute number when more than one
+	// ordering can serve it (see resolverAbsoluto).
+	titulos     map[string]string
 	defaultType string
 	orderings   []string
 }
@@ -36,7 +40,11 @@ type Index struct {
 // NovoIndex returns an empty Index, ready for PreencherOrdenacoes/
 // IndexarEpisodio.
 func NovoIndex() *Index {
-	return &Index{byOrdering: map[string]map[[2]int]string{}, byAbsolute: map[int]string{}}
+	return &Index{
+		byOrdering: map[string]map[[2]int]string{},
+		byAbsolute: map[int]string{},
+		titulos:    map[string]string{},
+	}
 }
 
 // PreencherOrdenacoes reads the default ordering and the list of season_types
@@ -90,7 +98,7 @@ func (idx *Index) IndexarEpisodio(epID string, ns map[string]any) {
 // Range → list of ids (ordinal 0,1,2…). Ambiguous (different orderings → distinct
 // episodes) or a number without a match → (nil,false) = review/pending.
 func Casar(idx *Index, ep naming.EpisodeInfo) ([]string, bool) {
-	ids, _, ok := CasarComPasta(idx, ep, 0)
+	ids, _, ok := CasarComPasta(idx, ep, 0, "")
 	return ids, ok
 }
 
@@ -104,14 +112,14 @@ func Casar(idx *Index, ep naming.EpisodeInfo) ([]string, bool) {
 //
 // temporadaResolvida is 0 when the number came from the provider's own absolute_number (that
 // field carries no season) or when nothing resolved.
-func CasarComPasta(idx *Index, ep naming.EpisodeInfo, temporadaDaPasta int) (ids []string, temporadaResolvida int, ok bool) {
+func CasarComPasta(idx *Index, ep naming.EpisodeInfo, temporadaDaPasta int, tituloDoArquivo string) (ids []string, temporadaResolvida int, ok bool) {
 	// 0) The owner order wins over every provider order: it exists exactly because
 	// the release the owner has does not follow the provider (ADR-0033).
 	if ids, ok := casarDono(idx, ep); ok {
 		return ids, 0, true
 	}
 	if ep.IsAbsolute {
-		return casarAbsoluto(idx, ep.Absolute, temporadaDaPasta)
+		return casarAbsoluto(idx, ep.Absolute, temporadaDaPasta, tituloDoArquivo)
 	}
 
 	if idx.defaultType != "" {
@@ -190,7 +198,7 @@ func casarNaOrdem(idx *Index, ordem string, season int, numeros []int) ([]string
 // provider's absolute_number wins when it exists; otherwise the number goes through the
 // series' orderings (resolverAbsoluto), which is what makes a release numbered only by
 // absolute position ("X-Men - 27 - …") reach the real episode instead of becoming a draft.
-func casarAbsoluto(idx *Index, absolutos []int, temporadaDaPasta int) ([]string, int, bool) {
+func casarAbsoluto(idx *Index, absolutos []int, temporadaDaPasta int, titulo string) ([]string, int, bool) {
 	out := make([]string, 0, len(absolutos))
 	temporada := 0
 	for _, n := range absolutos {
@@ -198,7 +206,7 @@ func casarAbsoluto(idx *Index, absolutos []int, temporadaDaPasta int) ([]string,
 			out = append(out, id)
 			continue
 		}
-		ep, ok := idx.resolverAbsoluto(n, temporadaDaPasta)
+		ep, ok := idx.resolverAbsoluto(n, temporadaDaPasta, titulo)
 		if !ok {
 			return nil, 0, false
 		}
@@ -222,6 +230,17 @@ func mesmaSequencia(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// IndexarEpisodioComTitulo indexes the episode AND remembers its title, so an absolute
+// number can be resolved by the only thing the file states about the episode besides the
+// number: its name.
+func (idx *Index) IndexarEpisodioComTitulo(epID, titulo string, ns map[string]any) {
+	idx.IndexarEpisodio(epID, ns)
+	if idx.titulos == nil {
+		idx.titulos = map[string]string{}
+	}
+	idx.titulos[epID] = titulo
 }
 
 // prioridadeDeOrdem ranks the orderings when more than one of them can serve an absolute
@@ -319,13 +338,20 @@ func (idx *Index) ordensPorPrioridade() []string {
 	return out
 }
 
-// resolverAbsoluto resolves ONE absolute number through the orderings. The ordering that puts
-// the number in the season of the FOLDER wins (the folder is the anchor: it says which block of
-// episodes the file belongs to); when no ordering agrees with the folder, the fixed priority
-// decides and the divergence is reported to the caller.
-func (idx *Index) resolverAbsoluto(n, temporadaDaPasta int) (absolutoDerivado, bool) {
-	var reserva absolutoDerivado
-	temReserva := false
+// resolverAbsoluto resolves ONE absolute number through the orderings, in this order:
+//
+//  1. the TITLE: an ordering whose episode at that position carries the name the FILE
+//     states wins. Measured on the owner's X-Men, this is the only reliable vote — the
+//     files follow the "disney" order (74 of 76 names match exactly), while the "dvd-order"
+//     fits the FOLDER COUNTS better and points at the wrong episodes ("X-Men - 46 - A Volta
+//     do Juggernaut" landed on "Um Trato com o Diabo");
+//  2. the SEASON OF THE FOLDER: the folder says which block of episodes the file belongs to;
+//  3. the fixed priority (release orderings first, official last).
+//
+// A title vote only counts when it is strict: one candidate must score better than every
+// other, otherwise the vote is inconclusive and the folder decides.
+func (idx *Index) resolverAbsoluto(n, temporadaDaPasta int, titulo string) (absolutoDerivado, bool) {
+	var candidatos []candidatoPorTitulo
 	for _, ordem := range idx.ordensPorPrioridade() {
 		m, ok := idx.absolutoDaOrdem(ordem)
 		if !ok {
@@ -335,15 +361,150 @@ func (idx *Index) resolverAbsoluto(n, temporadaDaPasta int) (absolutoDerivado, b
 		if !ok {
 			continue
 		}
-		if temporadaDaPasta == 0 || ep.season == temporadaDaPasta {
-			return ep, true
+		candidatos = append(candidatos, candidatoPorTitulo{ep: ep, titulo: idx.titulos[ep.id]})
+	}
+	if len(candidatos) == 0 {
+		return absolutoDerivado{}, false
+	}
+
+	// 1) the title, when it gives a strict winner.
+	if vencedor, ok := vencedorPorTitulo(candidatos, titulo); ok {
+		return vencedor, true
+	}
+	// 2) the season of the folder, taking the candidates in priority order.
+	var reserva absolutoDerivado
+	temReserva := false
+	for _, c := range candidatos {
+		if temporadaDaPasta == 0 || c.ep.season == temporadaDaPasta {
+			return c.ep, true
 		}
 		if !temReserva {
-			reserva, temReserva = ep, true
+			reserva, temReserva = c.ep, true
 		}
 	}
 	if temReserva {
 		return reserva, true
 	}
 	return absolutoDerivado{}, false
+}
+
+// candidatoPorTitulo is one candidate plus the title of its episode.
+type candidatoPorTitulo struct {
+	ep     absolutoDerivado
+	titulo string
+}
+
+// vencedorPorTitulo returns the single candidate whose episode name best matches the name of
+// the file. Inconclusive (no title, no overlap, or a tie) → false.
+func vencedorPorTitulo(cands []candidatoPorTitulo, titulo string) (absolutoDerivado, bool) {
+	if titulo == "" || len(cands) < 2 {
+		return absolutoDerivado{}, false
+	}
+	melhor := -1
+	melhorNota := 0.0
+	empate := false
+	for i, c := range cands {
+		nota := semelhancaDeTitulo(titulo, c.titulo)
+		switch {
+		case nota > melhorNota:
+			melhor, melhorNota, empate = i, nota, false
+		case nota == melhorNota && nota > 0:
+			// Equal notes are only a real tie when they point at DIFFERENT episodes: two
+			// orderings often carry the same episode at the same position, and that is
+			// agreement, not ambiguity.
+			if melhor >= 0 && cands[melhor].ep.id != c.ep.id {
+				empate = true
+			}
+		}
+	}
+	if melhor < 0 || melhorNota <= 0 || empate {
+		return absolutoDerivado{}, false
+	}
+	return cands[melhor].ep, true
+}
+
+// semelhancaDeTitulo is the fraction of the meaningful words of the FILE title that also
+// appear in the episode title (words of 3+ letters, case and accents folded). It is a coarse
+// measure on purpose: the two titles come from different translations ("Juggernaut" vs
+// "Fanático"), and the vote only needs to separate two or three candidates.
+func semelhancaDeTitulo(tituloArquivo, tituloEpisodio string) float64 {
+	doArquivo := palavrasSignificativas(tituloArquivo)
+	if len(doArquivo) == 0 {
+		return 0
+	}
+	doEpisodio := map[string]bool{}
+	for _, p := range palavrasSignificativas(tituloEpisodio) {
+		doEpisodio[p] = true
+	}
+	achadas := 0
+	for _, p := range doArquivo {
+		if doEpisodio[p] {
+			achadas++
+		}
+	}
+	return float64(achadas) / float64(len(doArquivo))
+}
+
+// palavrasSignificativas splits a title into its meaningful words: 3+ letters, folded
+// (lowercase, accents removed), and DIGITS — a part number is the only thing that tells
+// "O Valor de um Homem (Parte 1)" from "(Parte 2)". Shorter words and punctuation stay out.
+func palavrasSignificativas(titulo string) []string {
+	var out []string
+	var atual []rune
+	descarregar := func() {
+		if len(atual) >= 3 || (len(atual) > 0 && soDigitos(atual)) {
+			out = append(out, string(atual))
+		}
+		atual = atual[:0]
+	}
+	for _, r := range titulo {
+		if letra, ok := dobrarLetra(r); ok {
+			atual = append(atual, letra)
+			continue
+		}
+		descarregar()
+	}
+	descarregar()
+	return out
+}
+
+// soDigitos tells whether every rune is a digit.
+func soDigitos(rs []rune) bool {
+	for _, r := range rs {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// dobrarLetra returns the folded form of a letter (lowercase, without accent) and whether r is
+// a letter at all.
+func dobrarLetra(r rune) (rune, bool) {
+	switch {
+	case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+		return r, true
+	case r >= 'A' && r <= 'Z':
+		return r + ('a' - 'A'), true
+	}
+	if dobrada, ok := letrasDobradas[r]; ok {
+		return dobrada, true
+	}
+	return 0, false
+}
+
+// letrasDobradas folds the accents the titles of a Portuguese library actually use.
+var letrasDobradas = map[rune]rune{
+	'á': 'a', 'à': 'a', 'â': 'a', 'ã': 'a', 'ä': 'a',
+	'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
+	'í': 'i', 'ì': 'i', 'î': 'i', 'ï': 'i',
+	'ó': 'o', 'ò': 'o', 'ô': 'o', 'õ': 'o', 'ö': 'o',
+	'ú': 'u', 'ù': 'u', 'û': 'u', 'ü': 'u',
+	'ç': 'c', 'ñ': 'n',
+	'Á': 'a', 'À': 'a', 'Â': 'a', 'Ã': 'a', 'Ä': 'a',
+	'É': 'e', 'È': 'e', 'Ê': 'e', 'Ë': 'e',
+	'Í': 'i', 'Ì': 'i', 'Î': 'i', 'Ï': 'i',
+	'Ó': 'o', 'Ò': 'o', 'Ô': 'o', 'Õ': 'o', 'Ö': 'o',
+	'Ú': 'u', 'Ù': 'u', 'Û': 'u', 'Ü': 'u',
+	'Ç': 'c', 'Ñ': 'n',
 }
