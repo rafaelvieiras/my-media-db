@@ -52,6 +52,11 @@ Nth episode as absolute N.
 4. When nothing agrees with the folder, a fixed priority decides — release orderings first
    (`dvd-order`, `itunes-order`, `disney`, `production-order`), `official` last — and the
    disagreement is logged by the scanner, never silent.
+5. **A file that states a title (two or more words) matching no candidate at all goes to
+   review.** Falling back to the priority there is how two files ended up on ONE episode
+   ("Um Mutante dos Diabos" took the episode of "O Valor de um Homem 1"). A name with no
+   episode title (`X-Men - 02.mkv`) does not fall under this rule: it has nothing to compare,
+   and the folder still anchors it.
 4. An ordering whose flattened numbering has a **hole inside a season** (season 2 starting at
    episode 5) is discarded: counting positions over a broken grid would shift every number
    after the hole. Sending the file to review is better than a wrong absolute.
@@ -60,10 +65,11 @@ Nth episode as absolute N.
 ## Consequences
 
 - Measured on the owner's X-Men (76 files, dumps of the numbering and of the file names): the
-  resolution puts **73** files on the episode whose title matches the file. The three that do
-  not: one file whose name exists in no provider list ("Um Mutante dos Diabos") falls back to
-  the priority, and two (`60`/`61`) are **swapped** in the release relative to every ordering —
-  a per-number resolution cannot see a permutation, and that is accepted.
+  resolution puts **72** files on the episode whose title matches the file and leaves **4** for
+  review — no wrong link and no episode with two files. The four are one name that exists in
+  no provider list ("Um Mutante dos Diabos"), a title translated differently by the release
+  ("Fria Revolta" for "Conforto Frio") and two files **swapped** in the release against every
+  ordering (`60`/`61`) — a per-number resolution cannot see a permutation.
 - The season of the NFO follows the series TREE (the provider's official seasons), not the
   folder: `X-Men - 52` in `Temporada 03` carries season 4. Kodi/Jellyfin/tinyfin read the NFO,
   so it displays in the right place while the file stays where it was.
