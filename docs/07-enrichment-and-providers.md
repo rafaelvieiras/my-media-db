@@ -45,12 +45,12 @@ What the app sends to the provider is not the raw title of the item: it is a lis
 **attempts**, tried in order, stopping at the first one that reaches the auto-match
 threshold ([ADR-0037](adr/0037-search-term-from-the-catalog-too.md)):
 
-| type | attempts, in order |
-|---|---|
-| movie | the **folder name** (the convention writes the work there: as-is, then up to the subtitle dash, then without a trailing genre tag), then the **catalog title**, then the **release name** of the file and its trimmed form ([ADR-0039](adr/0039-release-name-is-not-a-title.md)) |
-| series | the **series folder** (`tituloAnoDaPastaDaSerie`), then the entity title when the file is loose at the library root |
-| artist | the entity title, without a year (an artist has no file of its own, [ADR-0027](adr/0027-music-model-artist-album-track.md)) |
-| any other type with its own file | the release name of the file |
+| type                             | attempts, in order                                                                                                                                                                                                                                                               |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| movie                            | the **folder name** (the convention writes the work there: as-is, then up to the subtitle dash, then without a trailing genre tag), then the **catalog title**, then the **release name** of the file and its trimmed form ([ADR-0039](adr/0039-release-name-is-not-a-title.md)) |
+| series                           | the **series folder** (`tituloAnoDaPastaDaSerie`), then the entity title when the file is loose at the library root -- the name is sent WITHOUT the year, and the year is scored, never filtered ([ADR-0046](adr/0046-series-identity-is-title-year-and-shape.md))               |
+| artist                           | the entity title, without a year (an artist has no file of its own, [ADR-0027](adr/0027-music-model-artist-album-track.md))                                                                                                                                                      |
+| any other type with its own file | the release name of the file                                                                                                                                                                                                                                                     |
 
 The two movie attempts are not redundant. The scan gives a movie two very different
 strings — the folder (`Alligator 2 A Mutação`, `Transformers 2 - A Vingança dos
@@ -80,6 +80,22 @@ for **46 of 67** unmatched movies in a production library. The trailing genre ta
 style gets its own attempt (`101 Dálmatas O Filme` → `101 Dálmatas`), tried **last** so the
 literal title always goes first.
 
+### How the series identity is decided
+
+The name is compared against **every title the source knows**: the translated title, the
+**original** title (free in the search payload) and, for the three closest candidates only, the
+alternative/translated titles (`/tv/{id}?append_to_response=translations`). A leading article is
+ignored on both sides — "Clube do Terror" and "O Clube do Terror" are the same name.
+
+The year the folder states is a **score** input with a **2-year slack**, never a filter: the
+measured `Clube do Terror (1990)` is the 1992 show, so a 1-year gate would discard the only
+correct candidate. A candidate outside the slack is discarded, which is what keeps a remake out.
+
+Before anything is written, the **shape** of the tree is checked: the provider's tree must be able
+to host at least **half** the folder's video files, and an entry with zero episodes is always
+refused. The shape gate reads the tree the import was going to fetch anyway, so it costs no extra
+request. Two candidates within 5 points of each other are a tie and go to review.
+
 ## When the match is useless
 
 A match can succeed at the source and still be worthless locally. Three reasons reach the
@@ -87,11 +103,11 @@ owner as the same warning on the item screen
 ([ADR-0035](adr/0035-suggested-match-hint.md), [ADR-0038](adr/0038-match-alerts-beyond-the-typo.md)),
 and none of them is ever applied automatically:
 
-| `reason` | what it means | how it is found |
-|---|---|---|
-| `name` | the name on disk finds nothing; a cheaper variant of it finds a candidate | on the first open of a series or a movie with no identity (the cheaper variants cost up to four queries, so a scan never fires them in a burst) |
-| `empty_tree` | the matched entry **has no episodes** in the source | when the tree is fetched: zero episodes across all seasons |
-| `tree_mismatch` | the tree exists but **does not fit the files** | post-scan census: at least 5 draft episodes **holding a file**, and at least as many as cataloged episodes holding one |
+| `reason`        | what it means                                                             | how it is found                                                                                                                                 |
+| --------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`          | the name on disk finds nothing; a cheaper variant of it finds a candidate | on the first open of a series or a movie with no identity (the cheaper variants cost up to four queries, so a scan never fires them in a burst) |
+| `empty_tree`    | the matched entry **has no episodes** in the source                       | when the tree is fetched: zero episodes across all seasons                                                                                      |
+| `tree_mismatch` | the tree exists but **does not fit the files**                            | post-scan census: at least 5 draft episodes **holding a file**, and at least as many as cataloged episodes holding one                          |
 
 The two tree signals come from the same component, `internal/enrich/alertas.go`, and share
 the row with the typo hint (migration 0029 adds `reason` and the file counts). The

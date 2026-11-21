@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -257,7 +258,7 @@ func TestImportarSeriePorNomeCasaExato(t *testing.T) {
 	svc, database := svcSerieFake(t)
 	ctx := context.Background()
 
-	id, err := svc.ImportarSeriePorNome(ctx, "Springfield Tales", []string{"en"}, "")
+	id, err := svc.ImportarSeriePorNome(ctx, AlvoSerie{Nome: "Springfield Tales"}, []string{"en"}, "")
 	if err != nil {
 		t.Fatalf("ImportarSeriePorNome: %v", err)
 	}
@@ -279,7 +280,7 @@ func TestImportarSeriePorNomeCasaExato(t *testing.T) {
 // ErrSerieNaoEncontrada sentinel (the scanner routes it to review).
 func TestImportarSeriePorNomeNaoEncontrada(t *testing.T) {
 	svc, _ := svcSerieFake(t)
-	_, err := svc.ImportarSeriePorNome(context.Background(), "Serie Inexistente XYZ", []string{"en"}, "")
+	_, err := svc.ImportarSeriePorNome(context.Background(), AlvoSerie{Nome: "Serie Inexistente XYZ"}, []string{"en"}, "")
 	if !errors.Is(err, ErrSerieNaoEncontrada) {
 		t.Fatalf("err = %v, quero ErrSerieNaoEncontrada", err)
 	}
@@ -290,7 +291,7 @@ func TestImportarSeriePorNomeNaoEncontrada(t *testing.T) {
 func TestImportarSeriePorNomeAmbigua(t *testing.T) {
 	database := setupDB(t)
 	svc := New(database, provider.NovaRegistry(serieDupla{}), t.TempDir())
-	_, err := svc.ImportarSeriePorNome(context.Background(), "Dup Show", []string{"en"}, "")
+	_, err := svc.ImportarSeriePorNome(context.Background(), AlvoSerie{Nome: "Dup Show"}, []string{"en"}, "")
 	if !errors.Is(err, ErrSerieAmbigua) {
 		t.Fatalf("err = %v, quero ErrSerieAmbigua", err)
 	}
@@ -645,3 +646,158 @@ func (semArvoreProvider) BuscarDetalhe(context.Context, string, string, []string
 func (semArvoreProvider) MapearDetalhe(json.RawMessage) (map[string]any, error) {
 	return map[string]any{}, nil
 }
+
+// stubSerieIdentidade is a series source whose search/catalog is set by the test: it exists to
+// prove the IDENTITY rules of the series match (title in any language, year of the folder,
+// shape of the tree) without any network.
+type stubSerieIdentidade struct {
+	resultados []provider.ResultadoExterno
+	arvores    map[string]provider.SerieArvore
+}
+
+func (s stubSerieIdentidade) Nome() string { return "stub" }
+
+func (s stubSerieIdentidade) Buscar(_ context.Context, _ string, tipo, _ string) ([]provider.ResultadoExterno, error) {
+	if tipo != tipoSerie {
+		return nil, nil
+	}
+	return s.resultados, nil
+}
+
+func (stubSerieIdentidade) BuscarDetalhe(context.Context, string, string, []string) (json.RawMessage, error) {
+	return json.RawMessage(`{}`), nil
+}
+
+func (stubSerieIdentidade) MapearDetalhe(json.RawMessage) (map[string]any, error) {
+	return map[string]any{}, nil
+}
+
+func (s stubSerieIdentidade) BuscarSerieArvore(_ context.Context, sourceID string, _ []string) (provider.SerieArvore, error) {
+	arvore, ok := s.arvores[sourceID]
+	if !ok {
+		return provider.SerieArvore{}, provider.ErrNaoEncontrado
+	}
+	return arvore, nil
+}
+
+// arvoreDeTeste builds a tree with `n` episodes in one season.
+func arvoreDeTeste(n int) provider.SerieArvore {
+	eps := make([]provider.EpisodioExterno, 0, n)
+	for i := 1; i <= n; i++ {
+		eps = append(eps, provider.EpisodioExterno{SourceID: fmt.Sprintf("e%d", i)})
+	}
+	return provider.SerieArvore{
+		DefaultSeasonType: "official",
+		Temporadas:        []provider.TemporadaExterna{{Ordering: "official", SeasonNumber: 1, Episodios: eps}},
+	}
+}
+
+func svcIdentidade(t *testing.T, prov stubSerieIdentidade) *Servico {
+	t.Helper()
+	return New(setupDB(t), provider.NovaRegistry(prov), t.TempDir())
+}
+
+// TestSerieCasaPeloTituloOriginal: the folder names the show the way it is known abroad, the
+// provider answers with the translated title. Before, only the translated title was compared
+// ("EqualFold"), so "Cold Case" never matched "Arquivo Morto" -- the 2003 show's pt-BR name.
+func TestSerieCasaPeloTituloOriginal(t *testing.T) {
+	prov := stubSerieIdentidade{
+		resultados: []provider.ResultadoExterno{{
+			Source: "stub", SourceID: "2171", Type: "tv",
+			Title: "Arquivo Morto", TituloOriginal: "Cold Case", Year: ptrAno("2003"),
+		}},
+		arvores: map[string]provider.SerieArvore{"2171": arvoreDeTeste(30)},
+	}
+	svc := svcIdentidade(t, prov)
+	id, err := svc.ImportarSeriePorNome(context.Background(), AlvoSerie{Nome: "Cold Case", Ano: 2003, Arquivos: 40}, []string{"pt-BR"}, "pt-BR")
+	if err != nil {
+		t.Fatalf("ImportarSeriePorNome: %v", err)
+	}
+	if id == "" {
+		t.Fatal("serie nao importada")
+	}
+}
+
+// TestSerieAnoDaPastaDesempataRemake: two shows with the same name, 29 years apart. The folder
+// states the year, so the remake must be discarded and the old one taken -- the exact defect
+// reported by the owner ("Clube do Terror" 1990 matching the 2019 reboot).
+func TestSerieAnoDaPastaDesempataRemake(t *testing.T) {
+	prov := stubSerieIdentidade{
+		resultados: []provider.ResultadoExterno{
+			{Source: "stub", SourceID: "93693", Type: "tv", Title: "Clube do Terror", Year: ptrAno("2019")},
+			{Source: "stub", SourceID: "2913", Type: "tv", Title: "O Clube do Terror", Year: ptrAno("1992")},
+		},
+		arvores: map[string]provider.SerieArvore{"93693": arvoreDeTeste(13), "2913": arvoreDeTeste(91)},
+	}
+	svc := svcIdentidade(t, prov)
+	ctx := context.Background()
+	id, err := svc.ImportarSeriePorNome(ctx, AlvoSerie{Nome: "Clube do Terror", Ano: 1990, Arquivos: 78}, []string{"pt-BR"}, "pt-BR")
+	if err != nil {
+		t.Fatalf("ImportarSeriePorNome: %v", err)
+	}
+	serie, err := sqlcgen.New(svc.database.Read).ObterEntity(ctx, id)
+	if err != nil {
+		t.Fatalf("ObterEntity: %v", err)
+	}
+	if !strings.Contains(serie.ExternalIdsJson.String, `"2913"`) {
+		t.Fatalf("casou com %q, quero 2913 (o seriado de 1992; o reboot de 2019 tem 29 anos de diferenca)",
+			serie.ExternalIdsJson.String)
+	}
+}
+
+// TestSerieAnoImprecisoAindaCasa: the year a folder states is often approximate ("Clube do
+// Terror (1990)" is the 1992 show). The series slack is 2 years, so the right candidate is not
+// discarded -- while the remake (29 years away) still is.
+func TestSerieAnoImprecisoAindaCasa(t *testing.T) {
+	prov := stubSerieIdentidade{
+		resultados: []provider.ResultadoExterno{{
+			Source: "stub", SourceID: "2913", Type: "tv", Title: "O Clube do Terror", Year: ptrAno("1992"),
+		}},
+		arvores: map[string]provider.SerieArvore{"2913": arvoreDeTeste(91)},
+	}
+	svc := svcIdentidade(t, prov)
+	if _, err := svc.ImportarSeriePorNome(context.Background(), AlvoSerie{Nome: "Clube do Terror", Ano: 1990, Arquivos: 78}, []string{"pt-BR"}, "pt-BR"); err != nil {
+		t.Fatalf("err = %v, quero casar (2 anos de folga)", err)
+	}
+}
+
+// TestSerieEntradaQueNaoComportaAPasta: the name matches, the tree cannot host the folder --
+// 3 episodes for a folder with 26 files (the measured "Arrow"). The identity must be refused
+// instead of cataloged, and nothing may be written.
+func TestSerieEntradaQueNaoComportaAPasta(t *testing.T) {
+	prov := stubSerieIdentidade{
+		resultados: []provider.ResultadoExterno{{
+			Source: "stub", SourceID: "280224", Type: "tv", Title: "Arrow", Year: ptrAno("2009"),
+		}},
+		arvores: map[string]provider.SerieArvore{"280224": arvoreDeTeste(3)},
+	}
+	svc := svcIdentidade(t, prov)
+	_, err := svc.ImportarSeriePorNome(context.Background(), AlvoSerie{Nome: "Arrow", Arquivos: 26}, []string{"pt-BR"}, "pt-BR")
+	if !errors.Is(err, ErrSerieIdentidadeIncompativel) {
+		t.Fatalf("err = %v, quero ErrSerieIdentidadeIncompativel", err)
+	}
+	if _, err := sqlcgen.New(svc.database.Read).ObterEntityPorTituloTipo(context.Background(),
+		sqlcgen.ObterEntityPorTituloTipoParams{Type: tipoSerie, Title: "Arrow"}); err == nil {
+		t.Fatal("a serie foi gravada mesmo com a identidade recusada")
+	}
+}
+
+// TestSerieEntradaSemEpisodioNuncaEntra: an entry with ZERO episodes (the measured "Aladdin",
+// TMDb 14383, and "Esquadrilha Aérea", 5565) is refused in the import-by-name path too -- not
+// only in the scan path that checks ErrArvoreVazia.
+func TestSerieEntradaSemEpisodioNuncaEntra(t *testing.T) {
+	prov := stubSerieIdentidade{
+		resultados: []provider.ResultadoExterno{{
+			Source: "stub", SourceID: "14383", Type: "tv", Title: "Aladdin",
+		}},
+		arvores: map[string]provider.SerieArvore{"14383": arvoreDeTeste(0)},
+	}
+	svc := svcIdentidade(t, prov)
+	_, err := svc.ImportarSeriePorNome(context.Background(), AlvoSerie{Nome: "Aladdin", Arquivos: 86}, []string{"pt-BR"}, "pt-BR")
+	if !errors.Is(err, ErrSerieIdentidadeIncompativel) {
+		t.Fatalf("err = %v, quero ErrSerieIdentidadeIncompativel", err)
+	}
+}
+
+// ptrAno is the little helper of the stubs above (ResultadoExterno.Year is a *string).
+func ptrAno(a string) *string { return &a }

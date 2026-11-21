@@ -601,6 +601,13 @@ func titulosDoCandidato(c provider.ResultadoExterno) []string {
 // main title; "" when the winner did not go through the rescoring (outside the top-3)
 // or when the main title was already the best.
 func (s *Server) melhorCandidatoExterno(ctx context.Context, candidatos []provider.ResultadoExterno, titulo string, ano int) (provider.ResultadoExterno, float64, string, bool) {
+	// The year slack comes from the TYPE of the candidates: a series folder states a year more
+	// loosely than a movie folder does ("Clube do Terror (1990)" is the 1992 show), so a 1-year
+	// gate would discard the only correct candidate and let the remake win -- see ADR-0046.
+	toleranciaAno := matching.ToleranciaAnoPadrao
+	if len(candidatos) > 0 && candidatos[0].Type == tipoEntSerie {
+		toleranciaAno = matching.ToleranciaAnoSerie
+	}
 	pontuados := make([]candidatoExternoPontuado, 0, len(candidatos))
 	for _, c := range candidatos {
 		anoCand := anoDeStringPtr(c.Year)
@@ -611,7 +618,7 @@ func (s *Server) melhorCandidatoExterno(ctx context.Context, candidatos []provid
 		// with the query ("White Collar Blue", 94.1) -- a wrong match ABOVE
 		// LimiarAutoMatch, i.e. silently cataloged without review.
 		alternativos := titulosDoCandidato(c)
-		pontos, _, descartado := matching.PontuarComAlternativos(titulo, ano, c.Title, alternativos, anoCand)
+		pontos, _, descartado := matching.PontuarComAlternativosTolerancia(titulo, ano, c.Title, alternativos, anoCand, toleranciaAno)
 		if descartado {
 			continue
 		}
@@ -636,7 +643,7 @@ func (s *Server) melhorCandidatoExterno(ctx context.Context, candidatos []provid
 			continue
 		}
 		anoCand := anoDeStringPtr(p.cand.Year)
-		repontuado, vencedor, descartado := matching.PontuarComAlternativos(titulo, ano, p.cand.Title, alternativos, anoCand)
+		repontuado, vencedor, descartado := matching.PontuarComAlternativosTolerancia(titulo, ano, p.cand.Title, alternativos, anoCand, toleranciaAno)
 		if descartado || repontuado <= melhor.score {
 			continue
 		}

@@ -220,3 +220,37 @@ func TestSimilaridadeNormalizadaPassaDoLimiar(t *testing.T) {
 		}
 	}
 }
+
+// TestArtigoNaoEOutroTitulo proves the article tolerance: a catalog writes "O Clube do Terror"
+// and the folder writes "Clube do Terror". Raw Jaro-Winkler gives 82.75 for that pair — 9 points
+// below LimiarAutoMatch — which is how the correct show lost to a same-name remake with an exact
+// title (ADR-0046).
+func TestArtigoNaoEOutroTitulo(t *testing.T) {
+	if bruto := textsim.Similaridade("Clube do Terror", "O Clube do Terror") * 100; bruto >= LimiarAutoMatch {
+		t.Fatalf("o par sem artigo já pontua %.2f: o teste não prova nada", bruto)
+	}
+	score, _, descartado := PontuarComAlternativosTolerancia("Clube do Terror", 0, "O Clube do Terror", nil, 0, ToleranciaAnoSerie)
+	if descartado || score < LimiarAutoMatch {
+		t.Fatalf("score = %.2f (descartado=%v), quero >= %.0f: o artigo não é parte do nome", score, descartado, LimiarAutoMatch)
+	}
+	// O artigo não salva um título DIFERENTE.
+	if score, _, _ := PontuarComAlternativosTolerancia("Clube do Terror", 0, "O Clube das Bruxas", nil, 0, ToleranciaAnoSerie); score >= LimiarAutoMatch {
+		t.Fatalf("score = %.2f para outro nome: o artigo está engolindo a diferença", score)
+	}
+}
+
+// TestToleranciaDeAnoDaSerie: the 2-year slack of a series absorbs an imprecise folder year and
+// still keeps a remake out; the movie slack stays at 1.
+func TestToleranciaDeAnoDaSerie(t *testing.T) {
+	// Clube do Terror (1990) vs the 1992 show: passa na série, cai no filme.
+	if _, _, descartado := PontuarComAlternativosTolerancia("Clube do Terror", 1990, "O Clube do Terror", nil, 1992, ToleranciaAnoSerie); descartado {
+		t.Fatal("2 anos de diferença descartou o candidato da série")
+	}
+	if _, _, descartado := PontuarComAlternativos("Clube do Terror", 1990, "O Clube do Terror", nil, 1992); !descartado {
+		t.Fatal("o filme perdeu a tolerância de 1 ano")
+	}
+	// O remake, 29 anos depois, cai nas duas.
+	if _, _, descartado := PontuarComAlternativosTolerancia("Clube do Terror", 1990, "Clube do Terror", nil, 2019, ToleranciaAnoSerie); !descartado {
+		t.Fatal("o reboot de 2019 sobreviveu à tolerância da série")
+	}
+}

@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/enrich"
 	"github.com/rafaelvieiras/my-media-db/internal/mediainfo"
 	"github.com/rafaelvieiras/my-media-db/internal/naming"
 	"github.com/rafaelvieiras/my-media-db/internal/tvmatch"
@@ -106,7 +107,7 @@ func (m *Manager) ReconciliarSerieDraft(ctx context.Context, entityID string, la
 		return false, err
 	}
 
-	res, ok := m.tentarImportarSerie(ctx, entity.Title, langs, "")
+	res, ok := m.tentarImportarSerie(ctx, enrich.AlvoSerie{Nome: entity.Title}, langs, "")
 	if !ok {
 		return false, nil
 	}
