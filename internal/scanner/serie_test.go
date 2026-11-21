@@ -107,7 +107,7 @@ type importerStub struct {
 	err     error
 }
 
-func (s importerStub) ImportarSeriePorNome(context.Context, string, []string, string) (string, error) {
+func (s importerStub) ImportarSeriePorNome(context.Context, enrich.AlvoSerie, []string, string) (string, error) {
 	return s.id, s.err
 }
 
@@ -251,7 +251,7 @@ type capturingImporterStub struct {
 	preferredLang string
 }
 
-func (s *capturingImporterStub) ImportarSeriePorNome(_ context.Context, _ string, _ []string, preferredLang string) (string, error) {
+func (s *capturingImporterStub) ImportarSeriePorNome(_ context.Context, _ enrich.AlvoSerie, _ []string, preferredLang string) (string, error) {
 	s.preferredLang = preferredLang
 	return "", s.err
 }
@@ -741,7 +741,7 @@ type importerPorIDStub struct {
 	nomeChamou int
 }
 
-func (s *importerPorIDStub) ImportarSeriePorNome(context.Context, string, []string, string) (string, error) {
+func (s *importerPorIDStub) ImportarSeriePorNome(context.Context, enrich.AlvoSerie, []string, string) (string, error) {
 	s.nomeChamou++
 	return "", enrich.ErrSerieNaoEncontrada
 }

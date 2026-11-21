@@ -84,6 +84,9 @@ type scanRun struct {
 	// Analogous to the movie folderKey cache, but keyed by the series folder
 	// (0034).
 	serieCache map[string]serieResolvida
+	// arquivosPorSerie is the SIZE EVIDENCE of each series folder (how many video files it
+	// holds), measured once per scan and handed to the identity check of the auto-import.
+	arquivosPorSerie map[string]int
 	// albuns is what this scan remembers about albums, both ways (ADR-0042): the
 	// albums already RESOLVED (files after the first one of the same album resolve
 	// with ZERO requests -- the expensive part is the album, not the track) and the
@@ -227,14 +230,15 @@ type fileFacts struct {
 // bypass in tests, see scanner_test.go).
 func (m *Manager) executarScan(ctx context.Context, source library.Source, progresso execqueue.Registro) error {
 	r := &scanRun{
-		m:          m,
-		source:     source,
-		scanTS:     m.agora().Format(carimboFormato),
-		probeAtivo: m.prober.Disponivel(),
-		cache:      make(map[string]string),
-		serieCache: make(map[string]serieResolvida),
-		albuns:     novoCacheDeAlbuns(),
-		progresso:  progresso,
+		m:                m,
+		source:           source,
+		scanTS:           m.agora().Format(carimboFormato),
+		probeAtivo:       m.prober.Disponivel(),
+		cache:            make(map[string]string),
+		serieCache:       make(map[string]serieResolvida),
+		arquivosPorSerie: make(map[string]int),
+		albuns:           novoCacheDeAlbuns(),
+		progresso:        progresso,
 	}
 	if !r.probeAtivo {
 		log.Printf("scanner: ffprobe indisponível; mediainfo ficará vazio no scan de %q", source.ID)

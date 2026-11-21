@@ -59,6 +59,55 @@ const ToleranciaDuracaoSegundos = 3.0
 // production data, without changing the contract of this constant.
 const LimiarConfiancaFingerprint = 0.6
 
+// artigosIniciais are the articles that a CATALOG writes in front of a title and that a local
+// FOLDER very often omits (or writes when the catalog omits). Portuguese/Spanish/English/
+// French/Italian, lowercased and ASCII again after the folding of textsim.
+//
+// It exists because of a measured loss: "Clube do Terror" against "O Clube do Terror" scores
+// 82.75 with Jaro-Winkler -- 9 points BELOW LimiarAutoMatch -- so the correct show was never
+// taken and the item went to review while the wrong one (an exact-title remake) won the
+// ranking. An article is not part of the name.
+var artigosIniciais = map[string]bool{
+	"o": true, "a": true, "os": true, "as": true, "um": true, "uma": true,
+	"the": true, "an": true,
+	"el": true, "la": true, "los": true, "las": true, "un": true, "una": true,
+	"le": true, "les": true, "l": true, "der": true, "die": true, "das": true,
+	"il": true, "lo": true, "gli": true, "i": true,
+}
+
+// semArtigoInicial removes ONE leading article from a title ("O Clube do Terror" ->
+// "Clube do Terror"). A title made only of the article is returned as it is.
+func semArtigoInicial(titulo string) string {
+	campos := strings.Fields(titulo)
+	if len(campos) < 2 {
+		return titulo
+	}
+	primeiro := strings.ToLower(strings.Trim(campos[0], ".,:;!?-'\"()[]"))
+	if !artigosIniciais[primeiro] {
+		return titulo
+	}
+	return strings.Join(campos[1:], " ")
+}
+
+// similaridadeDeTitulo is the textual similarity of two titles, taking the BEST of the plain
+// comparison and the comparison without the leading article on either side. Deliberately the
+// maximum and not a normalized average: when a catalog and a folder disagree only about the
+// article, they are the same name, and when they disagree about the name the article changes
+// nothing.
+func similaridadeDeTitulo(a, b string) float64 {
+	melhor := textsim.Similaridade(a, b)
+	for _, par := range [][2]string{
+		{semArtigoInicial(a), b},
+		{a, semArtigoInicial(b)},
+		{semArtigoInicial(a), semArtigoInicial(b)},
+	} {
+		if sim := textsim.Similaridade(par[0], par[1]); sim > melhor {
+			melhor = sim
+		}
+	}
+	return melhor
+}
+
 // Pontuar computes the final score [0,100]: Jaro-Winkler similarity
 // of the title (textsim) on a 0-100 scale, adjusted by the year.
 // descartado=true when BOTH years exist and differ by MORE than 1 year
@@ -67,7 +116,7 @@ const LimiarConfiancaFingerprint = 0.6
 // a difference of exactly 1 year does not adjust (tolerance for a common
 // cataloguing mistake); any missing year does not adjust either (nothing to compare).
 func Pontuar(tituloConsulta string, anoConsulta int, tituloCandidato string, anoCandidato int) (score float64, descartado bool) {
-	base := textsim.Similaridade(tituloConsulta, tituloCandidato) * 100
+	base := similaridadeDeTitulo(tituloConsulta, tituloCandidato) * 100
 	score, descartado = ajustarPorAno(base, anoConsulta, anoCandidato)
 	return score, descartado
 }
@@ -84,18 +133,35 @@ func Pontuar(tituloConsulta string, anoConsulta int, tituloCandidato string, ano
 // differs from the main title). The year rule is the SAME as Pontuar
 // (shared through ajustarPorAno, without duplicating the diff logic).
 func PontuarComAlternativos(tituloConsulta string, anoConsulta int, tituloCandidato string, titulosAlternativos []string, anoCandidato int) (score float64, tituloVencedor string, descartado bool) {
+	return PontuarComAlternativosTolerancia(tituloConsulta, anoConsulta, tituloCandidato, titulosAlternativos, anoCandidato, ToleranciaAnoPadrao)
+}
+
+// ToleranciaAnoPadrao is the year slack of the movie auto-match: 1 year absorbs a
+// cataloguing mistake (festival vs premiere) without letting a remake pass.
+const ToleranciaAnoPadrao = 1
+
+// ToleranciaAnoSerie is wider, and for a measured reason: the year a SERIES FOLDER states is
+// often not the first air date. "Clube do Terror (1990)" is the 1992 show, and a 1-year
+// gate would discard the only correct candidate of the search -- leaving the item to review
+// while the wrong show (the 2019 reboot) is the one that survives a naive gate. Two years
+// still keeps remakes apart: the measured cases differ by 20+ (1990 vs 2019, 1983 vs 2012).
+const ToleranciaAnoSerie = 2
+
+// PontuarComAlternativosTolerancia is PontuarComAlternativos with an explicit year slack,
+// so the series match can be more forgiving than the movie one without loosening both.
+func PontuarComAlternativosTolerancia(tituloConsulta string, anoConsulta int, tituloCandidato string, titulosAlternativos []string, anoCandidato int, toleranciaAno int) (score float64, tituloVencedor string, descartado bool) {
 	melhorTitulo := tituloCandidato
-	melhorSim := textsim.Similaridade(tituloConsulta, tituloCandidato)
+	melhorSim := similaridadeDeTitulo(tituloConsulta, tituloCandidato)
 	for _, alt := range titulosAlternativos {
 		if alt == "" {
 			continue
 		}
-		if sim := textsim.Similaridade(tituloConsulta, alt); sim > melhorSim {
+		if sim := similaridadeDeTitulo(tituloConsulta, alt); sim > melhorSim {
 			melhorSim, melhorTitulo = sim, alt
 		}
 	}
 	base := melhorSim * 100
-	score, descartado = ajustarPorAno(base, anoConsulta, anoCandidato)
+	score, descartado = ajustarPorAnoComTolerancia(base, anoConsulta, anoCandidato, toleranciaAno)
 	return score, melhorTitulo, descartado
 }
 
@@ -106,6 +172,12 @@ func PontuarComAlternativos(tituloConsulta string, anoConsulta int, tituloCandid
 // year, or a year missing on one side). Extracted to be shared by
 // Pontuar and PontuarComAlternativos, without duplicating the rule in two places.
 func ajustarPorAno(scoreBase float64, anoConsulta, anoCandidato int) (score float64, descartado bool) {
+	return ajustarPorAnoComTolerancia(scoreBase, anoConsulta, anoCandidato, ToleranciaAnoPadrao)
+}
+
+// ajustarPorAnoComTolerancia is ajustarPorAno with the slack as a parameter (see
+// ToleranciaAnoSerie for why the series needs a wider one).
+func ajustarPorAnoComTolerancia(scoreBase float64, anoConsulta, anoCandidato, tolerancia int) (score float64, descartado bool) {
 	if anoConsulta <= 0 || anoCandidato <= 0 {
 		return scoreBase, false
 	}
@@ -114,7 +186,7 @@ func ajustarPorAno(scoreBase float64, anoConsulta, anoCandidato int) (score floa
 		diff = -diff
 	}
 	switch {
-	case diff > 1:
+	case diff > tolerancia:
 		return 0, true
 	case diff == 0:
 		scoreBase += 5

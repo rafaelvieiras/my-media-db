@@ -36,6 +36,15 @@ var (
 	// ErrSerieAmbigua: there were candidates, but no EXACT and UNIQUE title match
 	// (0 exact with candidates present, or 2+ exact). -> review.
 	ErrSerieAmbigua = errors.New("enrich: serie ambigua (sem match de titulo exato e unico)")
+	// ErrSerieIdentidadeIncompativel: the candidate's tree cannot host the folder's files --
+	// the entry is another show with the same name, or an entry with no episode at all. It is
+	// a DIFFERENT failure from "not found": the name matched, the identity does not fit.
+	//
+	// Measured in production (23/nov/2026): "Arrow" (TMDb 2009, 3 episodes) was cataloged for
+	// a folder with 26 files, "Cold Case" (2018, 22 episodes) for 65 files, "Aladdin" and
+	// "Esquadrilha Aérea" for entries with ZERO episodes. The files could never find an
+	// episode, and every screen showed a "does not fit" alert instead of "wrong entry".
+	ErrSerieIdentidadeIncompativel = errors.New("enrich: a arvore da serie nao comporta os arquivos da pasta")
 	// ErrArvoreVazia: the source answered the series with ZERO episodes. The identity is
 	// not wrong by itself, but it is USELESS: no file can ever be placed in a tree with no
 	// episodes (measured 19/nov/2026: a phantom TMDb entry with 0 seasons and 0 episodes won
@@ -491,9 +500,18 @@ func (s *Servico) persistirSerieRico(ctx context.Context, serieID, ricoSource st
 // `langs` (langPrincipal) only for the name SEARCH below; `langs` remains the full list of
 // allowed languages used in the import of the tree/detail (importarSeriePorFonte). Empty
 // keeps the usual behaviour (langPrincipal(langs), the global language).
-func (s *Servico) ImportarSeriePorNome(ctx context.Context, nome string, langs []string, preferredLang string) (string, error) {
-	alvo := strings.TrimSpace(nome)
-	if alvo == "" {
+// AlvoSerie is what the SCAN knows about the folder before asking for an identity: the name,
+// the year the folder states (0 when absent) and how many video files live under it (0 when
+// the caller does not know).
+type AlvoSerie struct {
+	Nome     string
+	Ano      int
+	Arquivos int
+}
+
+func (s *Servico) ImportarSeriePorNome(ctx context.Context, alvo AlvoSerie, langs []string, preferredLang string) (string, error) {
+	nome := strings.TrimSpace(alvo.Nome)
+	if nome == "" {
 		return "", ErrSerieNaoEncontrada
 	}
 	lang := preferredLang
@@ -501,32 +519,161 @@ func (s *Servico) ImportarSeriePorNome(ctx context.Context, nome string, langs [
 		lang = langPrincipal(langs)
 	}
 	houveCandidato := false
+	incompativel := false
 	for _, prov := range s.providers.All() {
 		if _, ok := prov.(provider.SerieProvider); !ok {
 			continue
 		}
-		res, err := prov.Buscar(ctx, alvo, tipoSerie, lang)
+		// The QUERY is always the folder's name in the active language: TMDb matches a query
+		// against the translated AND the original title, so "Cold Case" finds "Arquivo Morto"
+		// (the pt-BR name of the 2003 show). The YEAR never goes into the query -- it is a
+		// SCORE input, because the year a folder states is often imprecise (measured:
+		// "Clube do Terror (1990)" is the 1992 show) and a hard filter would lose the right
+		// candidate instead of just deprioritizing it.
+		res, err := prov.Buscar(ctx, nome, tipoSerie, lang)
 		if err != nil {
-			log.Printf("enrich: busca de serie %q na fonte %q falhou (segue): %v", alvo, prov.Nome(), err)
+			log.Printf("enrich: busca de serie %q na fonte %q falhou (segue): %v", nome, prov.Nome(), err)
 			continue
 		}
 		if len(res) > 0 {
 			houveCandidato = true
 		}
-		exatos := exatosPorTitulo(res, alvo)
-		switch len(exatos) {
-		case 0:
-			continue // this source has no exact match; try the next one (priority)
-		case 1:
-			return s.importarSeriePorFonte(ctx, prov.Nome(), exatos[0].SourceID, langs)
-		default:
-			return "", ErrSerieAmbigua // 2+ exact matches in the same source: do not guess
+		for _, cand := range s.ranquearSeries(ctx, prov, res, nome, alvo.Ano) {
+			if cand.score < matching.LimiarAutoMatch {
+				break // the list is sorted: nobody else reaches the cut
+			}
+			if s.empateDeSerie(ctx, prov, res, nome, alvo.Ano, cand) {
+				return "", ErrSerieAmbigua // two shows fit the name equally well: do not guess
+			}
+			id, err := s.importarSerieComForma(ctx, prov.Nome(), cand.cand.SourceID, langs, alvo.Arquivos)
+			if errors.Is(err, ErrSerieIdentidadeIncompativel) {
+				// The name matched but the tree cannot host the folder. Try the NEXT candidate
+				// instead of cataloging a show whose episodes will never be found.
+				log.Printf("enrich: serie %q -- a entrada %s:%s nao comporta a pasta (%v); tentando o proximo candidato",
+					nome, prov.Nome(), cand.cand.SourceID, err)
+				incompativel = true
+				continue
+			}
+			if err != nil {
+				return "", err
+			}
+			return id, nil
 		}
 	}
+	if incompativel {
+		return "", ErrSerieIdentidadeIncompativel
+	}
 	if houveCandidato {
-		return "", ErrSerieAmbigua // candidates existed, none exact-unique
+		return "", ErrSerieAmbigua // candidates existed, none good enough to be taken alone
 	}
 	return "", ErrSerieNaoEncontrada
+}
+
+// candidatoSerie is one scored candidate of the series search.
+type candidatoSerie struct {
+	cand  provider.ResultadoExterno
+	score float64
+}
+
+// maxSeriesComAlternativos caps how many candidates get the extra round-trip for the
+// TRANSLATED/alternative titles. The first pass already scores the title in the active
+// language AND the original title (both come for free in the search payload); the extra call
+// only matters for the few who are close, and it is what rescues a folder named in a third
+// language.
+const maxSeriesComAlternativos = 3
+
+// ranquearSeries scores the search results for a series name: title in the active language,
+// the ORIGINAL title, the alternative/translated titles (top few only), and the year the
+// folder states -- the same scorer the movie auto-match uses, with the wider year slack of
+// ToleranciaAnoSerie. A candidate whose year contradicts the folder beyond that slack is
+// DISCARDED (a remake of the same name must not win).
+func (s *Servico) ranquearSeries(ctx context.Context, prov provider.Provider, res []provider.ResultadoExterno, nome string, ano int) []candidatoSerie {
+	pontuados := make([]candidatoSerie, 0, len(res))
+	vistos := map[string]bool{}
+	for _, c := range res {
+		if vistos[c.SourceID] {
+			continue
+		}
+		vistos[c.SourceID] = true
+		score, _, descartado := matching.PontuarComAlternativosTolerancia(nome, ano, c.Title, titulosDoCandidatoSerie(c), anoDeString(c.Year), matching.ToleranciaAnoSerie)
+		if descartado {
+			continue
+		}
+		pontuados = append(pontuados, candidatoSerie{cand: c, score: score})
+	}
+	sort.SliceStable(pontuados, func(i, j int) bool { return pontuados[i].score > pontuados[j].score })
+
+	// Second pass: the translated titles of the few closest candidates.
+	limite := maxSeriesComAlternativos
+	if limite > len(pontuados) {
+		limite = len(pontuados)
+	}
+	for i := 0; i < limite; i++ {
+		alternativos := s.titulosAlternativosDe(ctx, prov, pontuados[i].cand)
+		if len(alternativos) == 0 {
+			continue
+		}
+		score, _, descartado := matching.PontuarComAlternativosTolerancia(nome, ano, pontuados[i].cand.Title, alternativos, anoDeString(pontuados[i].cand.Year), matching.ToleranciaAnoSerie)
+		if descartado || score <= pontuados[i].score {
+			continue
+		}
+		pontuados[i].score = score
+	}
+	sort.SliceStable(pontuados, func(i, j int) bool { return pontuados[i].score > pontuados[j].score })
+	return pontuados
+}
+
+// titulosDoCandidatoSerie is the free half of the alternative-title evidence: TMDb brings
+// original_name in the search payload, and the local folder very often names the show by it.
+func titulosDoCandidatoSerie(c provider.ResultadoExterno) []string {
+	if c.TituloOriginal == "" {
+		return nil
+	}
+	return []string{c.TituloOriginal}
+}
+
+// titulosAlternativosDe asks the source for the translated titles of ONE candidate, when it
+// exposes the capability. Best-effort: without the capability or on error, no alternatives.
+func (s *Servico) titulosAlternativosDe(ctx context.Context, prov provider.Provider, c provider.ResultadoExterno) []string {
+	cap, ok := prov.(provider.TituloAlternativoProvider)
+	if !ok {
+		return nil
+	}
+	titulos, err := cap.BuscarTitulosAlternativos(ctx, c.Type, c.SourceID)
+	if err != nil {
+		log.Printf("enrich: titulos alternativos de %s:%s falharam (segue): %v", c.Source, c.SourceID, err)
+		return nil
+	}
+	return titulos
+}
+
+// empateDeSerie tells whether ANOTHER candidate fits the name as well as `alvo` -- the
+// ambiguity rule of this project: when two shows are equally plausible, the item goes to
+// review instead of being cataloged by a coin flip.
+func (s *Servico) empateDeSerie(ctx context.Context, prov provider.Provider, res []provider.ResultadoExterno, nome string, ano int, alvo candidatoSerie) bool {
+	for _, outro := range s.ranquearSeries(ctx, prov, res, nome, ano) {
+		if outro.cand.SourceID == alvo.cand.SourceID {
+			continue
+		}
+		if alvo.score-outro.score < margemDeDesempateSerie {
+			return true
+		}
+		break // sorted: the first different one is the runner-up
+	}
+	return false
+}
+
+// margemDeDesempateSerie is how far ahead the winner must be before its identity is taken
+// alone. Two results of the same show under different ids (a duplicate entry at the source)
+// land inside this margin on purpose: they are the "ask the owner" case.
+const margemDeDesempateSerie = 5.0
+
+// anoDeString reads a year from the "YYYY..." string the search payload carries.
+func anoDeString(ano *string) int {
+	if ano == nil {
+		return 0
+	}
+	return matching.AnoDeReleaseDate(*ano)
 }
 
 // SugestaoDeMatch is a "did you mean this?" candidate: an item a CHEAPER VARIANT of the
@@ -741,6 +888,48 @@ func primeiroDoTipo(res []provider.ResultadoExterno, tipo string) (provider.Resu
 func (s *Servico) importarSeriePorFonte(ctx context.Context, source, sourceID string, langs []string) (string, error) {
 	id, _, err := s.importarSerie(ctx, source, sourceID, langs)
 	return id, err
+}
+
+// divisorDeForma is how much bigger the folder may be than the provider's tree before the
+// identity is refused: the tree must be able to host at least HALF the folder's files.
+//
+// Half, not "any": a folder legitimately carries more FILES than the show has episodes
+// (specials, a "part 1/part 2" split, extras that were not recognized as extras), so "the
+// provider is smaller" cannot be a rejection on its own. Half separates the measured cases
+// cleanly -- Arrow 3 episodes vs 26 files, Cold Case 22 vs 65, Lie to Me 16 vs 48 are refused;
+// Beavis 221 vs 297 files (the right show) passes.
+const divisorDeForma = 2
+
+// importarSerieComForma is importarSerie with the SHAPE gate: it fetches the tree, refuses an
+// identity whose tree cannot host the folder's files, and only then persists anything. It
+// fetches once (the tree is reused for the import), so the gate costs no extra round trip.
+func (s *Servico) importarSerieComForma(ctx context.Context, source, sourceID string, langs []string, arquivos int) (string, error) {
+	arvore, err := s.arvoreDaSerie(ctx, source, sourceID, langs)
+	if err != nil {
+		return "", fmt.Errorf("enrich: buscar arvore da serie: %w", err)
+	}
+	if arquivos > 0 {
+		episodios := 0
+		for _, t := range arvore.Temporadas {
+			episodios += len(t.Episodios)
+		}
+		switch {
+		case episodios == 0:
+			return "", fmt.Errorf("%w: a entrada %s:%s nao tem episodio nenhum e a pasta tem %d arquivo(s)",
+				ErrSerieIdentidadeIncompativel, source, sourceID, arquivos)
+		case episodios*divisorDeForma < arquivos:
+			return "", fmt.Errorf("%w: a entrada %s:%s tem %d episodio(s) e a pasta tem %d arquivo(s)",
+				ErrSerieIdentidadeIncompativel, source, sourceID, episodios, arquivos)
+		}
+	}
+	serieID, _, err := s.importarItemSemArvore(ctx, source, sourceID, tipoSerie, langs)
+	if err != nil {
+		return serieID, err
+	}
+	if err := s.aplicarArvoreSerie(ctx, serieID, source, sourceID, arvore, langs); err != nil {
+		return serieID, err
+	}
+	return serieID, nil
 }
 
 // exatosPorTitulo filters the results whose title matches EXACTLY (case-insensitive) the

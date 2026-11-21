@@ -27,6 +27,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -172,7 +173,7 @@ func (r *scanRun) resolverSerie(ctx context.Context, serieFolder, serieNome stri
 	if v, ok := r.serieCache[serieFolder]; ok {
 		return v
 	}
-	res := r.resolverSerieMiss(ctx, serieNome, folderInfo)
+	res := r.resolverSerieMiss(ctx, serieFolder, serieNome, folderInfo)
 	r.serieCache[serieFolder] = res
 	return res
 }
@@ -181,7 +182,7 @@ func (r *scanRun) resolverSerie(ctx context.Context, serieFolder, serieNome stri
 // external id (type=tv) → catalog by title (type=tv) → auto-import by name.
 // Success loads the episode index. Ambiguous/not found/import off → review draft
 // (find-or-create by title), WITHOUT a tree.
-func (r *scanRun) resolverSerieMiss(ctx context.Context, serieNome string, folderInfo naming.Info) serieResolvida {
+func (r *scanRun) resolverSerieMiss(ctx context.Context, serieFolder, serieNome string, folderInfo naming.Info) serieResolvida {
 	q := sqlcgen.New(r.m.db.Read)
 
 	if id, ok := acharSeriePorIDExterno(ctx, q, folderInfo); ok {
@@ -198,7 +199,8 @@ func (r *scanRun) resolverSerieMiss(ctx context.Context, serieNome string, folde
 		return serieResolvida{serieID: id, index: r.m.carregarIndex(ctx, id), conf: confSerieEp}
 	}
 
-	if res, ok := r.m.tentarImportarSerie(ctx, serieNome, r.langsPermitidos(ctx), r.preferredLangDaFonte()); ok {
+	alvo := enrich.AlvoSerie{Nome: serieNome, Ano: folderInfo.Year, Arquivos: r.arquivosNaSerie(serieFolder)}
+	if res, ok := r.m.tentarImportarSerie(ctx, alvo, r.langsPermitidos(ctx), r.preferredLangDaFonte()); ok {
 		return res
 	}
 
@@ -216,13 +218,16 @@ func (r *scanRun) resolverSerieMiss(ctx context.Context, serieNome string, folde
 // the SAME 3 logs as always. Success: it fires the optional automatic
 // materialization (best-effort, it never aborts the resolution) and returns the
 // serieResolvida already with the episode index loaded.
-func (m *Manager) tentarImportarSerie(ctx context.Context, serieNome string, langs []string, preferredLang string) (serieResolvida, bool) {
+func (m *Manager) tentarImportarSerie(ctx context.Context, alvo enrich.AlvoSerie, langs []string, preferredLang string) (serieResolvida, bool) {
+	serieNome := alvo.Nome
 	if m.serieImporter == nil || serieNome == "" {
 		return serieResolvida{}, false
 	}
-	id, err := m.serieImporter.ImportarSeriePorNome(ctx, serieNome, langs, preferredLang)
+	id, err := m.serieImporter.ImportarSeriePorNome(ctx, alvo, langs, preferredLang)
 	if err != nil {
-		if errors.Is(err, enrich.ErrSerieAmbigua) {
+		if errors.Is(err, enrich.ErrSerieIdentidadeIncompativel) {
+			log.Printf("scanner: série %q -- a entrada do provider não comporta a pasta (%v) — vai para revisão", serieNome, err)
+		} else if errors.Is(err, enrich.ErrSerieAmbigua) {
 			log.Printf("scanner: série %q ambígua no provider — vai para revisão", serieNome)
 		} else if errors.Is(err, enrich.ErrSerieNaoEncontrada) {
 			log.Printf("scanner: série %q não encontrada no provider — vai para revisão", serieNome)
@@ -819,4 +824,35 @@ func extensionProvisorio(season, number int, comNumero bool, arquivo string) []b
 		return nil
 	}
 	return b
+}
+
+// arquivosNaSerie counts the video files under the series folder -- the SIZE EVIDENCE the
+// identity check needs (a folder with 26 files cannot be a show with 3 episodes).
+//
+// Cached per scan: the count is asked once per series even when the folder holds hundreds of
+// files, and a failure to read degrades to 0 (no size evidence, never a failed scan). The
+// extension filter is the SAME one the scan uses, so the count and the scanned files agree.
+func (r *scanRun) arquivosNaSerie(serieFolder string) int {
+	if n, ok := r.arquivosPorSerie[serieFolder]; ok {
+		return n
+	}
+	total := 0
+	err := filepath.WalkDir(serieFolder, func(_ string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil // a subfolder nobody can read is not a reason to abort the count
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if extensoesVideo[strings.ToLower(filepath.Ext(d.Name()))] {
+			total++
+		}
+		return nil
+	})
+	if err != nil {
+		log.Printf("scanner: contar arquivos de %q falhou (%v) -- sem evidencia de tamanho para a identidade", serieFolder, err)
+		total = 0
+	}
+	r.arquivosPorSerie[serieFolder] = total
+	return total
 }

@@ -96,7 +96,7 @@ type FingerprintCalculador interface {
 // triggered the import (empty = no preference, it uses the global language
 // resolved by `idiomas`).
 type SerieImporter interface {
-	ImportarSeriePorNome(ctx context.Context, nome string, langs []string, preferredLang string) (string, error)
+	ImportarSeriePorNome(ctx context.Context, alvo enrich.AlvoSerie, langs []string, preferredLang string) (string, error)
 	// ImportarSeriePorID imports the series that the FOLDER NAMES by id -- the
 	// Jellyfin convention ("Series (2011) [tmdbid-39340]"). It is the answer to a
 	// typo in the folder name: the title search is never asked, so a misspelled
