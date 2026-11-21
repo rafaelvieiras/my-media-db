@@ -15,6 +15,7 @@ import (
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/enrich"
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 	"github.com/rafaelvieiras/my-media-db/internal/mediainfo"
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
@@ -213,6 +214,10 @@ func TestPosScanPulaItemTentadoRecentemente(t *testing.T) {
 // files -- at least 5 provisional episodes AND at least as many as cataloged ones -- and the
 // alert is persisted with the counts.
 //
+// The unit of the census is the FILE, not the episode. The draft episodes below hold a present
+// file (a file that found no episode), which is the symptom. A draft episode holding NOTHING is
+// the provider's episode the library simply does not have -- one that must not be reported.
+//
 // The healthy series below is the guard against the rule firing everywhere: 12 cataloged
 // episodes and 2 provisional ones is a series with a couple of specials, not a wrong match.
 func TestPosScanSinalizaArvoreIncompativel(t *testing.T) {
@@ -240,6 +245,31 @@ func TestPosScanSinalizaArvoreIncompativel(t *testing.T) {
 		semearEntity(t, database, id, "episode", fmt.Sprintf("Episódio %d", i))
 		rebaixarParaDraft(t, database, id, "episode", fmt.Sprintf("Episódio %d", i))
 		ligarFilhoOrdenado(t, database, "r-"+id, "se1", id, "tv_episode", int64(i))
+		semearFile(t, database, "f"+id, id, fmt.Sprintf("/media/series/Batman/%02d.mkv", i), "present", 0, "")
+		vincularArquivo(t, database, "f"+id, id)
+	}
+
+	// Série com a MESMA contagem de rascunhos, mas SEM arquivo: é o caso Toonsylvania medido em
+	// produção (21 rascunhos vazios, 21 episódios com arquivo) -- nada aqui acusa o match.
+	semearEntity(t, database, "s3", "tv", "Toonsylvania")
+	if _, err := database.Write.ExecContext(ctx,
+		`UPDATE entity SET external_ids_json = ? WHERE id = ?`, `{"tmdb":"10361"}`, "s3"); err != nil {
+		t.Fatalf("external_ids da s3: %v", err)
+	}
+	semearEntity(t, database, "se3", "season", "Temporada 1")
+	ligarFilhoOrdenado(t, database, "r-se3", "s3", "se3", "tv_season", 1)
+	for i := 1; i <= 6; i++ {
+		id := fmt.Sprintf("cas%d", i)
+		semearEntity(t, database, id, "episode", fmt.Sprintf("Episódio %d", i))
+		ligarFilhoOrdenado(t, database, "r-"+id, "se3", id, "tv_episode", int64(i))
+		semearFile(t, database, "g"+id, id, fmt.Sprintf("/media/series/Toonsylvania/%02d.mkv", i), "present", 100, "")
+		vincularArquivo(t, database, "g"+id, id)
+	}
+	for i := 1; i <= 6; i++ {
+		id := fmt.Sprintf("vazio%d", i)
+		semearEntity(t, database, id, "episode", fmt.Sprintf("T01E%02d", i))
+		rebaixarParaDraft(t, database, id, "episode", fmt.Sprintf("T01E%02d", i))
+		ligarFilhoOrdenado(t, database, "r-"+id, "se3", id, "tv_episode", int64(i))
 	}
 
 	// Série saudável: 12 casados + 2 provisórios (especiais) -- não pode entrar na lista.
@@ -288,5 +318,89 @@ func TestPosScanSinalizaArvoreIncompativel(t *testing.T) {
 	// Rodar de novo não duplica nem reescreve: a linha existente tira a série do censo.
 	if n := s.sinalizarArvoresIncompativeis(ctx); n != 0 {
 		t.Errorf("segunda passada escreveu %d alertas, quero 0 (idempotente)", n)
+	}
+}
+
+// vincularArquivo creates the media_file_entity link that makes a file belong to an episode --
+// the SAME place the scanner and the census read it from. media_file.entity_id is not used:
+// measured in production, every episode link (1 240 draft episodes with a file) lives here and
+// none lives in that column.
+func vincularArquivo(t *testing.T, d *db.DB, fileID, entityID string) {
+	t.Helper()
+	if err := escrita(t, d).CriarVinculoEntidade(context.Background(), sqlcgen.CriarVinculoEntidadeParams{
+		MediaFileID: fileID,
+		EntityID:    entityID,
+		Kind:        "tv_episode",
+	}); err != nil {
+		t.Fatalf("CriarVinculoEntidade(%s): %v", fileID, err)
+	}
+}
+
+// TestPosScanRemoveAlertaDeArvoreObsoleto covers the other side of the census: a hint that no
+// longer describes reality must leave the screen. Before this, the census only WROTE and it
+// skipped every series that already had a row, so an alert whose cause was repaired (files
+// re-placed on the provider episodes, draft shells cleaned) lived forever -- which is exactly
+// what the owner saw on Toonsylvania, a healthy item wearing a warning.
+//
+// A row the owner DISMISSED is a decision, not a symptom: it stays.
+func TestPosScanRemoveAlertaDeArvoreObsoleto(t *testing.T) {
+	database, err := db.Open(db.Config{Path: filepath.Join(t.TempDir(), "obsoleto.sqlite")})
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	ctx := context.Background()
+	if err := database.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	s := New("v-teste", database, WithSearchProvider(fake.New("")), WithAssetsDir(t.TempDir()))
+
+	// Série saudável, com um alerta antigo pendurado: 3 episódios casados com arquivo.
+	semearEntity(t, database, "s1", "tv", "Toonsylvania")
+	if _, err := database.Write.ExecContext(ctx,
+		`UPDATE entity SET external_ids_json = ? WHERE id = ?`, `{"tmdb":"10361"}`, "s1"); err != nil {
+		t.Fatalf("external_ids: %v", err)
+	}
+	semearEntity(t, database, "se1", "season", "Temporada 1")
+	ligarFilhoOrdenado(t, database, "r-se1", "s1", "se1", "tv_season", 1)
+	for i := 1; i <= 3; i++ {
+		id := fmt.Sprintf("ep%d", i)
+		semearEntity(t, database, id, "episode", fmt.Sprintf("Episódio %d", i))
+		ligarFilhoOrdenado(t, database, "r-"+id, "se1", id, "tv_episode", int64(i))
+		semearFile(t, database, "f"+id, id, fmt.Sprintf("/media/series/Toonsylvania/%02d.mkv", i), "present", 100, "")
+		vincularArquivo(t, database, "f"+id, id)
+	}
+	gravarSugestaoComMotivo(t, database.Write, "s1", "10361", enrich.MotivoArvoreIncompativel)
+
+	// Série com o sintoma de verdade: 6 rascunhos segurando arquivo, alerta DISPENSADO pelo dono.
+	semearEntity(t, database, "s2", "tv", "Aladdin")
+	if _, err := database.Write.ExecContext(ctx,
+		`UPDATE entity SET external_ids_json = ? WHERE id = ?`, `{"tmdb":"13943"}`, "s2"); err != nil {
+		t.Fatalf("external_ids da s2: %v", err)
+	}
+	semearEntity(t, database, "se2", "season", "Temporada 1")
+	ligarFilhoOrdenado(t, database, "r-se2", "s2", "se2", "tv_season", 1)
+	for i := 1; i <= 6; i++ {
+		id := fmt.Sprintf("dr%d", i)
+		semearEntity(t, database, id, "episode", fmt.Sprintf("Episódio %d", i))
+		rebaixarParaDraft(t, database, id, "episode", fmt.Sprintf("Episódio %d", i))
+		ligarFilhoOrdenado(t, database, "r-"+id, "se2", id, "tv_episode", int64(i))
+		semearFile(t, database, "h"+id, id, fmt.Sprintf("/media/series/Aladdin/%02d.mkv", i), "present", 0, "")
+		vincularArquivo(t, database, "h"+id, id)
+	}
+	gravarSugestaoComMotivo(t, database.Write, "s2", "13943", enrich.MotivoArvoreIncompativel)
+	if _, err := database.Write.ExecContext(ctx,
+		`UPDATE match_suggestion SET dismissed = 1 WHERE entity_id = ?`, "s2"); err != nil {
+		t.Fatalf("dismissed da s2: %v", err)
+	}
+
+	s.sinalizarArvoresIncompativeis(ctx)
+
+	// O alerta sem sintoma sai; o dispensado fica.
+	if _, err := s.leitura().ObterMatchSuggestion(ctx, "s1"); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("alerta obsoleto sobreviveu (err = %v): o sintoma sumiu, a linha tinha de sair", err)
+	}
+	if _, err := s.leitura().ObterMatchSuggestion(ctx, "s2"); err != nil {
+		t.Errorf("alerta DISPENSADO foi removido (%v): decisão do dono não é sintoma", err)
 	}
 }

@@ -39,7 +39,7 @@ The suggested match gains two reasons, sharing the row and the warning of ADR-00
 | reason | trigger | the row points at |
 |---|---|---|
 | `empty_tree` | the tree fetched for the current match has **zero episodes** | the best **sibling** of the same name, when one reaches `LimiarSugestao`; otherwise the current identity |
-| `tree_mismatch` | post-scan census: **≥ 5** provisional episodes **and** provisional **≥** cataloged | the **current identity** (the thing under suspicion) |
+| `tree_mismatch` | post-scan census: **≥ 5** draft episodes **holding a file** **and** that count **≥** cataloged episodes holding one | the **current identity** (the thing under suspicion) |
 
 The API exposes `can_apply` so the screen hides the apply action when the candidate is the
 identity the item already has. The other reasons reuse the same two actions — apply through
@@ -85,3 +85,20 @@ that makes the owner act.
   retroactive job, "Fix match").
 - Out of scope: detecting the same situation for albums/artists, and choosing a size for
   the person photo (`h632` vs `w185`, issue #53).
+
+## Amendment (22/nov/2026): the unit is the FILE, and a stale hint leaves the screen
+
+The census counted episodes **by status**, so a series where the owner has a fraction of the
+show tripped it: 21 files of a 42-episode show means 21 cataloged episodes (each holding a file)
+and 21 draft episodes (the ones the library does not have), which satisfies "provisional ≥
+cataloged". Measured in production: `Toonsylvania`, 0 draft episodes holding a file, wearing the
+warning. A draft episode that holds nothing is the provider's episode, not evidence against the
+match.
+
+The census now counts **draft episodes holding a present file**, and the percentage the screen
+shows is a file count. In the same run, a `tree_mismatch` hint whose symptom disappeared is
+**removed** (unless the owner dismissed it — a dismissal is a decision, not a symptom), because
+the census only wrote and skipped any series that already had a row.
+
+Measured after the change: 10 alerts → 9, all 9 with real stranded files (97, 86, 81, 65, 44,
+35, 26, 23, 11).

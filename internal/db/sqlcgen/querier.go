@@ -346,6 +346,15 @@ type Querier interface {
 	// file only updates the ordinal, never duplicates the link. Same pattern of
 	// ON CONFLICT ... DO UPDATE SET used in app_settings/media_external.
 	CriarVinculoEntidade(ctx context.Context, arg CriarVinculoEntidadeParams) error
+	// A 'tree_mismatch' hint that no longer describes reality must not stay on screen. The census
+	// above only WRITES, and it skips every series that already has a row -- so without this, an
+	// alert whose cause was repaired (files re-placed, draft shells cleaned) would live forever and
+	// teach the owner to ignore the warning.
+	//
+	// Same measurement as the census, without its NOT EXISTS filter (this one needs the series that
+	// QUALIFY, whoever they are), and only rows the owner did not answer: a dismissed alert is the
+	// owner's decision and is never resurrected or removed here.
+	DeletarAlertasArvoreIncompativelObsoletos(ctx context.Context) (int64, error)
 	// Idempotent removal: called whenever the entity gets a real identity (correct, confirm,
 	// candidate applied, import) -- the hint described a state that no longer exists.
 	DeletarMatchSuggestion(ctx context.Context, entityID string) error
@@ -781,15 +790,24 @@ type Querier interface {
 	// materialize the season POSTER (season0N-poster.jpg) at the series root.
 	ListarSeasonIDsComEpisodioPresente(ctx context.Context) ([]string, error)
 	// THE CENSUS BEHIND THE 'tree_mismatch' ALERT: series that DO have an identity but whose
-	// tree does not fit the files -- at least 5 provisional episodes AND at least as many of
-	// them as cataloged ones.
+	// FILES did not fit the tree -- at least 5 draft episodes HOLDING a present file, and at
+	// least as many of them as cataloged episodes holding a file.
 	//
-	// Why that cut (measured 19/nov/2026 against a production library): with `>= 5` alone, 10
-	// series qualified and all 10 were real problems (a folder of another show, a source that
-	// numbers seasons differently); loosening to "provisional >= cataloged/2" pulls in series
-	// whose extra files are legitimate specials (430 matched episodes plus 290 specials), which
-	// would teach the owner to ignore the warning. A false negative here costs nothing -- the
-	// series keeps accumulating drafts in the review queue -- a false positive costs trust.
+	// The unit is the FILE, not the episode. The first version counted episodes by status and
+	// therefore fired on every series where the owner has a fraction of the show's episodes: a
+	// library with 21 files of a 42-episode show has 21 cataloged episodes (each holding a file)
+	// and 21 draft episodes (the ones the owner does not have), which satisfied
+	// "provisional >= cataloged" and produced an alert on a perfectly healthy series
+	// (measured 22/nov/2026: Toonsylvania, 0 draft episodes holding a file). A draft episode that
+	// holds NOTHING is not evidence against the match -- it is the provider's episode that the
+	// library does not have.
+	//
+	// Why the cut (measured 19/nov/2026): with `>= 5` alone, 10 series qualified and all 10 were
+	// real problems (a folder of another show, a source that numbers seasons differently);
+	// loosening to "provisional >= cataloged/2" pulls in series whose extra files are legitimate
+	// specials (430 matched episodes plus 290 specials), which would teach the owner to ignore the
+	// warning. A false negative here costs nothing -- the series keeps accumulating drafts in the
+	// review queue -- a false positive costs trust.
 	//
 	// Series whose episodes hang DIRECTLY on the series (no season) are invisible here on
 	// purpose: the review queue walks the same shape (series -> season -> episode).
