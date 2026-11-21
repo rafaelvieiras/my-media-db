@@ -364,3 +364,64 @@ func TestParseEpisodeNoCaminhoNaoMudaOQueJaCasava(t *testing.T) {
 		}
 	}
 }
+
+// TestAbsoluteNeedsTheNumberRightAfterTheFirstSeparator garante que o numero absoluto seja o
+// que segue o PRIMEIRO " - " do nome. Medido na biblioteca do dono (16 284 arquivos): 175 nomes
+// casavam pelo caminho frouxo e 97 deles eram um numero no MEIO do titulo de um FILME
+// ("A Felicidade Não se Compra (1946) - 1080p 9.5 Mbps - 2.0 [por, eng]" lido como absoluto 5,
+// vindo de "- 5.1"). Depois da ancora, so os 78 nomes que trazem o numero depois do primeiro
+// separador continuam absolutos (X-Men x76, Spaceballs x2).
+func TestAbsoluteNeedsTheNumberRightAfterTheFirstSeparator(t *testing.T) {
+	casos := []struct {
+		nome     string
+		absoluto int // 0 = nao e absoluto
+	}{
+		{"Show - 013", 13},
+		{"[Grupo] Show - 013 - Titulo", 13},
+		{"A Felicidade Não se Compra (1946) - 1080p 9.5 Mbps - 2.0 [por, eng]", 0},
+		{"007 - O Mundo Não é o Bastante (1999) - 1080p 26.2 Mbps - 5.1 [por, eng]", 0},
+		{"Amor Divertido - Ele Não Me Ama Mais - 4 Olhos - 2 Mentes", 0},
+	}
+	for _, c := range casos {
+		info, _ := ParseEpisode(c.nome)
+		if c.absoluto == 0 {
+			if info.IsAbsolute {
+				t.Errorf("ParseEpisode(%q) = absoluto %v, quero nenhum", c.nome, info.Absolute)
+			}
+			continue
+		}
+		if !info.IsAbsolute || len(info.Absolute) != 1 || info.Absolute[0] != c.absoluto {
+			t.Errorf("ParseEpisode(%q) = %+v, quero absoluto %d", c.nome, info, c.absoluto)
+		}
+	}
+}
+
+// TestEpisodeZeroLandsInSpecials cobre a convencao do Kodi que o dono escolheu: "E00" nomeia um
+// especial, nao "episodio zero da temporada N" (que nao existe e nao aparece em lugar nenhum).
+// Medido: 3 arquivos na biblioteca.
+func TestEpisodeZeroLandsInSpecials(t *testing.T) {
+	for _, nome := range []string{"Juni.Lee.S02E00.WEB-DL480p", "Ren&Steam_s02e00", "Alienígenas do Passado s01e00"} {
+		info, ok := ParseEpisode(nome)
+		if !ok {
+			t.Errorf("ParseEpisode(%q) nao casou", nome)
+			continue
+		}
+		if info.Season != 0 || len(info.Episodes) != 1 || info.Episodes[0] != 0 {
+			t.Errorf("ParseEpisode(%q) = %+v, quero temporada 0 episodio 0 (Especiais)", nome, info)
+		}
+	}
+}
+
+// TestLeadingNumberBeatsAbsoluteFromTheTitle cobre o falso positivo medido: "12. Amor Divertido
+// - Ele Nao Me Ama Mais - 4 Olhos - 2 Mentes" era lido como absoluto 4 (o "4 Olhos" do titulo)
+// e virava rascunho. Com a ancora, o numero inicial e o episodio da temporada da pasta.
+func TestLeadingNumberBeatsAbsoluteFromTheTitle(t *testing.T) {
+	caminho := "/lib/Pucca/Temporada 02/12. Amor Divertido - Ele Não Me Ama Mais - 4 Olhos - 2 Mentes.mkv"
+	info, ok := ParseEpisodeNoCaminho(caminho)
+	if !ok {
+		t.Fatalf("ParseEpisodeNoCaminho(%q) nao casou", caminho)
+	}
+	if info.Season != 2 || len(info.Episodes) != 1 || info.Episodes[0] != 12 {
+		t.Errorf("ParseEpisodeNoCaminho(%q) = %+v, quero temporada 2 episodio 12", caminho, info)
+	}
+}

@@ -454,16 +454,27 @@ var (
 	reEpTailNum = regexp.MustCompile(`(?i)e?(\d{1,4})`)
 	// Anime absolute: separator " - " (space-hyphen-space) followed by 1..4
 	// digits and, optionally, a range "-NNN". Conservative: it REQUIRES the
-	// " - " separator so as not to be confused with the title; the
-	// reAbsoluteVeto filter rejects year, resolution, codec etc. right after.
-	// E.g.: "Show - 013", "Show - 013-015".
-	reAbsolute = regexp.MustCompile(`(?i)(?:^|\s)-\s+(\d{1,4})(?:-(\d{1,4}))?(?:\s|$|[._\[(])`)
+	// " - " separator so as not to be confused with the title, and
+	// reAbsoluteVetoSuffix rejects year, resolution, codec etc. right after.
+	// E.g.: "Show - 013", "Show - 013-015". The regex below is the one the parser
+	// actually uses: it is applied to the excerpt that starts at the FIRST separator
+	// (rePrimeiroSeparador), not to the whole name.
 	// Absolute veto: if right after the number comes a token that disqualifies it
 	// (the p of "1080p", "x264" is already filtered out for not matching pure
 	// digits), we treat it as a non-episode. Here we catch the glued "p"/"i"
 	// suffix (resolution) and "x" (codec) that would survive the \d{1,4}. Simple
 	// and conservative.
 	reAbsoluteVetoSuffix = regexp.MustCompile(`(?i)^\s*-\s+\d{1,4}[pikx]`)
+	// The FIRST " - " separator of a name. The absolute reading is anchored on it: a
+	// number that shows up after a LATER separator belongs to the title, not to the
+	// episode. Measured on the owner's library (16 284 files): of 175 names the loose
+	// reading accepted, 97 were a number in the middle of a MOVIE title
+	// ("A Felicidade Não se Compra (1946) - 1080p 9.5 Mbps - 2.0 [por, eng]" read as
+	// absolute 5, from "- 5.1"), and only the 78 that carry the number right after the
+	// first separator were real (the X-Men and Spaceballs files).
+	rePrimeiroSeparador = regexp.MustCompile(`\s-\s`)
+	// Absolute veto by position: the number has to follow that first separator.
+	reAbsoluteNoPrimeiro = regexp.MustCompile(`^\s-\s+(\d{1,4})(?:-(\d{1,4}))?(?:\s|$|[._\[(])`)
 	// "1x05" / "01X05": the season x episode form that Kodi and Jellyfin both accept
 	// (the old Kodi style). The guard against a resolution is the SEASON RANGE: every
 	// resolution pair — "1920x1080", "1280x720", "720x480", "3840x2160" — has its
@@ -637,6 +648,13 @@ func parseEpisodeSeason(name string) (EpisodeInfo, bool) {
 	if !ok {
 		return EpisodeInfo{}, false
 	}
+	// Kodi convention: season 0 is Specials, and a release that carries "E00" is naming a
+	// special, not "episode zero of season N" — that episode does not exist, and an NFO with
+	// <season>2</season><episode>0</episode> lands nowhere. Measured: 3 files
+	// ("Juniper Lee S02E00", "Ren&Stimpy s02e00", "Alienígenas do Passado s01e00").
+	if season != 0 && len(episodios) == 1 && episodios[0] == 0 {
+		season = 0
+	}
 	return EpisodeInfo{Season: season, Episodes: episodios}, true
 }
 
@@ -710,8 +728,15 @@ func parseEpisodeAbsolute(name string) (EpisodeInfo, bool) {
 // initial number and the full match (m[2] holds the optional end of the range);
 // ok=false when the excerpt is not a legitimate absolute episode.
 func absolutoInicial(name string) (int, []string, bool) {
-	loc := reAbsolute.FindStringSubmatchIndex(name)
+	// The number must follow the FIRST " - " of the name: "12. Amor Divertido - Ele Não
+	// Me Ama Mais - 4 Olhos - 2 Mentes" carries episode 12, not absolute 4 taken from
+	// the middle of the title.
+	loc := rePrimeiroSeparador.FindStringIndex(name)
 	if loc == nil {
+		return 0, nil, false
+	}
+	m := reAbsoluteNoPrimeiro.FindStringSubmatch(name[loc[0]:])
+	if m == nil {
 		return 0, nil, false
 	}
 	// Veto: does the excerpt starting at the hyphen look like "- 1080p"/"- 720p"/
@@ -719,7 +744,6 @@ func absolutoInicial(name string) (int, []string, bool) {
 	if reAbsoluteVetoSuffix.MatchString(name[loc[0]:]) {
 		return 0, nil, false
 	}
-	m := reAbsolute.FindStringSubmatch(name)
 	ini, err := strconv.Atoi(m[1])
 	if err != nil || ini == 0 {
 		return 0, nil, false
