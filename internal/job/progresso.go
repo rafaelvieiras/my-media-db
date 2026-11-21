@@ -57,7 +57,7 @@ type Progresso struct {
 // Exported for tests and for callers that run a handler outside the queue: a
 // caller that holds the registrar itself can afford every report.
 func NovoProgresso(registro execqueue.Registro) *Progresso {
-	return &Progresso{registro: registroOuNulo(registro), agora: time.Now}
+	return &Progresso{registro: orNullRegistry(registro), agora: time.Now}
 }
 
 // NovoProgressoComIntervalo builds a Progresso that writes the progress snapshot
@@ -69,7 +69,7 @@ func NovoProgressoComIntervalo(registro execqueue.Registro, intervalo time.Durat
 	return p
 }
 
-func registroOuNulo(registro execqueue.Registro) execqueue.Registro {
+func orNullRegistry(registro execqueue.Registro) execqueue.Registro {
 	if registro == nil {
 		return execqueue.RegistroNulo()
 	}
@@ -90,6 +90,11 @@ func (p *Progresso) Etapa(indice, total int, rotulo string) {
 		EtapaIndice:         indice,
 		EtapaTotal:          total,
 		ReiniciarContadores: true,
+		// The item of the previous step does not belong to this one: it is either
+		// replaced by the step's own reports or cleared. Without this, a step that
+		// narrates no item keeps showing the last file name of the step before it --
+		// "discovering local music artwork" on screen while naming an X-Men episode.
+		ReiniciarItem: true,
 	})
 }
 

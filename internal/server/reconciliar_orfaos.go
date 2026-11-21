@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 )
 
 // This file implements the RECONCILIATION OF ORPHAN CHILDREN, a complement to the
@@ -35,7 +36,8 @@ const limiteReconciliacaoOrfaosPorExecucao = 15
 // ReprocessarArtesFaltantes/EnriquecerRetroativo, which count every attempt:
 // the final message of this step has to say how many items actually left the
 // review queue, not how many were merely checked.
-func (s *Server) ReconciliarFilhosOrfaos(ctx context.Context) (reconciliados int, err error) {
+func (s *Server) ReconciliarFilhosOrfaos(ctx context.Context, registro execqueue.Registro) (reconciliados int, err error) {
+	registro = orNullRegistry(registro)
 	// Without a scanner, ReconciliarFaixaDraft/ReconciliarSerieDraft would not even
 	// exist to call -- same guard as DescobrirArteLocalMusica.
 	if s.scanner == nil {
@@ -58,7 +60,9 @@ func (s *Server) ReconciliarFilhosOrfaos(ctx context.Context) (reconciliados int
 	if err != nil {
 		return 0, err
 	}
-	for _, row := range faixas {
+	total := len(faixas)
+	for i, row := range faixas {
+		registro.Progresso(execqueue.Progresso{Item: row.ID, Atual: i, Total: total})
 		if s.reconciliarECarimbar(ctx, row.ID, langCfg.Allowed, "faixa", s.scanner.ReconciliarFaixaDraft) {
 			reconciliados++
 		}
@@ -71,11 +75,14 @@ func (s *Server) ReconciliarFilhosOrfaos(ctx context.Context) (reconciliados int
 	if err != nil {
 		return reconciliados, err
 	}
-	for _, row := range series {
+	total += len(series)
+	for i, row := range series {
+		registro.Progresso(execqueue.Progresso{Item: row.ID, Atual: len(faixas) + i, Total: total})
 		if s.reconciliarECarimbar(ctx, row.ID, langCfg.Allowed, "série", s.scanner.ReconciliarSerieDraft) {
 			reconciliados++
 		}
 	}
+	registro.Progresso(execqueue.Progresso{Atual: total, Total: total})
 
 	return reconciliados, nil
 }

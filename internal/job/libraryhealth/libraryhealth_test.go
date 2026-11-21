@@ -112,6 +112,11 @@ type matcherFake struct {
 	reconciliados       int
 	errReconciliar      error
 	chamadasReconciliar int
+
+	// registroDasEtapas is the registrar the job handed to the sweeps of steps 5-8: they
+	// must receive the SAME registrar of the run (ADR-0040), otherwise those steps narrate
+	// nothing and the screen freezes on the previous step's item (issue #98).
+	registroDasEtapas execqueue.Registro
 }
 
 func (m *matcherFake) AutoMatchElegiveis(context.Context, execqueue.Registro) (int, int, error) {
@@ -124,18 +129,21 @@ func (m *matcherFake) EnriquecerRetroativo(context.Context, execqueue.Registro) 
 	return m.aplicados, m.sinalizados, m.errRetroativo
 }
 
-func (m *matcherFake) ReprocessarArtesFaltantes(context.Context) (int, error) {
+func (m *matcherFake) ReprocessarArtesFaltantes(_ context.Context, registro execqueue.Registro) (int, error) {
 	m.chamadasReprocessArtes++
+	m.registroDasEtapas = registro
 	return m.artesProcessadas, m.errArtes
 }
 
-func (m *matcherFake) DescobrirArteLocalMusica(context.Context) (int, error) {
+func (m *matcherFake) DescobrirArteLocalMusica(_ context.Context, registro execqueue.Registro) (int, error) {
 	m.chamadasArteLocal++
+	m.registroDasEtapas = registro
 	return m.arteLocalEncontrada, m.errArteLocal
 }
 
-func (m *matcherFake) ReconciliarFilhosOrfaos(context.Context) (int, error) {
+func (m *matcherFake) ReconciliarFilhosOrfaos(_ context.Context, registro execqueue.Registro) (int, error) {
 	m.chamadasReconciliar++
+	m.registroDasEtapas = registro
 	return m.reconciliados, m.errReconciliar
 }
 
@@ -147,10 +155,12 @@ type completenessFake struct {
 	avaliados, incompletos int
 	err                    error
 	chamadas               int
+	registro               execqueue.Registro
 }
 
-func (c *completenessFake) RecalcularCompletudeCatalogacao(context.Context) (int, int, error) {
+func (c *completenessFake) RecalcularCompletudeCatalogacao(_ context.Context, registro execqueue.Registro) (int, int, error) {
 	c.chamadas++
+	c.registro = registro
 	return c.avaliados, c.incompletos, c.err
 }
 
@@ -832,5 +842,29 @@ func TestExecutarStorageMantemUltimoValorDeFonteOffline(t *testing.T) {
 	}
 	if unmanaged != 60 {
 		t.Errorf("unmanagedBytes = %d, quero 60 (10+50)", unmanaged)
+	}
+}
+
+// TestExecutarNarraAsEtapasFinais: steps 5 to 8 iterate real items (art inventory, local
+// music artwork, orphan children, completeness) and used to receive no registrar at all, so
+// the queue screen showed no progress bar and the item of the previous step -- measured in
+// production as "step 6/8: discovering local music artwork · now: X-Men 76 Dia de Formatura"
+// (a file name from the scan). They must receive the registrar of the RUN.
+func TestExecutarNarraAsEtapasFinais(t *testing.T) {
+	lib := &libraryFake{sources: []library.Source{{ID: "src-1", Path: "/media/videos"}}}
+	scn := &scanFake{}
+	cont := &contadorFake{revisao: 0, orfas: 0}
+	matcher := &matcherFake{registroDasEtapas: nil}
+	comp := &completenessFake{avaliados: 2, incompletos: 1}
+
+	h := New(lib, scn, cont, matcher, comp)
+	if _, err := h.Executar(context.Background(), nil); err != nil {
+		t.Fatalf("Executar: %v", err)
+	}
+	if matcher.registroDasEtapas == nil {
+		t.Error("as etapas 5-7 receberam registro nil: a barra e o item desta etapa nao chegam a fila")
+	}
+	if comp.registro == nil {
+		t.Error("a etapa 8 (completude) recebeu registro nil: 34 mil itens sem narracao")
 	}
 }

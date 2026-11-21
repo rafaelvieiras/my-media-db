@@ -66,7 +66,7 @@ func TestReprocessarArtesFaltantesArtistaJaIdentificado(t *testing.T) {
 	ligarFilhoOrdenado(t, d, "r2", "alb1", "fx1", "music_album", 1)
 	semearFile(t, d, "f1", "fx1", "/lib/musica/aha/01.flac", "present", 1, "")
 
-	processados, err := s.ReprocessarArtesFaltantes(context.Background())
+	processados, err := s.ReprocessarArtesFaltantes(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("ReprocessarArtesFaltantes: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestReprocessarArtesFaltantesRespeitaThrottle(t *testing.T) {
 		t.Fatalf("carimbarTentativaExterna: %v", err)
 	}
 
-	processados, err := s.ReprocessarArtesFaltantes(context.Background())
+	processados, err := s.ReprocessarArtesFaltantes(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("ReprocessarArtesFaltantes: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestReprocessarArtesFaltantesSemEnrichDegradaSemErro(t *testing.T) {
 	}
 	s := New("v-teste", database) // without WithSearchProvider: s.enrich stays nil
 
-	processados, err := s.ReprocessarArtesFaltantes(context.Background())
+	processados, err := s.ReprocessarArtesFaltantes(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("ReprocessarArtesFaltantes: %v", err)
 	}
