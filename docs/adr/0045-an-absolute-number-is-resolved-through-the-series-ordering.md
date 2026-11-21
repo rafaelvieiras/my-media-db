@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-11-22
-- **Agenda:** issue #104. 76 files of one series (X-Men, TMDB 4574) named only by their
+- **Agenda:** issue #105. 76 files of one series (X-Men, TMDB 4574) named only by their
   absolute position (`X-Men - 14 - Até que a Morte nos Separe 1.mkv`) had no
   `<episode>` in their NFO, and each one sat as a DRAFT episode next to the real one,
   which had no file.
