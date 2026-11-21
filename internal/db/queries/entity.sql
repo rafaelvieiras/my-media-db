@@ -338,6 +338,14 @@ FROM entity
 ORDER BY created_at DESC, id
 LIMIT ? OFFSET ?;
 
+-- name: ContarEntities :one
+-- Total of entities in the table -- the denominator of the progress bar of the
+-- completeness sweep (RecalcularCompletudeCatalogacao, internal/server). The sweep
+-- walks ListarEntities (every type and every status, drafts included: it reports the
+-- POSITION it is on, and skips the draft afterwards), so the count must be the whole
+-- table, not the non-draft subset.
+SELECT COUNT(*) AS total FROM entity;
+
 -- name: ListarEntityCards :many
 -- List of CARDS for the UI, ordered by title ASCENDING. A
 -- single query with correlated-subselect aggregation -- avoids N+1 (no

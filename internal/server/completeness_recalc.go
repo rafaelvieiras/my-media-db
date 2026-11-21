@@ -43,8 +43,15 @@ func (s *Server) RecalcularCompletudeCatalogacao(ctx context.Context, registro e
 		return 0, 0, err
 	}
 	w := sqlcgen.New(s.db.Write)
+	// The denominator of the bar: the sweep walks ListarEntities, i.e. the whole table
+	// (drafts included, skipped after being counted). Measured once, before the first
+	// page -- 34 thousand rows of a read-only COUNT are cheaper than a bar that lies.
+	total, err := s.leitura().ContarEntities(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
 
-	var offset int64
+	var offset, posicao int64
 	for {
 		ents, err := s.leitura().ListarEntities(ctx, sqlcgen.ListarEntitiesParams{
 			Limit: paginaRecalculoCompletude, Offset: offset,
@@ -58,7 +65,10 @@ func (s *Server) RecalcularCompletudeCatalogacao(ctx context.Context, registro e
 		for _, ent := range ents {
 			// 34.153 items in production: the counter is the only narration that fits
 			// (the Progresso throttle turns this into one write every 500 ms).
-			registro.Progresso(execqueue.Progresso{Item: ent.Title, Atual: avaliados, Total: 0})
+			// Atual is the POSITION in the sweep, not the number of items evaluated:
+			// a draft is walked and skipped, and the bar must still move past it.
+			posicao++
+			registro.Progresso(execqueue.Progresso{Item: ent.Title, Atual: int(posicao), Total: int(total)})
 			if ehDraft(ent.Status) {
 				continue
 			}

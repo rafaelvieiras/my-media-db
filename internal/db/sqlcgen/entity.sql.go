@@ -368,6 +368,22 @@ func (q *Queries) AtualizarTitulo(ctx context.Context, arg AtualizarTituloParams
 	return err
 }
 
+const contarEntities = `-- name: ContarEntities :one
+SELECT COUNT(*) AS total FROM entity
+`
+
+// Total of entities in the table -- the denominator of the progress bar of the
+// completeness sweep (RecalcularCompletudeCatalogacao, internal/server). The sweep
+// walks ListarEntities (every type and every status, drafts included: it reports the
+// POSITION it is on, and skips the draft afterwards), so the count must be the whole
+// table, not the non-draft subset.
+func (q *Queries) ContarEntities(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, contarEntities)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
+}
+
 const contarEntityCards = `-- name: ContarEntityCards :one
 WITH RECURSIVE arvore(ancestor_id, descendant_id) AS (
     SELECT parent_id, child_id FROM entity_relation
