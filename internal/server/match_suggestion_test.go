@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/enrich"
 	"github.com/rafaelvieiras/my-media-db/internal/resolver"
@@ -153,5 +154,82 @@ func TestPodeSugerirCobreFilme(t *testing.T) {
 		if got := c.s.podeSugerir(c.ent); got != c.want {
 			t.Errorf("%s: podeSugerir = %v, quero %v", c.nome, got, c.want)
 		}
+	}
+}
+
+// semearSerieComTmdb creates a series entity that ALREADY carries a tmdb identity — the
+// state a "did you mean this?" hint becomes stale in (issue #97).
+func semearSerieComTmdb(t *testing.T, d *db.DB, id, tmdbID, titulo string) {
+	t.Helper()
+	_, err := escrita(t, d).CriarEntity(context.Background(), sqlcgen.CriarEntityParams{
+		ID:              id,
+		Type:            "tv",
+		Title:           titulo,
+		ExternalIdsJson: nsOf(`{"tmdb":"` + tmdbID + `"}`),
+	})
+	if err != nil {
+		t.Fatalf("CriarEntity(%s): %v", id, err)
+	}
+}
+
+// gravarSugestaoComMotivo inserts a hint with an explicit reason (name/empty_tree/...).
+func gravarSugestaoComMotivo(t *testing.T, d *sql.DB, entityID, sourceID, motivo string) {
+	t.Helper()
+	if err := sqlcgen.New(d).UpsertMatchSuggestion(context.Background(), sqlcgen.UpsertMatchSuggestionParams{
+		EntityID: entityID,
+		Source:   "tmdb",
+		SourceID: sourceID,
+		Title:    "Ragnarok",
+		Year:     sql.NullString{String: "2004", Valid: true},
+		Score:    100,
+		Query:    "Ragnarok The",
+		Reason:   motivo,
+	}); err != nil {
+		t.Fatalf("UpsertMatchSuggestion: %v", err)
+	}
+}
+
+// TestSugestaoDeNomeVencidaNaoAparece: the hint was stored while the item had no identity and
+// its candidate is the identity the item has NOW -- "is this the right item?" about the item
+// itself (Ragnarok: tmdb 45615 suggested to tmdb 45615, measured in production). It must not
+// be rendered, and it must be dropped so it does not come back.
+func TestSugestaoDeNomeVencidaNaoAparece(t *testing.T) {
+	h, d := setupSearchServer(t)
+	semearSerieComTmdb(t, d, "serie-vencida", "45615", "Ragnarok")
+	gravarSugestaoComMotivo(t, d.Write, "serie-vencida", "45615", enrich.MotivoNome)
+
+	rec := do(t, h, http.MethodGet, "/api/v1/entities/serie-vencida", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (%s)", rec.Code, rec.Body.String())
+	}
+	if sug := sugestaoDoCorpo(t, rec.Body.Bytes()); sug != nil {
+		t.Fatalf("match_suggestion = %v, queria ausente (o candidato é a própria identidade)", sug)
+	}
+	if _, err := sqlcgen.New(d.Write).ObterMatchSuggestion(context.Background(), "serie-vencida"); err == nil {
+		t.Fatal("a linha vencida continuou na tabela, queria removida")
+	}
+}
+
+// TestSugestaoDeArvoreContinuaAparecendo: the TREE hints describe the current match ON
+// PURPOSE (ADR-0038) and carry their own sentence on the screen -- the stale-name rule must
+// not delete them.
+func TestSugestaoDeArvoreContinuaAparecendo(t *testing.T) {
+	h, d := setupSearchServer(t)
+	semearSerieComTmdb(t, d, "serie-arvore", "45615", "Ragnarok")
+	gravarSugestaoComMotivo(t, d.Write, "serie-arvore", "45615", enrich.MotivoArvoreIncompativel)
+
+	rec := do(t, h, http.MethodGet, "/api/v1/entities/serie-arvore", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (%s)", rec.Code, rec.Body.String())
+	}
+	sug := sugestaoDoCorpo(t, rec.Body.Bytes())
+	if sug == nil {
+		t.Fatal("match_suggestion ausente, queria o aviso de árvore incompatível")
+	}
+	if sug["reason"] != enrich.MotivoArvoreIncompativel {
+		t.Errorf("reason = %v", sug["reason"])
+	}
+	if aplicavel, _ := sug["can_apply"].(bool); aplicavel {
+		t.Error("can_apply = true, quero false (o candidato é a identidade atual)")
 	}
 }
