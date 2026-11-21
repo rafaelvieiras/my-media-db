@@ -115,7 +115,7 @@ func (r *scanRun) factsSerie(ctx context.Context, path string) fileFacts {
 	if res.emRevisao || res.index == nil {
 		return f // series under review: the media_file stays pending, without a link
 	}
-	ids, temporadaResolvida, matched := tvmatch.CasarComPasta(res.index, ep, temporadaDaPasta(path))
+	ids, temporadaResolvida, matched := tvmatch.CasarComPasta(res.index, ep, temporadaDaPasta(path), base)
 	if matched && ep.IsAbsolute && temporadaResolvida != 0 {
 		// The absolute number was placed by an ORDERING of the series. When the season it lands
 		// in is not the folder's, the file stays where it is and the NFO carries the season the
@@ -463,7 +463,9 @@ func (m *Manager) indexarEpisodio(ctx context.Context, q *sqlcgen.Queries, idx *
 	if err != nil {
 		return
 	}
-	idx.IndexarEpisodio(epID, extrairTVNS(ent.ExtensionDataJson))
+	// The title goes into the index: it is the only evidence the FILE carries about which
+	// episode an absolute number points at (#105).
+	idx.IndexarEpisodioComTitulo(epID, ent.Title, extrairTVNS(ent.ExtensionDataJson))
 }
 
 // gravarArquivoSerie persists the series file: the media_file points to the SERIES

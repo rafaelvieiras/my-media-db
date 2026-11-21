@@ -40,9 +40,16 @@ An absolute number that has no `absolute_number` from the provider is resolved t
 Nth episode as absolute N.
 
 1. The provider's `absolute_number` still wins when it exists (ADR-0021 is untouched).
-2. Among the orderings, the one that puts the absolute number **in the season the folder
-   declares** wins: the folder is the anchor that an absolute number lacks.
-3. When no ordering agrees with the folder, a fixed priority decides — release orderings first
+2. Among the orderings, the one whose episode at that position carries the **title the file
+   states** wins. This is measured, not assumed: the files of the owner's X-Men follow the
+   `disney` order (74 of 76 names match exactly), while `dvd-order` fits the folder COUNTS
+   better and points at the wrong episodes — with it the file `X-Men - 46 - A Volta do
+   Juggernaut` landed on "Um Trato com o Diabo". A title vote only counts when it is strict
+   (one candidate better than every other, and equal notes only agree when they point at the
+   same episode).
+3. When the title does not decide, the ordering that puts the number **in the season the
+   folder declares** wins: the folder is the anchor that an absolute number lacks.
+4. When nothing agrees with the folder, a fixed priority decides — release orderings first
    (`dvd-order`, `itunes-order`, `disney`, `production-order`), `official` last — and the
    disagreement is logged by the scanner, never silent.
 4. An ordering whose flattened numbering has a **hole inside a season** (season 2 starting at
@@ -52,10 +59,14 @@ Nth episode as absolute N.
 
 ## Consequences
 
-- The 76 files of X-Men resolve to the real episodes with the DVD split; 75 of them agree with
-  the folder, and the one that does not (`X-Men - 52`, folder `Temporada 03`, DVD season 4) is
-  logged. Its NFO carries season 4 and Kodi/Jellyfin/tinyfin read the NFO, so it displays in
-  the right place even though the file stays in the folder it was in.
+- Measured on the owner's X-Men (76 files, dumps of the numbering and of the file names): the
+  resolution puts **73** files on the episode whose title matches the file. The three that do
+  not: one file whose name exists in no provider list ("Um Mutante dos Diabos") falls back to
+  the priority, and two (`60`/`61`) are **swapped** in the release relative to every ordering —
+  a per-number resolution cannot see a permutation, and that is accepted.
+- The season of the NFO follows the series TREE (the provider's official seasons), not the
+  folder: `X-Men - 52` in `Temporada 03` carries season 4. Kodi/Jellyfin/tinyfin read the NFO,
+  so it displays in the right place while the file stays where it was.
 - A series with no alternate ordering keeps today's behaviour: absolute without
   `absolute_number` → review.
 - The resolution is a **pure function of the index** (`internal/tvmatch`), so it is testable

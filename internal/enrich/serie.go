@@ -142,7 +142,7 @@ func (s *Servico) recasarArquivosPendentes(ctx context.Context, serieID string) 
 		}
 		// The season of the folder is the hint an absolute number needs (issue #104): the same
 		// call the scanner makes, so a re-match agrees with it.
-		ids, _, ok := tvmatch.CasarComPasta(idx, ep, temporadaDaPastaDoCaminho(mf.Path))
+		ids, _, ok := tvmatch.CasarComPasta(idx, ep, temporadaDaPastaDoCaminho(mf.Path), strings.TrimSuffix(filepath.Base(mf.Path), filepath.Ext(mf.Path)))
 		if !ok {
 			continue // no match in the tree -- stays pending, as today
 		}
@@ -225,7 +225,7 @@ func (s *Servico) carregarIndexSerie(ctx context.Context, serieID string) *tvmat
 			if err != nil {
 				continue
 			}
-			idx.IndexarEpisodio(ep.ID, tvext.Namespace(ep.ExtensionDataJson, nsTV))
+			idx.IndexarEpisodioComTitulo(ep.ID, ep.Title, tvext.Namespace(ep.ExtensionDataJson, nsTV))
 		}
 	}
 	return idx
