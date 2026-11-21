@@ -140,7 +140,9 @@ func (s *Servico) recasarArquivosPendentes(ctx context.Context, serieID string) 
 		if idx == nil {
 			idx = s.carregarIndexSerie(ctx, serieID)
 		}
-		ids, ok := tvmatch.Casar(idx, ep)
+		// The season of the folder is the hint an absolute number needs (issue #104): the same
+		// call the scanner makes, so a re-match agrees with it.
+		ids, _, ok := tvmatch.CasarComPasta(idx, ep, temporadaDaPastaDoCaminho(mf.Path))
 		if !ok {
 			continue // no match in the tree -- stays pending, as today
 		}
@@ -1125,4 +1127,14 @@ func nsOrNull(s string) sql.NullString {
 		return sql.NullString{}
 	}
 	return sql.NullString{String: s, Valid: true}
+}
+
+// temporadaDaPastaDoCaminho returns the season the FOLDER declares, or 0 when the file is not
+// inside a season folder. Local copy of the scanner helper to keep the two packages apart
+// (internal/enrich does not import internal/scanner).
+func temporadaDaPastaDoCaminho(path string) int {
+	if n, ok := naming.NumeroDaPastaTemporada(filepath.Base(filepath.Dir(path))); ok {
+		return n
+	}
+	return 0
 }

@@ -23,6 +23,7 @@ Related: [ADR-0021](adr/0021-series-model-hierarchy-orderings-and-file-link.md) 
 | 1. reorder by the provider | TMDB **episode groups** imported as alternate orderings (`internal/provider/tmdb/tmdb_grupos.go`); TheTVDB reads every `seasonType` when a key exists (`internal/provider/tvdb/tvdb_serie.go`) | v0.4.0 (TMDB groups) |
 | 2. one file, several episodes | N links in `media_file_entity` with `ordinal` | before v0.4.0 |
 | 3. one numbered unit merging N aired episodes (**release units**) | owner order: units of `(season, number)` holding 1..N episode ids, stored in the override layer (`media_override`), tried first by the matcher (`internal/tvext/ordem_dono.go`, `internal/tvmatch/ordem_dono.go`), edited in the series screen | v0.5.0 |
+| 4. a file that only carries the **absolute** position | the series' orderings are flattened in `(season, number)` order and the Nth episode answers for absolute N, with the folder's season as the tie-break ([ADR-0045](adr/0045-an-absolute-number-is-resolved-through-the-series-ordering.md)) | v0.15.17 |
 
 What is **not** done: TheTVDB stays off (no key in production, so every series in the
 catalog is `official`-only in practice), and a file whose name carries no `(season, number)`
