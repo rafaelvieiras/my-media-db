@@ -54,7 +54,7 @@ func TestDescobrirArteLocalMusicaAlbumEArtista(t *testing.T) {
 	ligarFilhoOrdenado(t, database, "r2", "alb1", "fx1", "music_album", 1)
 	semearFile(t, database, "f1", "fx1", trackPath, "present", 100, "")
 
-	encontrados, err := s.DescobrirArteLocalMusica(ctx)
+	encontrados, err := s.DescobrirArteLocalMusica(ctx, nil)
 	if err != nil {
 		t.Fatalf("DescobrirArteLocalMusica: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestDescobrirArteLocalMusicaSemPasta(t *testing.T) {
 	ligarFilhoOrdenado(t, database, "r4", "alb2", "fx2", "music_album", 1)
 	semearFile(t, database, "f2", "fx2", trackPath, "present", 100, "")
 
-	encontrados, err := s.DescobrirArteLocalMusica(ctx)
+	encontrados, err := s.DescobrirArteLocalMusica(ctx, nil)
 	if err != nil {
 		t.Fatalf("DescobrirArteLocalMusica: %v", err)
 	}

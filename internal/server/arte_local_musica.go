@@ -22,6 +22,7 @@ import (
 	"regexp"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 )
 
 // DescobrirArteLocalMusica sweeps EVERY artist/album entity with at least one owned
@@ -31,7 +32,8 @@ import (
 // Idempotent (RefreshLocalAsset does an UPSERT by (entity,kind,origin)) and
 // best-effort: a one-off failure on an entity is logged and skipped, never aborts
 // the batch. err only propagates on a real LISTING failure (database down).
-func (s *Server) DescobrirArteLocalMusica(ctx context.Context) (encontrados int, err error) {
+func (s *Server) DescobrirArteLocalMusica(ctx context.Context, registro execqueue.Registro) (encontrados int, err error) {
+	registro = orNullRegistry(registro)
 	if s.scanner == nil {
 		return 0, nil
 	}
@@ -39,7 +41,8 @@ func (s *Server) DescobrirArteLocalMusica(ctx context.Context) (encontrados int,
 	if err != nil {
 		return 0, err
 	}
-	for _, id := range ids {
+	for i, id := range ids {
+		registro.Progresso(execqueue.Progresso{Item: id, Atual: i, Total: len(ids)})
 		ok, err := s.descobrirArteLocalMusicaDe(ctx, id)
 		if err != nil {
 			log.Printf("arte local musica: falha ao verificar a entity %q (best-effort, ignorado): %v", id, err)
@@ -49,6 +52,7 @@ func (s *Server) DescobrirArteLocalMusica(ctx context.Context) (encontrados int,
 			encontrados++
 		}
 	}
+	registro.Progresso(execqueue.Progresso{Atual: len(ids), Total: len(ids)})
 	return encontrados, nil
 }
 

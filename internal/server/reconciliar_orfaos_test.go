@@ -189,7 +189,7 @@ func TestReconciliarFilhosOrfaosFaixaReligaComSucesso(t *testing.T) {
 
 	semearFaixaDraftOrfa(t, d, "fx-draft", "Track One", path)
 
-	reconciliados, err := s.ReconciliarFilhosOrfaos(context.Background())
+	reconciliados, err := s.ReconciliarFilhosOrfaos(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("ReconciliarFilhosOrfaos: %v", err)
 	}
@@ -224,7 +224,7 @@ func TestReconciliarFilhosOrfaosSerieSemMatchAindaCarimba(t *testing.T) {
 
 	semearSerieDraftComArquivo(t, d, "serie-draft", "Série Sem Fixture Nenhuma", path)
 
-	reconciliados, err := s.ReconciliarFilhosOrfaos(context.Background())
+	reconciliados, err := s.ReconciliarFilhosOrfaos(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("ReconciliarFilhosOrfaos: %v", err)
 	}
@@ -260,7 +260,7 @@ func TestReconciliarFilhosOrfaosRespeitaThrottle(t *testing.T) {
 		t.Fatalf("carimbarTentativaExterna: %v", err)
 	}
 
-	reconciliados, err := s.ReconciliarFilhosOrfaos(context.Background())
+	reconciliados, err := s.ReconciliarFilhosOrfaos(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("ReconciliarFilhosOrfaos: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestReconciliarFilhosOrfaosSemScannerDegradaSemErro(t *testing.T) {
 	s := New("v-teste", database)
 	s.scanner = nil
 
-	reconciliados, err := s.ReconciliarFilhosOrfaos(context.Background())
+	reconciliados, err := s.ReconciliarFilhosOrfaos(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("ReconciliarFilhosOrfaos: %v", err)
 	}

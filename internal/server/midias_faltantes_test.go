@@ -1420,7 +1420,7 @@ func TestDescobrirArteLocalMusicaSemScanner(t *testing.T) {
 	srv, _, d := setupMidiasFaltantesServer(t)
 	semearArvoreMusica(t, d)
 
-	achados, err := srv.DescobrirArteLocalMusica(context.Background())
+	achados, err := srv.DescobrirArteLocalMusica(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("DescobrirArteLocalMusica: %v", err)
 	}

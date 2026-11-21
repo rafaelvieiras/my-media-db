@@ -94,20 +94,20 @@ type Matcher interface {
 	// and tries again, in a small batch, throttled per item (a complement of the
 	// retroactive enrichment): it closes the gap of an entity that gained its
 	// identity BEFORE an ArteProvider existed/was configured in the system.
-	ReprocessarArtesFaltantes(ctx context.Context) (processados int, err error)
+	ReprocessarArtesFaltantes(ctx context.Context, registro execqueue.Registro) (processados int, err error)
 	// DescobrirArteLocalMusica sweeps music artist/album with an owned track
 	// looking for a local poster (poster.jpg/folder.jpg) in the folder derived
 	// from the track files -- the same mechanism movie/series already had (a
 	// complement of the art reprocessing): the image the owner already has in the
 	// folder becomes a valid art source, alongside MusicBrainz/fanart.tv.
-	DescobrirArteLocalMusica(ctx context.Context) (encontrados int, err error)
+	DescobrirArteLocalMusica(ctx context.Context, registro execqueue.Registro) (encontrados int, err error)
 	// ReconciliarFilhosOrfaos tries to re-link an orphan DRAFT track/episode
 	// (with a file present, but never linked to a parent tree) against the
 	// identity/tree already resolved -- or one that came to be resolved later
 	// (it closes the gap found while investigating the local music art discovery
 	// in production: a match that failed once during the scan stays stuck forever
 	// without this).
-	ReconciliarFilhosOrfaos(ctx context.Context) (reconciliados int, err error)
+	ReconciliarFilhosOrfaos(ctx context.Context, registro execqueue.Registro) (reconciliados int, err error)
 }
 
 // CompletenessRecalculator is the subset of *server.Server that the Handler
@@ -121,7 +121,7 @@ type Matcher interface {
 // (it avoids a cycle, since server.Handler is built FROM INSIDE the server, see
 // server.WithLibraryHealthJob).
 type CompletenessRecalculator interface {
-	RecalcularCompletudeCatalogacao(ctx context.Context) (avaliados, incompletos int, err error)
+	RecalcularCompletudeCatalogacao(ctx context.Context, registro execqueue.Registro) (avaliados, incompletos int, err error)
 }
 
 // resultadoStorage is the managed/unmanaged aggregate of NON-video files from
@@ -234,12 +234,12 @@ func (h *Handler) executar(ctx context.Context, _ json.RawMessage, p *job.Progre
 	}
 
 	p.Etapa(5, passosSaude, "reprocessar artes")
-	artesReprocessadas := h.rodarReprocessamentoArtes(ctx)
+	artesReprocessadas := h.rodarReprocessamentoArtes(ctx, p)
 	p.Etapa(6, passosSaude, "descobrir arte local de música")
-	arteLocalMusica := h.rodarDescobertaArteLocalMusica(ctx)
+	arteLocalMusica := h.rodarDescobertaArteLocalMusica(ctx, p)
 
 	p.Etapa(7, passosSaude, "reconciliar filhos órfãos")
-	reconciliados := h.rodarReconciliacaoFilhosOrfaos(ctx)
+	reconciliados := h.rodarReconciliacaoFilhosOrfaos(ctx, p)
 	if reconciliados > 0 {
 		// Recount (same spirit as the resolvidos/sinalizados above): reconciling
 		// removes draft tracks/series from the review queue, so the final summary
@@ -250,7 +250,7 @@ func (h *Handler) executar(ctx context.Context, _ json.RawMessage, p *job.Progre
 	}
 
 	p.Etapa(8, passosSaude, "recalcular completude do catálogo")
-	avaliados, incompletos := h.rodarRecalculoCompletude(ctx)
+	avaliados, incompletos := h.rodarRecalculoCompletude(ctx, p)
 
 	return montarMensagem(len(sources), escaneadas, falhas, revisao, orfas, resolvidos, aplicados, sinalizados, artesReprocessadas, arteLocalMusica, reconciliados, avaliados, incompletos), nil
 }
@@ -294,11 +294,11 @@ func (h *Handler) rodarEnriquecimentoRetroativo(ctx context.Context, registro ex
 // NOT abort the job -- it only logs and returns 0, so the original summary still
 // comes out. Called AFTER rodarEnriquecimentoRetroativo (same family of
 // best-effort enrichment steps) and BEFORE the completeness recalculation.
-func (h *Handler) rodarReprocessamentoArtes(ctx context.Context) int {
+func (h *Handler) rodarReprocessamentoArtes(ctx context.Context, p *job.Progresso) int {
 	if h.matcher == nil {
 		return 0
 	}
-	processados, err := h.matcher.ReprocessarArtesFaltantes(ctx)
+	processados, err := h.matcher.ReprocessarArtesFaltantes(ctx, p.Registro())
 	if err != nil {
 		log.Printf("saude_biblioteca: reprocessamento de artes em lote falhou (best-effort, ignorado): %v", err)
 		return 0
@@ -311,11 +311,11 @@ func (h *Handler) rodarReprocessamentoArtes(ctx context.Context) int {
 // failure here does NOT abort the job -- it only logs and returns 0. Called
 // right after rodarReprocessamentoArtes (same family of art steps) and BEFORE
 // the completeness recalculation.
-func (h *Handler) rodarDescobertaArteLocalMusica(ctx context.Context) int {
+func (h *Handler) rodarDescobertaArteLocalMusica(ctx context.Context, p *job.Progresso) int {
 	if h.matcher == nil {
 		return 0
 	}
-	encontrados, err := h.matcher.DescobrirArteLocalMusica(ctx)
+	encontrados, err := h.matcher.DescobrirArteLocalMusica(ctx, p.Registro())
 	if err != nil {
 		log.Printf("saude_biblioteca: descoberta de arte local de musica falhou (best-effort, ignorado): %v", err)
 		return 0
@@ -329,11 +329,11 @@ func (h *Handler) rodarDescobertaArteLocalMusica(ctx context.Context) int {
 // failure here does NOT abort the job -- it only logs and returns 0. Called
 // right after rodarDescobertaArteLocalMusica and BEFORE the completeness
 // recalculation.
-func (h *Handler) rodarReconciliacaoFilhosOrfaos(ctx context.Context) int {
+func (h *Handler) rodarReconciliacaoFilhosOrfaos(ctx context.Context, p *job.Progresso) int {
 	if h.matcher == nil {
 		return 0
 	}
-	reconciliados, err := h.matcher.ReconciliarFilhosOrfaos(ctx)
+	reconciliados, err := h.matcher.ReconciliarFilhosOrfaos(ctx, p.Registro())
 	if err != nil {
 		log.Printf("saude_biblioteca: reconciliacao de filhos orfaos falhou (best-effort, ignorado): %v", err)
 		return 0
@@ -348,11 +348,11 @@ func (h *Handler) rodarReconciliacaoFilhosOrfaos(ctx context.Context) int {
 // summary still comes out. Called LAST (after the re-scan, auto-match and
 // retroactive enrichment): completeness reflects the FINAL state of the
 // execution, after the previous steps may have changed resolved data.
-func (h *Handler) rodarRecalculoCompletude(ctx context.Context) (avaliados, incompletos int) {
+func (h *Handler) rodarRecalculoCompletude(ctx context.Context, p *job.Progresso) (avaliados, incompletos int) {
 	if h.completeness == nil {
 		return 0, 0
 	}
-	avaliados, incompletos, err := h.completeness.RecalcularCompletudeCatalogacao(ctx)
+	avaliados, incompletos, err := h.completeness.RecalcularCompletudeCatalogacao(ctx, p.Registro())
 	if err != nil {
 		log.Printf("saude_biblioteca: recalculo de completude de catalogacao falhou (best-effort, ignorado): %v", err)
 		return 0, 0

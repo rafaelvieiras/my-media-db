@@ -8,6 +8,7 @@ import (
 	"log"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 )
 
 // This file implements the BATCH PATH of catalog completeness:
@@ -35,7 +36,8 @@ const paginaRecalculoCompletude = 200
 // escanearTodas/autoMatchLote: it only logs and moves on to the next one. Only a
 // LISTING error (the page itself failing) interrupts the sweep — at that point there is
 // no way to know what else exists to evaluate.
-func (s *Server) RecalcularCompletudeCatalogacao(ctx context.Context) (avaliados, incompletos int, err error) {
+func (s *Server) RecalcularCompletudeCatalogacao(ctx context.Context, registro execqueue.Registro) (avaliados, incompletos int, err error) {
+	registro = orNullRegistry(registro)
 	cfg, err := s.obterCatalogCompletenessSettings(ctx)
 	if err != nil {
 		return 0, 0, err
@@ -54,6 +56,9 @@ func (s *Server) RecalcularCompletudeCatalogacao(ctx context.Context) (avaliados
 			break
 		}
 		for _, ent := range ents {
+			// 34.153 items in production: the counter is the only narration that fits
+			// (the Progresso throttle turns this into one write every 500 ms).
+			registro.Progresso(execqueue.Progresso{Item: ent.Title, Atual: avaliados, Total: 0})
 			if ehDraft(ent.Status) {
 				continue
 			}

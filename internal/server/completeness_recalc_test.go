@@ -40,7 +40,7 @@ func TestRecalcularCompletudeCatalogacaoGravaLinhaPorEntity(t *testing.T) {
 	semearEntity(t, d, "col1", "collection", "Coleção")
 
 	s := New("v-teste", d)
-	avaliados, incompletos, err := s.RecalcularCompletudeCatalogacao(context.Background())
+	avaliados, incompletos, err := s.RecalcularCompletudeCatalogacao(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("RecalcularCompletudeCatalogacao: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestRecalcularCompletudeCatalogacaoAvaliaTodosOsItensValidos(t *testing.T) 
 	}
 
 	s := New("v-teste", d)
-	avaliados, _, err := s.RecalcularCompletudeCatalogacao(context.Background())
+	avaliados, _, err := s.RecalcularCompletudeCatalogacao(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("RecalcularCompletudeCatalogacao: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestEntityCatalogCompletenessApagadaEmCascataAoPurgarEntity(t *testing.T) {
 	semearEntity(t, d, "m1", "movie", "Filme")
 
 	s := New("v-teste", d)
-	if _, _, err := s.RecalcularCompletudeCatalogacao(context.Background()); err != nil {
+	if _, _, err := s.RecalcularCompletudeCatalogacao(context.Background(), nil); err != nil {
 		t.Fatalf("RecalcularCompletudeCatalogacao: %v", err)
 	}
 

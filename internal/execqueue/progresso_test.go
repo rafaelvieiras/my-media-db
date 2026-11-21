@@ -278,3 +278,34 @@ func TestItemOrfaoRecebeEventoDeErro(t *testing.T) {
 		t.Errorf("eventos = %d, quero 0 (orfaos nao passam pelo registro)", n)
 	}
 }
+
+// TestProgressoDaEtapaLimpaOItem is the measured defect of the health job: the scan
+// narrates one FILE per report, the six steps after it narrate nothing, and the screen kept
+// showing the last scanned file ("X-Men 76 Dia de Formatura") under a step about music
+// artwork. A step transition must clear the item, not inherit it.
+func TestProgressoDaEtapaLimpaOItem(t *testing.T) {
+	m := setupManager(t)
+	id := rodarSincrono(t, m, KindJob, "job-etapa", runnerQueRelata(func(registro Registro) {
+		registro.Progresso(Progresso{Item: "Temporada 01/X-Men 76.avi", Atual: 3, Total: 9})
+		registro.Progresso(Progresso{
+			Etapa: "descobrir arte local de música", EtapaIndice: 6, EtapaTotal: 8,
+			ReiniciarContadores: true, ReiniciarItem: true,
+		})
+	}))
+
+	detalhe, err := m.DetalheDaFila(context.Background(), id, 0)
+	if err != nil {
+		t.Fatalf("DetalheDaFila: %v", err)
+	}
+	if detalhe.Item.ItemAtual != "" {
+		t.Errorf("item atual = %q, quero vazio (o item da etapa anterior nao pertence a esta)",
+			detalhe.Item.ItemAtual)
+	}
+	if detalhe.Item.ProgressAtual != 0 || detalhe.Item.ProgressTotal != 0 {
+		t.Errorf("progresso = %d/%d, quero 0/0 (contadores da etapa reiniciados)",
+			detalhe.Item.ProgressAtual, detalhe.Item.ProgressTotal)
+	}
+	if detalhe.Item.Etapa != "descobrir arte local de música" || detalhe.Item.EtapaIndice != 6 {
+		t.Errorf("etapa = %q (%d), quero 'descobrir arte local de música' (6)", detalhe.Item.Etapa, detalhe.Item.EtapaIndice)
+	}
+}

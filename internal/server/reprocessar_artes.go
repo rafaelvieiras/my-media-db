@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 )
 
 // This file implements the REPROCESSING OF MISSING ARTWORK, a complement to the
@@ -31,7 +32,8 @@ const limiteReprocessamentoArtesPorExecucao = 15
 // libraryhealth.Matcher (called by the saude_biblioteca job, AFTER the
 // retroactive enrichment). err is ONLY a real database error in the LISTING; a failure
 // in an individual item is absorbed (best-effort, it logs and moves on).
-func (s *Server) ReprocessarArtesFaltantes(ctx context.Context) (processados int, err error) {
+func (s *Server) ReprocessarArtesFaltantes(ctx context.Context, registro execqueue.Registro) (processados int, err error) {
+	registro = orNullRegistry(registro)
 	// Without enrich configured, AtualizarInventarioArtes would not even exist to
 	// call -- same guard as EnriquecerRetroativo, it avoids stamping
 	// last_external_match_attempt_at on items never actually checked.
@@ -55,7 +57,11 @@ func (s *Server) ReprocessarArtesFaltantes(ctx context.Context) (processados int
 		return 0, err
 	}
 
-	for _, row := range rows {
+	for i, row := range rows {
+		// The owner watches ONE bar: "which item of this step" (ADR-0040). Without these
+		// two lines the step had no counters at all, so the queue screen showed no bar and
+		// kept the item of the previous step.
+		registro.Progresso(execqueue.Progresso{Item: row.ID, Atual: i, Total: len(rows)})
 		if err := s.enrich.AtualizarInventarioArtes(ctx, row.ID, row.Type, langCfg.Allowed); err != nil {
 			log.Printf("saude_biblioteca: reprocessamento de artes falhou para %s (best-effort, ignorado): %v", row.ID, err)
 		}
@@ -69,5 +75,6 @@ func (s *Server) ReprocessarArtesFaltantes(ctx context.Context) (processados int
 		}
 		processados++
 	}
+	registro.Progresso(execqueue.Progresso{Atual: len(rows), Total: len(rows)})
 	return processados, nil
 }

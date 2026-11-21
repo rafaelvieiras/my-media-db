@@ -98,9 +98,7 @@ func (s *Server) EnriquecerRetroativo(ctx context.Context, registro execqueue.Re
 		return 0, 0, err
 	}
 
-	if registro == nil {
-		registro = execqueue.RegistroNulo()
-	}
+	registro = orNullRegistry(registro)
 	for i, row := range rows {
 		registro.Progresso(execqueue.Progresso{Atual: i, Total: len(rows)})
 		ent, err := s.leitura().ObterEntity(ctx, row.ID)
