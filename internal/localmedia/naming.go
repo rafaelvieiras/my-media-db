@@ -434,18 +434,55 @@ func resolverAlvo(entity Entity, ancestors []Entity) string {
 	return entity.ID
 }
 
-// ArquivoMaisAntigo returns the oldest 'present' media_file (created_at asc)
-// eligible for the entity (the same target resolution that DiretorioDestino
-// uses — the entity itself, or the "tv" ancestor for a season). ok=false when
-// none is eligible. Exposed separately from DiretorioDestino because the
-// caller of the NFO/video file name also needs ONE representative video (base
-// name), not only the directory — since the series root rule, DiretorioDestino
-// no longer uses this result internally (the real series root may not be the
-// directory of this file).
+// ExtraWords are the file-name marks of extra material (trailer, sample,
+// featurette...). ONE list for the whole codebase: the scanner uses it to keep a
+// "Season 01/featurette bonus.mkv" from becoming a provisional episode, and this
+// package uses it to keep an extra from naming the item it belongs to.
+//
+// It is a SUBSTRING test against the lowercased file name, never a parsing rule:
+// the point is only to answer "is this file the work itself, or material ABOUT
+// the work?". A false positive costs nothing where it is used (the extra is used
+// as the naming authority only when it is the sole file present), so a title that
+// happens to contain one of the words ("The Interview") is not a defect.
+var ExtraWords = []string{
+	"featurette", "sample", "trailer", "teaser", "extras", "bonus", "deleted",
+	"behind the scenes", "behind-the-scenes", "bloopers", "outtakes", "interview",
+	"making of", "making-of", "promo", "recap",
+}
+
+// IsExtraFileName reports whether the file name (or any other label) carries one of
+// ExtraWords. Case-insensitive substring test.
+func IsExtraFileName(nome string) bool {
+	l := strings.ToLower(nome)
+	for _, p := range ExtraWords {
+		if strings.Contains(l, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// ArquivoMaisAntigo returns the media_file that NAMES the entity: the oldest
+// 'present' file (created_at asc) that is not extra material (trailer, sample,
+// featurette...), falling back to the oldest extra when the entity has nothing
+// else. ok=false when none is eligible (no present file for the entity at all).
+// The target resolution is the same one DiretorioDestino uses — the entity
+// itself, or the "tv" ancestor for a season. Exposed separately from
+// DiretorioDestino because the caller of the NFO/video file name also needs ONE
+// representative video (base name), not only the directory — since the series
+// root rule, DiretorioDestino no longer uses this result internally (the real
+// series root may not be the directory of this file).
+//
+// Why the extra cannot name the entity: a movie folder usually holds the movie
+// PLUS its trailer, and the trailer is frequently the OLDER file (it was copied
+// years before the 1080p remux). Picking it named the exported NFO and artwork
+// after the trailer — 1.154 movies in the owner's library ended up with
+// `<trailer>.nfo` / `<trailer>-poster.jpg` and NO artwork name that Kodi, Emby or
+// Jellyfin recognizes, so the movie showed up with no poster at all.
 func ArquivoMaisAntigo(entity Entity, mediaFiles []MediaFile, ancestors []Entity) (MediaFile, bool) {
 	alvo := resolverAlvo(entity, ancestors)
-	var maisAntigo MediaFile
-	achou := false
+	var maisAntigo, maisAntigoDoItem MediaFile
+	achou, achouDoItem := false, false
 	for _, mf := range mediaFiles {
 		if mf.EntityID != alvo || mf.State != estadoPresente {
 			continue
@@ -453,6 +490,15 @@ func ArquivoMaisAntigo(entity Entity, mediaFiles []MediaFile, ancestors []Entity
 		if !achou || mf.CreatedAt < maisAntigo.CreatedAt {
 			maisAntigo, achou = mf, true
 		}
+		if IsExtraFileName(mf.Path) {
+			continue
+		}
+		if !achouDoItem || mf.CreatedAt < maisAntigoDoItem.CreatedAt {
+			maisAntigoDoItem, achouDoItem = mf, true
+		}
+	}
+	if achouDoItem {
+		return maisAntigoDoItem, true
 	}
 	return maisAntigo, achou
 }
@@ -495,19 +541,42 @@ func CaminhoNFODeVideo(videoPath string) string {
 // base (from any entity) that the caller already loaded — this package does
 // not query the database.
 func EhPastaExclusiva(dir string, mediaFiles []MediaFile) bool {
-	n := 0
+	nomes := make([]string, 0, 2)
 	for _, mf := range mediaFiles {
 		if mf.State != estadoPresente {
 			continue
 		}
 		if filepath.Dir(mf.Path) == dir {
-			n++
-			if n > 1 {
-				return false
-			}
+			nomes = append(nomes, filepath.Base(mf.Path))
 		}
 	}
-	return n == 1
+	return ExclusiveFolderByNames(nomes)
+}
+
+// ExclusiveFolderByNames answers the exclusivity question from the NAMES of the files that
+// sit directly in the folder, and it is the only form that implements the rule (the
+// count-only form PastaExclusivaPorContagem cannot see names, so it stays for callers
+// that have nothing but a number).
+//
+// Extra material does not count: a movie plus its trailer is still "the movie's own
+// folder", so its artwork is born bare (poster.jpg/fanart.jpg) instead of prefixed by a
+// video name. Before this rule, the trailer turned the folder into "not exclusive" AND
+// named the files, so 1.154 movies got `<trailer>-poster.jpg` — a name no media server
+// reads, i.e. no poster at all.
+//
+// When EVERY file is an extra (an extra-only folder), the raw count decides: exclusivity
+// must not be manufactured out of a folder that only holds a trailer.
+func ExclusiveFolderByNames(nomes []string) bool {
+	n := 0
+	for _, nome := range nomes {
+		if !IsExtraFileName(nome) {
+			n++
+		}
+	}
+	if n == 0 {
+		n = len(nomes)
+	}
+	return PastaExclusivaPorContagem(n)
 }
 
 // PastaExclusivaPorContagem is the SQL-backed form of EhPastaExclusiva: the same rule
