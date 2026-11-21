@@ -91,7 +91,7 @@ and none of them is ever applied automatically:
 |---|---|---|
 | `name` | the name on disk finds nothing; a cheaper variant of it finds a candidate | on the first open of a series or a movie with no identity (the cheaper variants cost up to four queries, so a scan never fires them in a burst) |
 | `empty_tree` | the matched entry **has no episodes** in the source | when the tree is fetched: zero episodes across all seasons |
-| `tree_mismatch` | the tree exists but **does not fit the files** | post-scan census: at least 5 provisional episodes, and at least as many as cataloged ones |
+| `tree_mismatch` | the tree exists but **does not fit the files** | post-scan census: at least 5 draft episodes **holding a file**, and at least as many as cataloged episodes holding one |
 
 The two tree signals come from the same component, `internal/enrich/alertas.go`, and share
 the row with the typo hint (migration 0029 adds `reason` and the file counts). The

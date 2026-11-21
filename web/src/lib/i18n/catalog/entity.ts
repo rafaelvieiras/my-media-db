@@ -50,7 +50,7 @@ export const entity = defineDomain({
         'The matched entry exists, but the source does not list a single episode for it — so no file of this series can be placed. Pick another entry.',
       treeMismatchTitle: 'This match does not fit the files',
       treeMismatchReason:
-        '{unmatched} of {total} episodes found no place in the source tree. It usually means the entry is another show of the same name, or the source numbers the seasons differently.',
+        '{unmatched} of {total} files found no episode in the source tree. It usually means the entry is another show of the same name, or the source numbers the seasons differently.',
       currentMatch: 'Matched to',
       fixHint: 'Use "Fix match" in the item menu to choose another entry.',
       apply: 'Fix match',
@@ -366,7 +366,7 @@ export const entity = defineDomain({
         'A entrada existe, mas a fonte não lista nenhum episódio dela — então nenhum arquivo desta série consegue ser encaixado. Escolha outra entrada.',
       treeMismatchTitle: 'Este match não casa com os arquivos',
       treeMismatchReason:
-        '{unmatched} de {total} episódios não encontraram lugar na árvore da fonte. Normalmente é a entrada de outro programa com o mesmo nome, ou a fonte numerando as temporadas de outro jeito.',
+        '{unmatched} de {total} arquivos não encontraram episódio na árvore da fonte. Normalmente é a entrada de outro programa com o mesmo nome, ou a fonte numerando as temporadas de outro jeito.',
       currentMatch: 'Casado com',
       fixHint:
         'Use "Corrigir Match" no menu do item para escolher outra entrada.',
@@ -683,7 +683,7 @@ export const entity = defineDomain({
         'La entrada existe, pero la fuente no lista ningún episodio de ella — así que ningún archivo de esta serie se puede ubicar. Elige otra entrada.',
       treeMismatchTitle: 'Esta coincidencia no encaja con los archivos',
       treeMismatchReason:
-        '{unmatched} de {total} episodios no encontraron lugar en el árbol de la fuente. Normalmente es la entrada de otro programa con el mismo nombre, o la fuente numerando las temporadas de otra forma.',
+        '{unmatched} de {total} archivos no encontraron episodio en el árbol de la fuente. Normalmente es la entrada de otro programa con el mismo nombre, o la fuente numerando las temporadas de otra forma.',
       currentMatch: 'Emparejado con',
       fixHint:
         'Usa «Corregir coincidencia» en el menú del ítem para elegir otra entrada.',

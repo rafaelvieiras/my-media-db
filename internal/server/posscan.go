@@ -158,6 +158,14 @@ func (s *Server) sinalizarArvoresIncompativeis(ctx context.Context) int {
 	if s.enrich == nil {
 		return 0
 	}
+	// A hint that no longer describes reality is removed BEFORE the new ones are written: the
+	// census only writes, and it skips any series that already has a row -- so an alert whose
+	// cause was repaired would otherwise live forever.
+	if obsoletos, err := sqlcgen.New(s.db.Write).DeletarAlertasArvoreIncompativelObsoletos(ctx); err != nil {
+		log.Printf("pos-scan: remover alertas de arvore incompativel obsoletos falhou (best-effort, ignorado): %v", err)
+	} else if obsoletos > 0 {
+		log.Printf("pos-scan: %d alerta(s) de arvore incompativel removido(s) -- o sintoma sumiu", obsoletos)
+	}
 	linhas, err := s.leitura().ListarSeriesComArvoreIncompativel(ctx)
 	if err != nil {
 		log.Printf("pos-scan: listar series com arvore incompativel falhou (best-effort, ignorado): %v", err)
