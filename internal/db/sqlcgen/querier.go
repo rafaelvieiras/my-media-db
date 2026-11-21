@@ -199,6 +199,12 @@ type Querier interface {
 	// ownership. It does NOT receive the total here (the total = number of children,
 	// computed by the caller from the relations).
 	ContarEntidadesComPosse(ctx context.Context, arg ContarEntidadesComPosseParams) (int64, error)
+	// Total of entities in the table -- the denominator of the progress bar of the
+	// completeness sweep (RecalcularCompletudeCatalogacao, internal/server). The sweep
+	// walks ListarEntities (every type and every status, drafts included: it reports the
+	// POSITION it is on, and skips the draft afterwards), so the count must be the whole
+	// table, not the non-draft subset.
+	ContarEntities(ctx context.Context) (int64, error)
 	// Aggregate reads for GET /api/v1/health/system: database
 	// size via PRAGMA (outside this file, it runs straight from Go -- see
 	// internal/telemetry/telemetry.go) + usage counts + on-disk sum per
