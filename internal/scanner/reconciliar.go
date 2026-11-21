@@ -146,7 +146,7 @@ func (m *Manager) religarArquivoSerie(ctx context.Context, mf sqlcgen.MediaFile,
 	var episodeIDs []string
 	if res.index != nil {
 		if ep, ok := naming.ParseEpisodeNoCaminho(mf.Path); ok {
-			if ids, matched := tvmatch.Casar(res.index, ep); matched {
+			if ids, _, matched := tvmatch.CasarComPasta(res.index, ep, temporadaDaPasta(mf.Path)); matched {
 				episodeIDs = ids
 				confianca = res.conf
 			}

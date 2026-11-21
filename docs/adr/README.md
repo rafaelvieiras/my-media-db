@@ -62,3 +62,4 @@ replaces the flat list of "open decisions" with a traceable record, one file per
 | [0042](0042-a-music-album-is-resolved-once.md) | A music album is resolved once per scan, a draft attempted inside the window is left alone, and a music file follows its content | Q3 | Accepted |
 | [0043](0043-music-artwork-lands-in-the-folder.md) | Music artwork lands in the folder under the library's own names (folder.jpg, cdart.png…), and a download without a destination is not success | MW1 | Accepted |
 | [0044](0044-one-nfo-per-file.md) | One NFO per video file, one `<episodedetails>` block per episode, numbering from the tree | NF1 | Accepted |
+| [0045](0045-an-absolute-number-is-resolved-through-the-series-ordering.md) | An absolute number with no `absolute_number` from the provider is resolved through the series' orderings, with the folder's season as the anchor | #105 | Accepted |

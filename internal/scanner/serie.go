@@ -115,7 +115,16 @@ func (r *scanRun) factsSerie(ctx context.Context, path string) fileFacts {
 	if res.emRevisao || res.index == nil {
 		return f // series under review: the media_file stays pending, without a link
 	}
-	ids, matched := tvmatch.Casar(res.index, ep)
+	ids, temporadaResolvida, matched := tvmatch.CasarComPasta(res.index, ep, temporadaDaPasta(path))
+	if matched && ep.IsAbsolute && temporadaResolvida != 0 {
+		// The absolute number was placed by an ORDERING of the series. When the season it lands
+		// in is not the folder's, the file stays where it is and the NFO carries the season the
+		// ordering gives — Kodi/Jellyfin read the NFO, so the display is right; the disagreement
+		// is reported here so it is not mistaken for a silent swap.
+		if pasta := temporadaDaPasta(path); pasta != 0 && pasta != temporadaResolvida {
+			log.Printf("scanner: %q tem número absoluto %v e está na temporada %d da pasta, mas a ordem da série o coloca na temporada %d", path, ep.Absolute, pasta, temporadaResolvida)
+		}
+	}
 	if !matched {
 		log.Printf("scanner: episódio de %q não casou na árvore externa; criando provisório: %+v", path, ep)
 		f.prov = provisorioDe(path, base)
@@ -581,6 +590,16 @@ func episodioPelaPasta(path, base string) (naming.EpisodeInfo, bool) {
 		return naming.EpisodeInfo{}, false
 	}
 	return naming.EpisodeInfo{Season: season, Episodes: []int{n}}, true
+}
+
+// temporadaDaPasta returns the season the FOLDER declares, or 0 when the folder is not a
+// season one. It is the hint an absolute number needs: the number alone has no season.
+func temporadaDaPasta(path string) int {
+	n, ok := naming.NumeroDaPastaTemporada(filepath.Base(filepath.Dir(path)))
+	if !ok {
+		return 0
+	}
+	return n
 }
 
 // provisorioDe assembles the provisional one from the parse of the file name or,

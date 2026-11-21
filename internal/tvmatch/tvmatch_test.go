@@ -1,6 +1,7 @@
 package tvmatch
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -123,5 +124,101 @@ func TestIndexarEpisodioEPreencherOrdenacoes(t *testing.T) {
 	ids, ok = Casar(idx, naming.EpisodeInfo{IsAbsolute: true, Absolute: []int{1}})
 	if !ok || !reflect.DeepEqual(ids, []string{"e101"}) {
 		t.Fatalf("casar por absoluto: got %v,%v quero [e101],true", ids, ok)
+	}
+}
+
+// idxDaSerieAbsoluta builds an index shaped like the owner's X-Men: 76 episodes that the
+// provider numbers in TWO split layouts and never marks with absolute_number. "dvd-order" is
+// 13/13/25/15/10 and "official" is 13/13/19/17/14 — the folder layout of the library is
+// 13/13/26/14/10, which follows the dvd one for all but one file.
+func idxDaSerieAbsoluta() *Index {
+	idx := NovoIndex()
+	idx.PreencherOrdenacoes(map[string]any{
+		"default_season_type": "official",
+		"season_types":        []any{"official", "dvd-order"},
+	})
+	dividir := func(tamanhos []int) [][2]int {
+		var out [][2]int
+		for season, n := range tamanhos {
+			for numero := 1; numero <= n; numero++ {
+				out = append(out, [2]int{season + 1, numero})
+			}
+		}
+		return out
+	}
+	dvd := dividir([]int{13, 13, 25, 15, 10})
+	oficial := dividir([]int{13, 13, 19, 17, 14})
+	for i := range dvd {
+		idx.IndexarEpisodio(fmt.Sprintf("ep%02d", i+1), map[string]any{
+			"numbering": map[string]any{
+				"official":  map[string]any{"season": float64(oficial[i][0]), "number": float64(oficial[i][1])},
+				"dvd-order": map[string]any{"season": float64(dvd[i][0]), "number": float64(dvd[i][1])},
+			},
+		})
+	}
+	return idx
+}
+
+// TestAbsolutoPelaOrdemDaSerie cobre o mapeamento que faltava (issue #104): um arquivo cujo
+// nome só traz o número ABSOLUTO não tem temporada, e o provedor não preenche absolute_number
+// para essa série. A ordem da série resolve o número, e a temporada da PASTA desempata qual
+// ordem usar.
+func TestAbsolutoPelaOrdemDaSerie(t *testing.T) {
+	idx := idxDaSerieAbsoluta()
+	casos := []struct {
+		absoluto       int
+		pasta          int
+		querID         string
+		querTemporada  int
+		divergeDaPasta bool
+	}{
+		{1, 1, "ep01", 1, false},
+		{14, 2, "ep14", 2, false},
+		{27, 3, "ep27", 3, false},
+		{46, 3, "ep46", 3, false}, // o "official" poria na temporada 4; o dvd mantém na 3
+		{52, 3, "ep52", 4, true},  // o único arquivo em que o dvd discorda da pasta
+		{52, 4, "ep52", 4, false}, // na pasta 4 as duas concordam
+		{66, 4, "ep66", 4, false},
+		{76, 5, "ep76", 5, false}, // o "official" poria em S5E14; o dvd dá S5E10
+	}
+	for _, c := range casos {
+		ids, temporada, ok := CasarComPasta(idx, naming.EpisodeInfo{Absolute: []int{c.absoluto}, IsAbsolute: true}, c.pasta)
+		if !ok {
+			t.Errorf("absoluto %d (pasta %d) não casou", c.absoluto, c.pasta)
+			continue
+		}
+		if len(ids) != 1 || ids[0] != c.querID {
+			t.Errorf("absoluto %d (pasta %d) = %v, quero %s", c.absoluto, c.pasta, ids, c.querID)
+		}
+		if temporada != c.querTemporada {
+			t.Errorf("absoluto %d (pasta %d) resolveu na temporada %d, quero %d", c.absoluto, c.pasta, temporada, c.querTemporada)
+		}
+		if diverge := c.pasta != 0 && temporada != c.pasta; diverge != c.divergeDaPasta {
+			t.Errorf("absoluto %d (pasta %d): divergência = %v, quero %v", c.absoluto, c.pasta, diverge, c.divergeDaPasta)
+		}
+	}
+}
+
+// TestAbsolutoDoProvedorVenceAOrdem garante a precedência: quando o provedor PREENCHE
+// absolute_number, ele é a âncora (ADR-0021) e a derivação pela ordem não é consultada.
+func TestAbsolutoDoProvedorVenceAOrdem(t *testing.T) {
+	idx := idxDaSerieAbsoluta()
+	idx.IndexarEpisodio("especial-do-provedor", map[string]any{"absolute_number": float64(3)})
+	ids, _, ok := CasarComPasta(idx, naming.EpisodeInfo{Absolute: []int{3}, IsAbsolute: true}, 1)
+	if !ok || len(ids) != 1 || ids[0] != "especial-do-provedor" {
+		t.Fatalf("absoluto 3 = %v (%v), quero especial-do-provedor (o absolute_number do provedor vence)", ids, ok)
+	}
+}
+
+// TestAbsolutoSemOrdemConfiavelNaoCasa garante o outro lado: uma ordem com BURACO na
+// numeração (temporada que começa no episódio 5) é descartada, porque contar posições sobre
+// uma grade furada deslocaria todos os números seguintes. Melhor mandar para a revisão.
+func TestAbsolutoSemOrdemConfiavelNaoCasa(t *testing.T) {
+	idx := NovoIndex()
+	idx.IndexarEpisodio("a", map[string]any{"numbering": map[string]any{"official": map[string]any{"season": float64(1), "number": float64(1)}}})
+	idx.IndexarEpisodio("b", map[string]any{"numbering": map[string]any{"official": map[string]any{"season": float64(2), "number": float64(5)}}})
+	idx.IndexarEpisodio("c", map[string]any{"numbering": map[string]any{"official": map[string]any{"season": float64(2), "number": float64(6)}}})
+	if ids, _, ok := CasarComPasta(idx, naming.EpisodeInfo{Absolute: []int{2}, IsAbsolute: true}, 2); ok {
+		t.Fatalf("absoluto 2 = %v, quero não casar (temporada 2 começa no episódio 5)", ids)
 	}
 }
