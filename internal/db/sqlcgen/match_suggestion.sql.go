@@ -75,6 +75,49 @@ func (q *Queries) DescartarMatchSuggestion(ctx context.Context, entityID string)
 	return err
 }
 
+const listarSeriesComAlertaDeArvore = `-- name: ListarSeriesComAlertaDeArvore :many
+SELECT s.entity_id AS entity_id, e.title AS title
+FROM match_suggestion s
+JOIN entity e ON e.id = s.entity_id
+WHERE s.reason = 'tree_mismatch'
+  AND s.dismissed = 0
+ORDER BY e.title
+`
+
+type ListarSeriesComAlertaDeArvoreRow struct {
+	EntityID string
+	Title    string
+}
+
+// THE INPUT OF THE `sugerir_identidades` JOB: every series carrying an ACTIVE
+// `tree_mismatch` alert. It reads match_suggestion and not the census on purpose -- the census
+// (ListarSeriesComArvoreIncompativel) lists only series WITHOUT a row, because that is the
+// INSERT input of the post-scan; asking it for work returns exactly the series that already
+// were worked on (measured 22/nov/2026: the job's first run said "0 series signalled" while 14
+// alerts were on screen). Dismissed alerts stay out: a dismissal is a decision.
+func (q *Queries) ListarSeriesComAlertaDeArvore(ctx context.Context) ([]ListarSeriesComAlertaDeArvoreRow, error) {
+	rows, err := q.db.QueryContext(ctx, listarSeriesComAlertaDeArvore)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListarSeriesComAlertaDeArvoreRow{}
+	for rows.Next() {
+		var i ListarSeriesComAlertaDeArvoreRow
+		if err := rows.Scan(&i.EntityID, &i.Title); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listarSeriesComArvoreIncompativel = `-- name: ListarSeriesComArvoreIncompativel :many
 SELECT tv.id AS entity_id, tv.title AS title,
     CAST(SUM(CASE WHEN ep.status = 'draft' AND EXISTS (

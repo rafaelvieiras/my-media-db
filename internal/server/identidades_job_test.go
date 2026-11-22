@@ -66,6 +66,14 @@ func TestSugerirIdentidadesPoeOCandidatoNoAlerta(t *testing.T) {
 	// A pasta leva o nome que a fonte falsa devolve ("Springfield Tales"): o que esta errado e a
 	// IDENTIDADE (tmdb 999), nao o nome -- exatamente o caso que o alerta descreve.
 	serieSuspeita(t, database, "s1", "Springfield Tales", "999", 6)
+	// The post-scan's alert is what the job consumes -- and the census would NOT list s1 while
+	// this row exists, which is the bug the first production run exposed.
+	if err := sqlcgen.New(database.Write).UpsertMatchSuggestion(ctx, sqlcgen.UpsertMatchSuggestionParams{
+		EntityID: "s1", Source: "tmdb", SourceID: "999", Title: "Springfield Tales",
+		Reason: "tree_mismatch", FilesUnmatched: 6, FilesTotal: 6,
+	}); err != nil {
+		t.Fatalf("UpsertMatchSuggestion: %v", err)
+	}
 
 	suspeitas, err := s.ListarIdentidadesSuspeitas(ctx)
 	if err != nil {

@@ -813,6 +813,13 @@ type Querier interface {
 	// (stored in gravarNFOSeFaltante) -- this query only enables the job to
 	// materialize the season POSTER (season0N-poster.jpg) at the series root.
 	ListarSeasonIDsComEpisodioPresente(ctx context.Context) ([]string, error)
+	// THE INPUT OF THE `sugerir_identidades` JOB: every series carrying an ACTIVE
+	// `tree_mismatch` alert. It reads match_suggestion and not the census on purpose -- the census
+	// (ListarSeriesComArvoreIncompativel) lists only series WITHOUT a row, because that is the
+	// INSERT input of the post-scan; asking it for work returns exactly the series that already
+	// were worked on (measured 22/nov/2026: the job's first run said "0 series signalled" while 14
+	// alerts were on screen). Dismissed alerts stay out: a dismissal is a decision.
+	ListarSeriesComAlertaDeArvore(ctx context.Context) ([]ListarSeriesComAlertaDeArvoreRow, error)
 	// THE CENSUS BEHIND THE 'tree_mismatch' ALERT: series that DO have an identity but whose
 	// FILES did not fit the tree -- at least 5 draft episodes HOLDING a present file, and at
 	// least as many of them as cataloged episodes holding a file.

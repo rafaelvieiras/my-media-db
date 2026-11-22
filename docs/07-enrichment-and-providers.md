@@ -125,8 +125,10 @@ items **without** an identity, the post-scan only signals, and the media sweep o
 what is missing. The `sugerir_identidades` job (migration 0031, off by default) closes the
 gap without touching a single identity:
 
-1. it takes the **same census** the post-scan uses, so the job and the alert cannot disagree
-   about who is suspect;
+1. it takes the series that **carry an active `tree_mismatch` alert** — the alert, not the
+   census: the census lists only series _without_ a row (it is the post-scan's INSERT input), so
+   asking it for work returns exactly the series the post-scan already worked on. Measured on the
+   job's first production run: "0 series signalled" while 14 alerts were on screen;
 2. re-scores each series with the evidence above — the name of the FOLDER (derived from one
    file of the tree, because a series has no `media_file` of its own), the year the folder
    states, and how many present files the tree holds;
