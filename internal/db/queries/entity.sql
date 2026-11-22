@@ -746,3 +746,15 @@ ON CONFLICT (entity_id) DO UPDATE SET
     complete = excluded.complete,
     missing_json = excluded.missing_json,
     evaluated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now');
+
+-- name: LimparNfoDaEntity :exec
+-- Clears the exported-NFO memory of ONE entity. Called when the IDENTITY changes: the .nfo
+-- still on disk describes the previous show (showtitle, season, episode of the OTHER tree),
+-- and the completeness measure kept saying "complete" because the columns were filled -- so
+-- no job ever rewrote it. Clearing makes the item incomplete again, which is exactly what
+-- puts it back in the missing-media sweep. The tree below a series does not need it: a
+-- changed identity DISCARDS the tree and imports a new one, whose rows are born without NFO.
+UPDATE entity
+SET nfo_path = NULL,
+    nfo_written_at = NULL
+WHERE id = sqlc.arg('id');

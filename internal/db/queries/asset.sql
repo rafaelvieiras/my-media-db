@@ -85,3 +85,10 @@ WHERE id = ?;
 UPDATE asset
 SET is_principal = 0
 WHERE entity_id = ? AND kind = ?;
+
+-- name: ApagarAssetsExternosDaEntity :execrows
+-- Drops the artwork rows that came FROM A SOURCE (origin='external'), keeping the owner's own
+-- uploads (origin='user'/'local'): a changed identity invalidates what the previous one
+-- derived, and the artwork of the wrong show must not survive as an option in the picker.
+DELETE FROM asset
+WHERE entity_id = sqlc.arg('entity_id') AND origin = 'external';

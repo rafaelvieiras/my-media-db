@@ -504,6 +504,24 @@ func (q *Queries) CriarEntity(ctx context.Context, arg CriarEntityParams) (Entit
 	return i, err
 }
 
+const limparNfoDaEntity = `-- name: LimparNfoDaEntity :exec
+UPDATE entity
+SET nfo_path = NULL,
+    nfo_written_at = NULL
+WHERE id = ?1
+`
+
+// Clears the exported-NFO memory of ONE entity. Called when the IDENTITY changes: the .nfo
+// still on disk describes the previous show (showtitle, season, episode of the OTHER tree),
+// and the completeness measure kept saying "complete" because the columns were filled -- so
+// no job ever rewrote it. Clearing makes the item incomplete again, which is exactly what
+// puts it back in the missing-media sweep. The tree below a series does not need it: a
+// changed identity DISCARDS the tree and imports a new one, whose rows are born without NFO.
+func (q *Queries) LimparNfoDaEntity(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, limparNfoDaEntity, id)
+	return err
+}
+
 const listarCardsDeEpisodiosDaSerie = `-- name: ListarCardsDeEpisodiosDaSerie :many
 SELECT
     e.id, e.type, e.title, e.status, e.release_date, e.extension_data_json,

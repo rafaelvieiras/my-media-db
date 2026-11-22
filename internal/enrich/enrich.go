@@ -855,3 +855,37 @@ func derefStr(p *string) string {
 
 // isNoRows tells whether the error is sql.ErrNoRows (missing row — not a real failure).
 func isNoRows(err error) bool { return errors.Is(err, sql.ErrNoRows) }
+
+// InvalidarDerivados drops everything that was DERIVED from the external identity of
+// `entityID` and would otherwise survive a correction as if it still belonged to it:
+//
+//   - the artwork rows that came FROM A SOURCE (origin='external', the downloaded poster/
+//     fanart/season art). The owner's own uploads (origin='user') and a poster found on disk
+//     (origin='local') stay -- they are not the provider's;
+//   - every cached external payload of the entity (base detail, artwork inventory, cross ids).
+//     They are caches: the forced enrichment right after refills them, and keeping them left
+//     the artwork inventory of the WRONG show available in the picker;
+//   - the exported-NFO memory (nfo_path/nfo_written_at). The .nfo on disk still describes the
+//     other show, and with the columns filled the completeness said "complete", so no job
+//     ever rewrote it.
+//
+// Measured case (23/nov/2026, "Clube do Terror (1990)"): after the owner corrected the
+// identity from the 2019 reboot to the 1992 show, the tree and the file links came out right
+// (91 episodes, 78 files, no duplicates) but the folder kept the 2019 poster.jpg/fanart.jpg,
+// the app kept the 2019 artwork rows and the tree kept NFOs naming the 2019 episodes.
+//
+// It never touches media_file / media_file_entity: the files ARE the collection, and the
+// re-import re-links them.
+func (s *Servico) InvalidarDerivados(ctx context.Context, entityID string) error {
+	q := s.escrita()
+	if _, err := q.ApagarAssetsExternosDaEntity(ctx, entityID); err != nil {
+		return fmt.Errorf("enrich: invalidar artes de %s: %w", entityID, err)
+	}
+	if _, err := q.ApagarMediaExternalDaEntity(ctx, entityID); err != nil {
+		return fmt.Errorf("enrich: invalidar payloads de %s: %w", entityID, err)
+	}
+	if err := q.LimparNfoDaEntity(ctx, entityID); err != nil {
+		return fmt.Errorf("enrich: invalidar nfo de %s: %w", entityID, err)
+	}
+	return nil
+}

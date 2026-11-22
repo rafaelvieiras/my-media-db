@@ -34,3 +34,10 @@ ORDER BY source, id;
 -- Removes a cache row by its id (e.g. invalidate a source).
 DELETE FROM media_external
 WHERE id = ?;
+
+-- name: ApagarMediaExternalDaEntity :execrows
+-- Drops every cached external payload of the entity (base detail, artwork inventory, cross
+-- ids of the previous identity). They are CACHES re-fetched right after a forced enrichment;
+-- keeping them would leave the artwork inventory of the wrong show available in the picker.
+DELETE FROM media_external
+WHERE entity_id = sqlc.arg('entity_id');
