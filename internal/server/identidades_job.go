@@ -99,7 +99,11 @@ func (s *Server) idiomasDeBusca(ctx context.Context) ([]string, error) {
 // exists in here -- the same reason WithMidiasFaltantesJob is one.
 func WithIdentidadesJob() Option {
 	return func(s *Server) {
-		if s.db == nil || s.enrich == nil {
+		// Only the DATABASE is required here. s.enrich is built by montarServicos, which runs
+		// AFTER the options -- guarding on it would silently skip the registration for good
+		// (measured in production on 0.18.0: `job_handler_unavailable` on the first run). The
+		// methods below degrade at CALL time when enrichment is off.
+		if s.db == nil {
 			return
 		}
 		if s.jobs == nil {

@@ -52,7 +52,16 @@ func TestSugerirIdentidadesPoeOCandidatoNoAlerta(t *testing.T) {
 		t.Fatalf("Migrate: %v", err)
 	}
 	// The fake source answers the folder name with its canned series (6 episodes in 2 seasons).
-	s := New("v-teste", database, WithSearchProvider(fake.New("")), WithAssetsDir(t.TempDir()))
+	// WithIdentidadesJob is part of the setup ON PURPOSE: a guard that silently skips the
+	// registration (measured in production, 0.18.0 -> `job_handler_unavailable`) has to fail
+	// here, not in the owner's queue.
+	s := New("v-teste", database, WithSearchProvider(fake.New("")), WithAssetsDir(t.TempDir()),
+		WithIdentidadesJob())
+	// The registration is the assertion: without it the owner gets
+	// `job_handler_unavailable` from the queue, which is exactly what production did.
+	if _, ok := s.jobs.Registry.Get("sugerir_identidades"); !ok {
+		t.Fatal("handler de sugerir_identidades nao registrado (WithIdentidadesJob pulou o registro)")
+	}
 
 	// A pasta leva o nome que a fonte falsa devolve ("Springfield Tales"): o que esta errado e a
 	// IDENTIDADE (tmdb 999), nao o nome -- exatamente o caso que o alerta descreve.
