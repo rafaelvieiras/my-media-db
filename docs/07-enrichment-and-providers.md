@@ -113,9 +113,33 @@ The two tree signals come from the same component, `internal/enrich/alertas.go`,
 the row with the typo hint (migration 0029 adds `reason` and the file counts). The
 difference is what the row points at: `name` and `empty_tree` carry a **real candidate**
 (another item of the same name — measured, the phantom `Aladdin` #14383 with 0 episodes has
-the real `Aladdin: A Série Animada` #2745 next to it), while `tree_mismatch` carries the
-**current identity**, because that is the thing under suspicion. The API reflects that in
-`can_apply`, so the screen never offers to reapply what the item already is.
+the real `Aladdin: A Série Animada` #2745 next to it), while `tree_mismatch` initially
+carries the **current identity**, because that is the thing under suspicion. The API reflects
+that in `can_apply`, so the screen never offers to reapply what the item already is.
+
+### The job that fills `tree_mismatch` with a real candidate
+
+An alert that only says "this is wrong" is a chore; the owner asked why no job fixes the
+items by itself, and the answer was that none did — the retroactive enrichment only fills
+items **without** an identity, the post-scan only signals, and the media sweep only fills
+what is missing. The `sugerir_identidades` job (migration 0031, off by default) closes the
+gap without touching a single identity:
+
+1. it takes the **same census** the post-scan uses, so the job and the alert cannot disagree
+   about who is suspect;
+2. re-scores each series with the evidence above — the name of the FOLDER (derived from one
+   file of the tree, because a series has no `media_file` of its own), the year the folder
+   states, and how many present files the tree holds;
+3. only accepts a candidate that is **not** the identity the item already has, that reaches
+   `LimiarSugestao` (80 — a suggestion is a question the owner answers, not a decision the
+   app takes) and whose tree can host at least **half** those files;
+4. rewrites the hint with that candidate, keeping the `reason` and the file counts the census
+   had already measured. `can_apply` then comes out true by itself, because the candidate
+   differs from the current identity.
+
+Nothing is applied: the owner still clicks once per series. That keeps ADR-0038 intact and
+turns 14 alerts that said "this is wrong" into 14 alerts that say which identity to use —
+`Clube do Terror` → `O Clube do Terror (1992), score 100, 91 episodes for 78 files`.
 
 **The identity is kept when the tree is empty on purpose.** Revoking it would make the next
 scan try the same name, pick the same broken entry and revoke it again — a loop with a tree

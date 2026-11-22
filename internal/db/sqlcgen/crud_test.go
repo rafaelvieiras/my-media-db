@@ -532,8 +532,8 @@ func TestCRUDJob(t *testing.T) {
 
 	defs, err := q.ListarJobDefinitions(ctx)
 	check(t, err, "ListarJobDefinitions")
-	if len(defs) != 4 || defs[0].ID != "backup_vacuum" || defs[1].ID != "saude_biblioteca" || defs[2].ID != "midias_faltantes" || defs[3].ID != "trailer_tema_faltantes" {
-		t.Fatalf("ListarJobDefinitions = %+v, quero 4 linhas (backup_vacuum, saude_biblioteca, midias_faltantes, trailer_tema_faltantes)", defs)
+	if len(defs) != 5 || defs[0].ID != "backup_vacuum" || defs[1].ID != "saude_biblioteca" || defs[2].ID != "midias_faltantes" || defs[3].ID != "trailer_tema_faltantes" || defs[4].ID != "sugerir_identidades" {
+		t.Fatalf("ListarJobDefinitions = %+v, quero 5 linhas (backup_vacuum, saude_biblioteca, midias_faltantes, trailer_tema_faltantes, sugerir_identidades)", defs)
 	}
 	if defs[0].Enabled != 0 || !defs[0].ScheduleCron.Valid || defs[0].ScheduleCron.String != "0 3 * * *" {
 		t.Errorf("seed backup_vacuum = %+v, quero enabled=0 schedule='0 3 * * *'", defs[0])

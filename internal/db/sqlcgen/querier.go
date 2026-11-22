@@ -198,6 +198,15 @@ type Querier interface {
 	// condition (title == sourceID), never over an already readable title.
 	AtualizarTitulo(ctx context.Context, arg AtualizarTituloParams) error
 	BuscarHistoricoEventoPorID(ctx context.Context, id string) (BuscarHistoricoEventoPorIDRow, error)
+	// How many PRESENT video files belong to a SERIES: the ones linked to an episode that hangs on
+	// the series, or on one of its seasons (series -> season -> episode, ADR-0021), plus a file linked
+	// straight to the series through the legacy column. It is the "size of the folder" the identity
+	// match compares against: an entry with 3 episodes cannot host 26 files, and telling that apart
+	// from a legitimate partial library is the whole point of the shape gate (ADR-0046).
+	//
+	// Not recursive on purpose: the tree this app builds has exactly these two levels (see ADR-0021),
+	// and a recursive CTE inside a counting SELECT keeps the sqlc parser unhappy for no gain.
+	ContarArquivosDaSerie(ctx context.Context, id string) (int64, error)
 	// BASIC aggregate ownership: how many DIRECT CHILDREN of parent_id (via
 	// entity_relation) have, in the given kind, at least one 'present' file linked.
 	// Serves the SEASON directly (whose direct children are episodes: "owns 12 of 13").
@@ -921,6 +930,12 @@ type Querier interface {
 	// Local poster of the entity: the first asset kind='poster'. Used
 	// by the endpoint that serves the binary. No poster -> sql.ErrNoRows -> 404 in the API.
 	ObterAssetPosterPorEntity(ctx context.Context, entityID string) (Asset, error)
+	// The path of ONE present file of the series tree (episode hanging on the series or on one of its
+	// seasons). It exists because a SERIES has no media_file of its own in production: the files hang
+	// on the episodes (measured 23/nov/2026: 1.240 epsodios com arquivo na tabela de vinculo e 0 na
+	// coluna legada), so ListarMediaFilesPorEntity(serie) comes out empty and any derivation of the
+	// FOLDER NAME from a file needs this. sql.ErrNoRows when the tree holds no present file.
+	ObterCaminhoDeArquivoDaSerie(ctx context.Context, id string) (string, error)
 	// Returns the path of ANY 'present' media_file that is a descendant (via the SAME
 	// entity_relation tree) of the `entity_id` entity -- used by the discovery
 	// of LOCAL artist/album artwork for music: the canonical folder of an

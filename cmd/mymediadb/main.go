@@ -300,7 +300,7 @@ func opcoesServer(database *db.DB) ([]server.Option, error) {
 	// (listing the sources with watch_enabled=1 and registering each one)
 	// happens in srv.IniciarWatchers, called from run() after server.New (see
 	// the comment there).
-	opts = append(opts, server.WithMidiasFaltantesJob(), server.WithWatch())
+	opts = append(opts, server.WithMidiasFaltantesJob(), server.WithIdentidadesJob(), server.WithWatch())
 
 	// trailer_tema_faltantes job (ADR-0026): the same reason for a DEDICATED
 	// option -- the Handler needs the *Server itself as
