@@ -192,6 +192,17 @@ func TestMigrateDown(t *testing.T) {
 	// migration the moment a new one is added (which is exactly what happened
 	// with 0030 -- the whole cascade shifted by one and every assertion failed).
 	// Down reverts one migration at a time, from the top down to the base.
+	downPara(t, d, 30) // 0031: removes the seed of the sugerir_identidades job.
+	// 0031 only seeds a row, so the TABLE survives the down -- the check is the row, not the
+	// "query fails" shape the schema migrations use.
+	var sobrou int
+	if err := d.Read.QueryRowContext(context.Background(),
+		"SELECT count(*) FROM job_definition WHERE id = 'sugerir_identidades'").Scan(&sobrou); err != nil {
+		t.Fatalf("contar o job sugerir_identidades: %v", err)
+	} else if sobrou != 0 {
+		t.Error("job sugerir_identidades ainda existe apos o down do 0031")
+	}
+
 	downPara(t, d, 29) // 0030: removes the queue observability (step/current item/ok/failed columns and queue_item_event).
 	querFalha(t, d, "SELECT 1 FROM queue_item_event",
 		"tabela queue_item_event ainda existe após o down do 0030")
