@@ -35,9 +35,10 @@ type Suspeita struct {
 }
 
 // Alvos is the subset of *server.Server that the Handler consumes: the series that carry an
-// active "the tree does not fit the files" alert. The list is the same census the post-scan
-// uses (internal/server/posscan.go::sinalizarArvoresIncompativeis), so the job and the alert
-// cannot disagree about who is suspect.
+// active "the tree does not fit the files" alert. It is the ALERT table, not the post-scan
+// census -- the census lists only series WITHOUT a row, so it answers "nobody" for exactly the
+// series that already have an alert (measured on the first production run: "0 series
+// signalled" while 14 alerts were on screen).
 type Alvos interface {
 	ListarIdentidadesSuspeitas(ctx context.Context) ([]Suspeita, error)
 }

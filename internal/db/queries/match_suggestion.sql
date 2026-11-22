@@ -135,3 +135,17 @@ WHERE reason = 'tree_mismatch'
 -- open that the question was already answered, so the sources are not queried again (and
 -- the warning does not come back).
 UPDATE match_suggestion SET dismissed = 1 WHERE entity_id = ?;
+
+-- name: ListarSeriesComAlertaDeArvore :many
+-- THE INPUT OF THE `sugerir_identidades` JOB: every series carrying an ACTIVE
+-- `tree_mismatch` alert. It reads match_suggestion and not the census on purpose -- the census
+-- (ListarSeriesComArvoreIncompativel) lists only series WITHOUT a row, because that is the
+-- INSERT input of the post-scan; asking it for work returns exactly the series that already
+-- were worked on (measured 22/nov/2026: the job's first run said "0 series signalled" while 14
+-- alerts were on screen). Dismissed alerts stay out: a dismissal is a decision.
+SELECT s.entity_id AS entity_id, e.title AS title
+FROM match_suggestion s
+JOIN entity e ON e.id = s.entity_id
+WHERE s.reason = 'tree_mismatch'
+  AND s.dismissed = 0
+ORDER BY e.title;

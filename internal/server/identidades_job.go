@@ -17,11 +17,15 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/job/identidades"
 )
 
-// ListarIdentidadesSuspeitas implements identidades.Alvos: every series the census already
-// flags as "the tree does not fit the files". Using the census and not the alert table is what
-// keeps job and alert from disagreeing about who is suspect.
+// ListarIdentidadesSuspeitas implements identidades.Alvos: every series carrying an ACTIVE
+// "the tree does not fit the files" alert.
+//
+// It reads the ALERT, not the census. The census (ListarSeriesComArvoreIncompativel) lists only
+// series WITHOUT a row -- it is the INSERT input of the post-scan -- so asking it for work
+// returns exactly the series the post-scan already worked on. Measured on the job's first
+// production run (22/nov/2026): "0 series signalled" while 14 alerts were on screen.
 func (s *Server) ListarIdentidadesSuspeitas(ctx context.Context) ([]identidades.Suspeita, error) {
-	linhas, err := s.leitura().ListarSeriesComArvoreIncompativel(ctx)
+	linhas, err := s.leitura().ListarSeriesComAlertaDeArvore(ctx)
 	if err != nil {
 		return nil, err
 	}
