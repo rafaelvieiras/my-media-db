@@ -127,8 +127,8 @@ func TestListJobsSeed(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(body.Items) != 4 {
-		t.Fatalf("items = %d, quero 4 (seed backup_vacuum + saude_biblioteca + midias_faltantes + trailer_tema_faltantes)", len(body.Items))
+	if len(body.Items) != 5 {
+		t.Fatalf("items = %d, quero 5 (seed backup_vacuum + saude_biblioteca + midias_faltantes + trailer_tema_faltantes + sugerir_identidades)", len(body.Items))
 	}
 	byID := make(map[string]jobDTO, len(body.Items))
 	for _, it := range body.Items {
@@ -139,6 +139,7 @@ func TestListJobsSeed(t *testing.T) {
 	assertJobSeedado(t, byID, "saude_biblioteca", "0 4 * * *")
 	assertJobSeedado(t, byID, "midias_faltantes", "0 5 * * *")
 	assertJobSeedado(t, byID, "trailer_tema_faltantes", "30 4 * * *")
+	assertJobSeedado(t, byID, "sugerir_identidades", "0 5 * * *")
 }
 
 // TestPatchJobHabilitaCalculaNextRunAt proves the PATCH acceptance criterion: enabled=true

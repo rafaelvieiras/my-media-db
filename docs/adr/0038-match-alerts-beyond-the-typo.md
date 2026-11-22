@@ -36,10 +36,10 @@ owner has no reason to suspect, and nothing in the UI compares "files that fit" 
 The suggested match gains two reasons, sharing the row and the warning of ADR-0035
 (migration 0029 adds `reason`, `files_unmatched`, `files_total`):
 
-| reason | trigger | the row points at |
-|---|---|---|
-| `empty_tree` | the tree fetched for the current match has **zero episodes** | the best **sibling** of the same name, when one reaches `LimiarSugestao`; otherwise the current identity |
-| `tree_mismatch` | post-scan census: **≥ 5** draft episodes **holding a file** **and** that count **≥** cataloged episodes holding one | the **current identity** (the thing under suspicion) |
+| reason          | trigger                                                                                                             | the row points at                                                                                        |
+| --------------- | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `empty_tree`    | the tree fetched for the current match has **zero episodes**                                                        | the best **sibling** of the same name, when one reaches `LimiarSugestao`; otherwise the current identity |
+| `tree_mismatch` | post-scan census: **≥ 5** draft episodes **holding a file** **and** that count **≥** cataloged episodes holding one | the **current identity** (the thing under suspicion)                                                     |
 
 The API exposes `can_apply` so the screen hides the apply action when the candidate is the
 identity the item already has. The other reasons reuse the same two actions — apply through
@@ -54,17 +54,17 @@ than it already is, and the fix is one click away.
 
 ## Why the census lives in the post-scan
 
-The scanner knows how many files it placed, but not whether a series is *mostly* unmatched:
+The scanner knows how many files it placed, but not whether a series is _mostly_ unmatched:
 that ratio needs the whole tree, which the database already has when the scan ends. Reading
 it in the post-scan also covers series scanned by an earlier run, so an existing library
 gets the warning without waiting for another full scan.
 
 The cut was measured against a production library rather than guessed:
 
-| rule | series selected | comment |
-|---|---|---|
-| `prov ≥ 5` and `prov ≥ cataloged` | **10** | all 10 genuine (Pica-Pau 97/43, Aladdin 86/0, Batman 81/78, …) |
-| `prov ≥ 5` and `prov ≥ cataloged/2` | 11+ | `Beavis & Butt-Head` 290/430 enters on legitimate specials |
+| rule                                | series selected | comment                                                        |
+| ----------------------------------- | --------------- | -------------------------------------------------------------- |
+| `prov ≥ 5` and `prov ≥ cataloged`   | **10**          | all 10 genuine (Pica-Pau 97/43, Aladdin 86/0, Batman 81/78, …) |
+| `prov ≥ 5` and `prov ≥ cataloged/2` | 11+             | `Beavis & Butt-Head` 290/430 enters on legitimate specials     |
 
 A false negative costs nothing — the series keeps dropping drafts into the review queue,
 where it already was. A false positive costs trust in the warning, which is the only thing
@@ -102,3 +102,17 @@ the census only wrote and skipped any series that already had a row.
 
 Measured after the change: 10 alerts → 9, all 9 with real stranded files (97, 86, 81, 65, 44,
 35, 26, 23, 11).
+
+## Amendment (21/nov/2026) — a hint may carry the candidate for a WRONG identity
+
+`tree_mismatch` used to store the **current identity**, which is the thing under suspicion: the
+alert could say "this is wrong" and nothing else. The `sugerir_identidades` job now re-scores
+those series with the rules of [ADR-0046](0046-series-identity-is-title-year-and-shape.md) and,
+when a different identity reaches the suggestion threshold **and** its tree can host at least half
+the folder's files, rewrites the row with that candidate.
+
+The decision this ADR records is unchanged: **nothing is applied automatically**. The owner asked
+for the middle ground explicitly (21/nov/2026) — the job must not change an identity behind his
+back, but an alert that cannot say what to do instead is a chore. `can_apply` follows from the
+rule already in place ("a row whose candidate is the identity the entity already has is not
+applicable"), so no new field was needed.

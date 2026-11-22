@@ -379,3 +379,45 @@ LEFT JOIN entity_relation ep_rel ON ep_rel.child_id = mfe.entity_id AND ep_rel.k
 LEFT JOIN entity_relation se_rel ON se_rel.child_id = ep_rel.parent_id AND se_rel.kind = 'tv_season'
 WHERE mfe.media_file_id = sqlc.arg('media_file_id')
 ORDER BY mfe.ordinal, episodio, mfe.entity_id;
+
+-- name: ContarArquivosDaSerie :one
+-- How many PRESENT video files belong to a SERIES: the ones linked to an episode that hangs on
+-- the series, or on one of its seasons (series -> season -> episode, ADR-0021), plus a file linked
+-- straight to the series through the legacy column. It is the "size of the folder" the identity
+-- match compares against: an entry with 3 episodes cannot host 26 files, and telling that apart
+-- from a legitimate partial library is the whole point of the shape gate (ADR-0046).
+--
+-- Not recursive on purpose: the tree this app builds has exactly these two levels (see ADR-0021),
+-- and a recursive CTE inside a counting SELECT keeps the sqlc parser unhappy for no gain.
+SELECT count(DISTINCT mf.id) AS total
+FROM media_file mf
+WHERE mf.state = 'present'
+  AND (
+      mf.entity_id = sqlc.arg('id')
+      OR mf.id IN (
+          SELECT mfe.media_file_id
+          FROM media_file_entity mfe
+          JOIN entity_relation r ON r.child_id = mfe.entity_id
+          WHERE r.parent_id = sqlc.arg('id')
+             OR r.parent_id IN (SELECT s.child_id FROM entity_relation s WHERE s.parent_id = sqlc.arg('id'))
+      )
+  );
+
+-- name: ObterCaminhoDeArquivoDaSerie :one
+-- The path of ONE present file of the series tree (episode hanging on the series or on one of its
+-- seasons). It exists because a SERIES has no media_file of its own in production: the files hang
+-- on the episodes (measured 23/nov/2026: 1.240 epsodios com arquivo na tabela de vinculo e 0 na
+-- coluna legada), so ListarMediaFilesPorEntity(serie) comes out empty and any derivation of the
+-- FOLDER NAME from a file needs this. sql.ErrNoRows when the tree holds no present file.
+SELECT mf.path
+FROM media_file mf
+WHERE mf.state = 'present'
+  AND mf.id IN (
+      SELECT mfe.media_file_id
+      FROM media_file_entity mfe
+      JOIN entity_relation r ON r.child_id = mfe.entity_id
+      WHERE r.parent_id = sqlc.arg('id')
+         OR r.parent_id IN (SELECT s.child_id FROM entity_relation s WHERE s.parent_id = sqlc.arg('id'))
+  )
+ORDER BY mf.path
+LIMIT 1;
