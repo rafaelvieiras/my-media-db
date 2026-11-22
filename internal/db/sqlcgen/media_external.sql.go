@@ -21,6 +21,22 @@ func (q *Queries) ApagarMediaExternal(ctx context.Context, id string) error {
 	return err
 }
 
+const apagarMediaExternalDaEntity = `-- name: ApagarMediaExternalDaEntity :execrows
+DELETE FROM media_external
+WHERE entity_id = ?1
+`
+
+// Drops every cached external payload of the entity (base detail, artwork inventory, cross
+// ids of the previous identity). They are CACHES re-fetched right after a forced enrichment;
+// keeping them would leave the artwork inventory of the wrong show available in the picker.
+func (q *Queries) ApagarMediaExternalDaEntity(ctx context.Context, entityID string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, apagarMediaExternalDaEntity, entityID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const listarMediaExternalPorEntity = `-- name: ListarMediaExternalPorEntity :many
 SELECT id, entity_id, source, source_id, payload_json, fetched_at
 FROM media_external

@@ -11,6 +11,10 @@ import (
 
 type Querier interface {
 	ApagarAsset(ctx context.Context, id string) error
+	// Drops the artwork rows that came FROM A SOURCE (origin='external'), keeping the owner's own
+	// uploads (origin='user'/'local'): a changed identity invalidates what the previous one
+	// derived, and the artwork of the wrong show must not survive as an option in the picker.
+	ApagarAssetsExternosDaEntity(ctx context.Context, entityID string) (int64, error)
 	// Deletes all credits of an entity coming from ONE source, before repopulating on
 	// re-enrichment. Per source (not total) so it does not delete credits from another
 	// source that enriched the same work (e.g. series with a TVDB tree + TMDB cast).
@@ -23,6 +27,10 @@ type Querier interface {
 	ApagarLibrarySource(ctx context.Context, id string) error
 	// Removes a cache row by its id (e.g. invalidate a source).
 	ApagarMediaExternal(ctx context.Context, id string) error
+	// Drops every cached external payload of the entity (base detail, artwork inventory, cross
+	// ids of the previous identity). They are CACHES re-fetched right after a forced enrichment;
+	// keeping them would leave the artwork inventory of the wrong show available in the picker.
+	ApagarMediaExternalDaEntity(ctx context.Context, entityID string) (int64, error)
 	ApagarMediaFile(ctx context.Context, id string) error
 	// Deletes all files of a source (used when removing the datasource, 0035).
 	// The media_file_entity cascade (migration 0009, ON DELETE CASCADE on
@@ -422,6 +430,13 @@ type Querier interface {
 	FinalizarQueueItem(ctx context.Context, arg FinalizarQueueItemParams) (QueueItem, error)
 	// queued -> running transition, at the START of processing by the worker.
 	IniciarQueueItem(ctx context.Context, id string) (QueueItem, error)
+	// Clears the exported-NFO memory of ONE entity. Called when the IDENTITY changes: the .nfo
+	// still on disk describes the previous show (showtitle, season, episode of the OTHER tree),
+	// and the completeness measure kept saying "complete" because the columns were filled -- so
+	// no job ever rewrote it. Clearing makes the item incomplete again, which is exactly what
+	// puts it back in the missing-media sweep. The tree below a series does not need it: a
+	// changed identity DISCARDS the tree and imports a new one, whose rows are born without NFO.
+	LimparNfoDaEntity(ctx context.Context, id string) error
 	// The files of ONE entity in a given role (episode detail: mediainfo,
 	// path, state). Filters by entity_id + kind and joins with media_file to
 	// bring the file row. Orders by ordinal and then by creation, stable.

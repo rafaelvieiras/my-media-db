@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -198,9 +199,18 @@ func (s *Server) aplicarIdentidadeExterna(w http.ResponseWriter, ctx context.Con
 		respondErroInterno(w)
 		return false
 	}
-	// A manual identity change is a RESET of what was derived from the previous one: the
-	// season/episode tree described the other show, so it goes away before the new tree is
-	// imported (otherwise both sets live inside the same seasons -- see
+	// A manual identity change is a RESET of what was derived from the previous one. FIRST the
+	// data that would pass for the new identity: the downloaded artwork, the cached external
+	// payloads and the exported-NFO memory (see enrich.InvalidarDerivados) -- measured in
+	// production: without this the folder kept the previous show's poster.jpg/fanart.jpg and
+	// the NFOs kept naming its episodes, while the completeness said "complete" and no job
+	// ever rewrote them.
+	if err := s.enrich.InvalidarDerivados(ctx, id); err != nil {
+		respondErroInterno(w)
+		return false
+	}
+	// Then the season/episode tree: it described the other show, so it goes away before the
+	// new tree is imported (otherwise both sets live inside the same seasons -- see
 	// enrich.DescartarArvoreSerie). The files stay: they hang on the series, and the
 	// re-import re-links them by number.
 	if tipo == "tv" {
@@ -214,6 +224,13 @@ func (s *Server) aplicarIdentidadeExterna(w http.ResponseWriter, ctx context.Con
 	if err := s.enrich.Enriquecer(ctx, id, source, sourceID, tipo, langs, true); err != nil {
 		respondFonteIndisponivel(w)
 		return false
+	}
+	// The identity changed, so the artwork JUST invalidated is missing again: materialize it
+	// now instead of leaving the folder with the previous show's poster until somebody runs
+	// the media sweep. Best-effort by construction -- the tree/identity are already written,
+	// and a download failure must never turn a successful correction into an error.
+	if _, _, err := s.MaterializarMidiasFaltantes(ctx, id); err != nil {
+		log.Printf("review: materializar apos trocar a identidade de %s falhou (segue): %v", id, err)
 	}
 	// The item now has a REAL identity: the hint about the old (unresolved) state is over.
 	s.esquecerSugestao(ctx, id)

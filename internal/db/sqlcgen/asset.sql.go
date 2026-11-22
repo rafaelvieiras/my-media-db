@@ -20,6 +20,22 @@ func (q *Queries) ApagarAsset(ctx context.Context, id string) error {
 	return err
 }
 
+const apagarAssetsExternosDaEntity = `-- name: ApagarAssetsExternosDaEntity :execrows
+DELETE FROM asset
+WHERE entity_id = ?1 AND origin = 'external'
+`
+
+// Drops the artwork rows that came FROM A SOURCE (origin='external'), keeping the owner's own
+// uploads (origin='user'/'local'): a changed identity invalidates what the previous one
+// derived, and the artwork of the wrong show must not survive as an option in the picker.
+func (q *Queries) ApagarAssetsExternosDaEntity(ctx context.Context, entityID string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, apagarAssetsExternosDaEntity, entityID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const atualizarAssetLocalPath = `-- name: AtualizarAssetLocalPath :exec
 UPDATE asset
 SET local_path = ?

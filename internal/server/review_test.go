@@ -659,3 +659,82 @@ func TestCorrigirDescartaArvoreDaIdentidadeAntiga(t *testing.T) {
 		}
 	}
 }
+
+// TestCorrigirInvalidaODerivadoDaIdentidadeAnterior: correcting the identity must invalidate
+// what the PREVIOUS one produced, or the wrong show keeps passing for the new one. Measured in
+// production on "Clube do Terror (1990)" (23/nov/2026): the tree and the links came out right
+// while the folder kept the 2019 poster.jpg/fanart.jpg, the app kept serving the 2019 artwork
+// and the tree kept NFOs naming the 2019 episodes -- with the completeness saying "complete",
+// so no job ever rewrote them.
+//
+// The owner's own upload (origin='user') is NOT derived data and must survive.
+func TestCorrigirInvalidaODerivadoDaIdentidadeAnterior(t *testing.T) {
+	h, d, _, _, _ := setupEnrichServer(t)
+	ctx := context.Background()
+	semearEntity(t, d, "e1", "movie", "Palpite Errado")
+	semearFile(t, d, "f1", "e1", "/lib/x.mkv", "present", 40, "")
+
+	// Derived from the WRONG identity: a downloaded poster, an artwork inventory, an exported
+	// NFO and the cached base payload.
+	semearAssetOrigin(t, d, "a-externo", "e1", kindPoster, "external", "/data/assets/e1/poster.jpg", "")
+	semearAssetOrigin(t, d, "a-dono", "e1", "fanart", "user", "/data/assets/e1/meu.jpg", "")
+	semearMediaExternal(t, d, "me-antigo", "e1", "fanarttv", `{"artes":{}}`)
+	semearMediaExternal(t, d, "me-base", "e1", "tmdb", `{"name":"Show Errado"}`)
+	if err := escrita(t, d).AtualizarEntityNfo(ctx, sqlcgen.AtualizarEntityNfoParams{
+		NfoPath:      nsOf("/lib/e1/tvshow.nfo"),
+		NfoWrittenAt: nsOf("2026-11-20T00:04:00Z"),
+		ID:           "e1",
+	}); err != nil {
+		t.Fatalf("AtualizarEntityNfo: %v", err)
+	}
+
+	rec := do(t, h, http.MethodPost, "/api/v1/entities/e1/correct", map[string]string{"source_id": "555"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("correct status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+
+	assets, err := escrita(t, d).ListarAssetsPorEntity(ctx, "e1")
+	if err != nil {
+		t.Fatalf("ListarAssetsPorEntity: %v", err)
+	}
+	for _, a := range assets {
+		if a.ID == "a-externo" {
+			t.Error("o poster baixado da identidade ANTERIOR sobreviveu à correção")
+		}
+		if a.ID == "a-dono" && a.Origin != "user" {
+			t.Errorf("o upload do dono virou %q, quero 'user'", a.Origin)
+		}
+	}
+	if !temAsset(assets, "a-dono") {
+		t.Error("o upload do dono foi apagado junto com o que a fonte baixou")
+	}
+
+	externos, err := escrita(t, d).ListarMediaExternalPorEntity(ctx, "e1")
+	if err != nil {
+		t.Fatalf("ListarMediaExternalPorEntity: %v", err)
+	}
+	for _, me := range externos {
+		if me.ID == "me-antigo" || me.ID == "me-base" {
+			t.Errorf("o payload em cache %q da identidade anterior sobreviveu", me.ID)
+		}
+	}
+
+	ent, err := escrita(t, d).ObterEntity(ctx, "e1")
+	if err != nil {
+		t.Fatalf("ObterEntity: %v", err)
+	}
+	if ent.NfoPath.Valid || ent.NfoWrittenAt.Valid {
+		t.Errorf("nfo_path/nfo_written_at = %v/%v, quero vazio: o NFO do outro item não vale mais",
+			ent.NfoPath, ent.NfoWrittenAt)
+	}
+}
+
+// temAsset tells whether `alvos` contains the asset id.
+func temAsset(assets []sqlcgen.Asset, id string) bool {
+	for _, a := range assets {
+		if a.ID == id {
+			return true
+		}
+	}
+	return false
+}
