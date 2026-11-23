@@ -64,3 +64,5 @@ replaces the flat list of "open decisions" with a traceable record, one file per
 | [0044](0044-one-nfo-per-file.md) | One NFO per video file, one `<episodedetails>` block per episode, numbering from the tree | NF1 | Accepted |
 | [0045](0045-an-absolute-number-is-resolved-through-the-series-ordering.md) | An absolute number with no `absolute_number` from the provider is resolved through the series' orderings, with the folder's season as the anchor | #105 | Accepted |
 | [0046](0046-series-identity-is-title-year-and-shape.md) | A series is identified by title in any language, the folder's year and the shape of the tree | #112 | Accepted |
+| [0047](0047-a-folder-is-a-shape.md) | A folder is a shape: an unmatched series still gets its provisional tree, a specials folder is season 0, and a later identity adopts the provisional episode | #136 | Accepted |
+| [0048](0048-review-requires-a-file.md) | The review queue requires a file: a hole in the collection is not a decision, and a provisional episode is the series' card | #136 | Accepted |
