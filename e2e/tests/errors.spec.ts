@@ -49,6 +49,15 @@ test('re-enriching without a source id shows 422 inline and does not corrupt the
   await page.getByRole('link', { name: 'External IDs' }).click()
   await expect(page).toHaveURL(new RegExp(`/entities/${id}/edit/ids$`))
   await expect(page.getByText('No external id set.')).toBeVisible()
+
+  // The two write buttons stay DISABLED while the identity did not change (writing the
+  // same map again is noise): a source row WITHOUT an id is the "no source id" case of
+  // this journey and is enough to arm "Save and re-enrich".
+  await expect(
+    page.getByRole('button', { name: 'Save and re-enrich' }),
+  ).toBeDisabled()
+  await page.getByRole('button', { name: 'Add source' }).click()
+  await page.getByRole('textbox', { name: 'External id source' }).fill('tmdb')
   await page.getByRole('button', { name: 'Save and re-enrich' }).click()
 
   // INLINE error (role=alert) with the real pt-BR message of the 422 envelope.

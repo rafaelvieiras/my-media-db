@@ -3,6 +3,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Copy, Eye, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { CorpoComCarga } from '@/components/query-states'
 import { jellyfinWebhookTokenQueryOptions } from '@/lib/queries'
 import { useT } from '@/lib/i18n'
@@ -73,6 +83,9 @@ function JellyfinWebhookTokenSection({
   const t = useT()
   const queryClient = useQueryClient()
   const [mostrarToken, setMostrarToken] = useState(false)
+  // Replacing a token invalidates the configured URL in Jellyfin: the confirmation
+  // is an AlertDialog (never `window.confirm`, which the browser can suppress).
+  const [confirmarRegenerar, setConfirmarRegenerar] = useState(false)
 
   const mutation = useMutation({
     mutationFn: regenerateJellyfinWebhookToken,
@@ -90,10 +103,8 @@ function JellyfinWebhookTokenSection({
       : null
 
   function gerarOuRegenerar() {
-    if (
-      tokenAtual &&
-      !window.confirm(t('settings.webhook.confirmRegenerate'))
-    ) {
+    if (tokenAtual) {
+      setConfirmarRegenerar(true)
       return
     }
     mutation.mutate()
@@ -190,6 +201,33 @@ function JellyfinWebhookTokenSection({
             : t('settings.webhook.regenerate')}
         </Button>
       </div>
+
+      <AlertDialog
+        open={confirmarRegenerar}
+        onOpenChange={setConfirmarRegenerar}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('settings.webhook.confirmRegenerateTitle')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('settings.webhook.confirmRegenerate')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.action.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmarRegenerar(false)
+                mutation.mutate()
+              }}
+            >
+              {t('settings.webhook.confirmRegenerateAction')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
@@ -212,18 +250,27 @@ function CopyButton({ label, valor }: { label: string; valor: string }) {
   }
 
   return (
-    <Button type="button" variant="outline" size="sm" onClick={copiar}>
-      {copiado ? (
-        <>
-          <Check className="size-4" aria-hidden />
-          {t('settings.webhook.copied')}
-        </>
-      ) : (
-        <>
-          <Copy className="size-4" aria-hidden />
-          {label}
-        </>
-      )}
-    </Button>
+    <>
+      <Button type="button" variant="outline" size="sm" onClick={copiar}>
+        {copiado ? (
+          <>
+            <Check className="size-4" aria-hidden />
+            {t('settings.webhook.copied')}
+          </>
+        ) : (
+          <>
+            <Copy className="size-4" aria-hidden />
+            {label}
+          </>
+        )}
+      </Button>
+      {/* The feedback is announced, not only painted: the visible label swaps, so this
+          live region is what the screen reader hears. It lives NEXT TO the button, not
+          inside it — a `role="status"` subtree inside a button is skipped by the
+          accessible name computation (the button would lose the name the E2E/AT need). */}
+      <span role="status" className="sr-only">
+        {copiado ? t('settings.webhook.copied') : ''}
+      </span>
+    </>
   )
 }

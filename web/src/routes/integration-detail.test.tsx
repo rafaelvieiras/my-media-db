@@ -6,6 +6,11 @@ import type { IntegrationDetail } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 import { erroJson, okJson } from '@/test/detail-harness'
 
+// The "leave without saving" guard is the router blocker: outside a
+// RouterProvider it cannot run, so it is mocked here (the hook has its own test and
+// each screen asserts the argument it passes).
+vi.mock('@/lib/use-unsaved-guard', () => ({ useUnsavedGuard: vi.fn() }))
+
 // Route `/dashboard/integrations/$slug`: it loads the schema+
 // effective value and mounts the `IntegrationForm`, which reseeds ITS OWN fields
 // (without unmounting) from the PUT echo after a successful write —

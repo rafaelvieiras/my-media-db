@@ -87,6 +87,11 @@ describe('non-destructive enrich (Phase 3)', () => {
     fireEvent.click(screen.getByRole('link', { name: 'External IDs' }))
     await screen.findByText('Save and re-enrich')
 
+    // The action is disabled while nothing changed (UX audit): the journey edits
+    // the id before re-enriching.
+    fireEvent.change(screen.getByLabelText('Id in the source tmdb'), {
+      target: { value: '604' },
+    })
     fireEvent.click(screen.getByText('Save and re-enrich'))
 
     await waitFor(() => expect(enrichChamado).toBe(true))

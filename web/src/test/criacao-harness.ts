@@ -1,5 +1,18 @@
 import { vi } from 'vitest'
 import { okFields } from '@/test/entity-fixtures'
+import { LinkMock } from '@/test/link-mock'
+
+// navegacaoDaCriacao is the spy shared by the tests of the local creation screens:
+// both mount the screen with the mocked router and then assert where it navigated.
+export const navegacaoDaCriacao = { navigate: vi.fn() }
+
+// roteadorDaCriacao returns the mocked module of @tanstack/react-router for the
+// creation screens: `useNavigate` comes from the shared spy and `<Link>` becomes the
+// plain <a> of link-mock. Each test file keeps its one-line `vi.mock` with a dynamic
+// import (the factory is hoisted, so it cannot close over imports).
+export function roteadorDaCriacao() {
+  return { useNavigate: () => navegacaoDaCriacao.navigate, Link: LinkMock }
+}
 
 // SHARED helper of the local creation screens (item × collection):
 // it installs a global `fetch` that serves the descriptors on GET

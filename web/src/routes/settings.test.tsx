@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SettingsScreen } from '@/routes/settings'
+import { useUnsavedGuard } from '@/lib/use-unsaved-guard'
 import type {
   AutoMaterializeArtworkSettings,
   AutoDownloadTrailerTemaSettings,
@@ -12,6 +13,11 @@ import type {
 import { renderWithClient } from '@/test/render'
 import { erroJson, okJson } from '@/test/detail-harness'
 import { respostaCompletude } from '@/test/catalog-completeness-harness'
+
+// The "leave without saving" guard is the router blocker: outside a
+// RouterProvider it cannot run, so it is mocked here (the hook has its own test and
+// each screen asserts the argument it passes).
+vi.mock('@/lib/use-unsaved-guard', () => ({ useUnsavedGuard: vi.fn() }))
 
 // Current config returned by GET /settings/languages in the tests.
 const settingsIniciais: LanguageSettings = {
@@ -267,6 +273,21 @@ function corpoDoPut(fetchMock: ReturnType<typeof fetchRouter>, url: string) {
   return JSON.parse((putCall![1] as RequestInit).body as string) as unknown
 }
 
+// salvarYtdlp clicks the section's save button, waits for the success message and
+// returns the body of the yt-dlp PUT — the closing step of every write test of that
+// section.
+async function salvarYtdlp(
+  user: ReturnType<typeof userEvent.setup>,
+  secao: ReturnType<typeof within>,
+  fetchMock: ReturnType<typeof fetchRouter>,
+) {
+  await user.click(secao.getByRole('button', { name: BOTAO_SALVAR }))
+  await waitFor(() =>
+    expect(secao.getByText('Settings saved.')).toBeInTheDocument(),
+  )
+  return corpoDoPut(fetchMock, '/api/v1/settings/ytdlp')
+}
+
 describe('SettingsScreen', () => {
   it('reads the current config and seeds the form', async () => {
     const secaoIdiomas = await renderForm(fetchRouter())
@@ -362,7 +383,12 @@ describe('SettingsScreen', () => {
     })
     const secaoIdiomas = await renderForm(fetchMock)
 
-    // Valid state on the client (it touches nothing), but the server rejects it.
+    // A change is needed to enable the button (the section marks itself dirty) —
+    // the state stays valid on the client, but the server rejects it.
+    await user.selectOptions(
+      secaoIdiomas.getByLabelText('Primary language'),
+      'en',
+    )
     await user.click(secaoIdiomas.getByRole('button', { name: BOTAO_SALVAR }))
 
     await waitFor(() =>
@@ -439,6 +465,9 @@ describe('SettingsScreen', () => {
     })
     const secao = await renderFormRetroativo(fetchMock)
 
+    const campo = secao.getByLabelText('Retry after (days)')
+    await user.clear(campo)
+    await user.type(campo, '20')
     await user.click(secao.getByRole('button', { name: BOTAO_SALVAR }))
 
     await waitFor(() =>
@@ -629,12 +658,8 @@ describe('SettingsScreen', () => {
 
     const input = secao.getByLabelText('yt-dlp custom binary path')
     await user.type(input, '/opt/yt-dlp')
-    await user.click(secao.getByRole('button', { name: BOTAO_SALVAR }))
 
-    await waitFor(() =>
-      expect(secao.getByText('Settings saved.')).toBeInTheDocument(),
-    )
-    expect(corpoDoPut(fetchMock, '/api/v1/settings/ytdlp')).toEqual({
+    expect(await salvarYtdlp(user, secao, fetchMock)).toEqual({
       custom_binary_path: '/opt/yt-dlp',
     })
   })
@@ -653,12 +678,8 @@ describe('SettingsScreen', () => {
 
     const input = secao.getByLabelText('yt-dlp custom binary path')
     await user.clear(input)
-    await user.click(secao.getByRole('button', { name: BOTAO_SALVAR }))
 
-    await waitFor(() =>
-      expect(secao.getByText('Settings saved.')).toBeInTheDocument(),
-    )
-    expect(corpoDoPut(fetchMock, '/api/v1/settings/ytdlp')).toEqual({
+    expect(await salvarYtdlp(user, secao, fetchMock)).toEqual({
       custom_binary_path: null,
     })
   })
@@ -674,6 +695,7 @@ describe('SettingsScreen', () => {
     })
     const secao = await renderFormYtdlp(fetchMock)
 
+    await user.type(secao.getByLabelText('yt-dlp custom binary path'), '/x')
     await user.click(secao.getByRole('button', { name: BOTAO_SALVAR }))
 
     await waitFor(() =>
@@ -685,5 +707,20 @@ describe('SettingsScreen', () => {
     const secao = await renderFormYtdlp(fetchRouter())
 
     expect(secao.getByText(/YouTube Terms of Service/)).toBeInTheDocument()
+  })
+})
+
+describe('SettingsScreen — manual save model', () => {
+  it('keeps "Save" disabled until the section changes, then tells the guard', async () => {
+    const user = userEvent.setup()
+    const secao = await renderForm(fetchRouter())
+    const salvar = secao.getByRole('button', { name: BOTAO_SALVAR })
+
+    expect(salvar).toBeDisabled()
+    expect(useUnsavedGuard).toHaveBeenLastCalledWith(false)
+
+    await user.selectOptions(secao.getByLabelText('Primary language'), 'en')
+    expect(salvar).toBeEnabled()
+    await waitFor(() => expect(useUnsavedGuard).toHaveBeenLastCalledWith(true))
   })
 })

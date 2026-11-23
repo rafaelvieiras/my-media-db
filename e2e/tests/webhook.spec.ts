@@ -63,9 +63,21 @@ test('webhook page: generates, shows, copies and regenerates the Jellyfin token'
   const urlCopiada = await page.evaluate(() => navigator.clipboard.readText())
   expect(urlCopiada).toContain(`/api/v1/webhooks/jellyfin?token=${tokenAtual}`)
 
-  // Regenerate: confirms the native dialog and checks that the displayed token changed.
-  page.once('dialog', (dialog) => dialog.accept())
+  // Regenerate: the confirmation is the product's own AlertDialog (a `window.confirm`
+  // can be suppressed by the browser and cannot say which token gets invalidated).
+  // Cancelling first proves nothing is written; then it confirms and the token changes.
   await page.getByRole('button', { name: 'Generate new token' }).click()
+  const confirmacao = page.getByRole('alertdialog')
+  await expect(confirmacao).toBeVisible()
+  await expect(confirmacao).toContainText(
+    'Generating a new token invalidates the current one',
+  )
+  await confirmacao.getByRole('button', { name: 'Cancel' }).click()
+  await expect(confirmacao).toBeHidden()
+  await expect(campoToken).toHaveValue(tokenAtual)
+
+  await page.getByRole('button', { name: 'Generate new token' }).click()
+  await confirmacao.getByRole('button', { name: 'Regenerate token' }).click()
   await expect(campoToken).not.toHaveValue(tokenAtual)
 
   // Outbound placeholder always visible, without depending on any API.

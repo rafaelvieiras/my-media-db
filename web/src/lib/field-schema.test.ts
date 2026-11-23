@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  OBRIGATORIO_NA_CRIACAO,
   construirPatchEdicao,
   criaveis,
   ordenados,
@@ -177,5 +178,50 @@ describe('field-schema — construirPatchEdicao', () => {
     expect(
       construirPatchEdicao(descritoresPadrao, { ...seeds }, seeds),
     ).toEqual({})
+  })
+})
+
+describe('field-schema — data e mensagens localizadas', () => {
+  const campos = descritoresPadrao
+
+  it('recusa uma data que não existe no calendário', () => {
+    const schema = schemaZod(campos, 'edicao')
+    const base = {
+      title: '',
+      description: '',
+      tags: [],
+      original_title: '',
+      release_date: '32/13/2026',
+      local_rating: '',
+    }
+    expect(schema.safeParse(base).success).toBe(false)
+    expect(
+      schema.safeParse({ ...base, release_date: '2026-02-31' }).success,
+    ).toBe(false)
+    expect(
+      schema.safeParse({ ...base, release_date: '2026-02-28' }).success,
+    ).toBe(true)
+    // Empty keeps meaning "inherit/set empty".
+    expect(schema.safeParse({ ...base, release_date: '' }).success).toBe(true)
+  })
+
+  it('usa as mensagens do catálogo quando recebe o tradutor', () => {
+    const t = ((chave: string, params?: Record<string, unknown>) =>
+      params ? `${chave}:${String(params.field ?? params)}` : chave) as never
+    const schema = schemaZod(campos, 'criacao', t)
+    const resultado = schema.safeParse({
+      title: '',
+      description: '',
+      original_title: '',
+      release_date: 'ontem',
+    })
+    expect(resultado.success).toBe(false)
+    const mensagens = resultado.error!.issues.map((i) => i.message)
+    expect(mensagens).toContain('entity.edit.requiredField:Título')
+    expect(mensagens).toContain('entity.edit.invalidDate')
+  })
+
+  it('OBRIGATORIO_NA_CRIACAO é a fonte única do asterisco e do aria-required', () => {
+    expect([...OBRIGATORIO_NA_CRIACAO]).toEqual(['title'])
   })
 })

@@ -25,6 +25,7 @@ export const settings = defineDomain({
         'Minimum interval between two attempts to re-enrich the SAME item, for libraries without an override of their own.',
       retryDays: 'Retry after (days)',
       retryDaysInvalid: 'Enter a whole number between 1 and 365 days.',
+      loading: 'Loading the retroactive enrichment settings…',
     },
     artwork: {
       title: 'Artwork',
@@ -32,6 +33,7 @@ export const settings = defineDomain({
         'How posters/backgrounds are materialized into the real folder of the library.',
       toggle: 'Download artwork automatically after the scan',
       hint: 'When a new item is auto-imported during the scan, downloads and copies the artwork it finds into the real folder of the library right away, without waiting for a manual action or the periodic job.',
+      loading: 'Loading the artwork settings…',
     },
     trailerTheme: {
       title: 'Trailer and theme song',
@@ -39,6 +41,7 @@ export const settings = defineDomain({
         'How the automatic download of the trailer and the theme song via yt-dlp behaves (briefings 0102/0103).',
       toggle: 'Download trailer and theme automatically',
       hint: 'When the scan imports a new item, tries to download the trailer and the theme song automatically in the background (it does not block the scan). Off by default.',
+      loading: 'Loading the trailer and theme settings…',
     },
     completeness: {
       title: 'Cataloging completeness',
@@ -105,6 +108,8 @@ export const settings = defineDomain({
       regenerate: 'Generate new token',
       confirmRegenerate:
         'Generating a new token invalidates the current one — Jellyfin will stop authenticating until you reconfigure the URL. Continue?',
+      confirmRegenerateTitle: 'Generate a new token?',
+      confirmRegenerateAction: 'Regenerate token',
       tokenLabel: 'Token',
       tokenAria: 'Webhook token',
       showToken: 'Show token',
@@ -176,6 +181,7 @@ export const settings = defineDomain({
         'Intervalo mínimo entre duas tentativas de reenriquecer o MESMO item, para bibliotecas sem override próprio.',
       retryDays: 'Repetir tentativa após (dias)',
       retryDaysInvalid: 'Informe um número inteiro entre 1 e 365 dias.',
+      loading: 'Carregando as configurações de enriquecimento retroativo…',
     },
     artwork: {
       title: 'Artes',
@@ -183,6 +189,7 @@ export const settings = defineDomain({
         'Comportamento da materialização de pôsteres/fundos na pasta real da biblioteca.',
       toggle: 'Baixar artes automaticamente após o scan',
       hint: 'Quando um item novo é auto-importado durante o scan, baixa e copia as artes encontradas para a pasta real da biblioteca na hora, sem esperar ação manual ou o job periódico.',
+      loading: 'Carregando as configurações de arte…',
     },
     trailerTheme: {
       title: 'Trailer e tema musical',
@@ -190,6 +197,7 @@ export const settings = defineDomain({
         'Comportamento do download automático de trailer e música-tema via yt-dlp (briefings 0102/0103).',
       toggle: 'Baixar trailer e tema automaticamente',
       hint: 'Ao importar um item novo no scan, tenta baixar trailer e música-tema automaticamente em segundo plano (não bloqueia o scan). Desligado por padrão.',
+      loading: 'Carregando as configurações de trailer e música-tema…',
     },
     completeness: {
       title: 'Completude de catalogação',
@@ -256,6 +264,8 @@ export const settings = defineDomain({
       regenerate: 'Gerar novo token',
       confirmRegenerate:
         'Gerar um novo token invalida o atual — o Jellyfin vai parar de autenticar até você reconfigurar a URL. Continuar?',
+      confirmRegenerateTitle: 'Gerar um token novo?',
+      confirmRegenerateAction: 'Regerar token',
       tokenLabel: 'Token',
       tokenAria: 'Token do webhook',
       showToken: 'Mostrar token',
@@ -328,6 +338,7 @@ export const settings = defineDomain({
         'Intervalo mínimo entre dos intentos de volver a enriquecer el MISMO elemento, para bibliotecas sin un override propio.',
       retryDays: 'Reintentar después de (días)',
       retryDaysInvalid: 'Indica un número entero entre 1 y 365 días.',
+      loading: 'Cargando la configuración de enriquecimiento retroactivo…',
     },
     artwork: {
       title: 'Arte',
@@ -335,6 +346,7 @@ export const settings = defineDomain({
         'Comportamiento de la materialización de pósteres/fondos en la carpeta real de la biblioteca.',
       toggle: 'Descargar el arte automáticamente después del escaneo',
       hint: 'Cuando un elemento nuevo se autoimporta durante el escaneo, descarga y copia el arte encontrado en la carpeta real de la biblioteca al momento, sin esperar una acción manual ni la tarea periódica.',
+      loading: 'Cargando la configuración de arte…',
     },
     trailerTheme: {
       title: 'Tráiler y tema musical',
@@ -342,6 +354,7 @@ export const settings = defineDomain({
         'Comportamiento de la descarga automática de tráiler y tema musical vía yt-dlp (briefings 0102/0103).',
       toggle: 'Descargar tráiler y tema automáticamente',
       hint: 'Al importar un elemento nuevo en el escaneo, intenta descargar el tráiler y el tema musical automáticamente en segundo plano (no bloquea el escaneo). Desactivado por defecto.',
+      loading: 'Cargando la configuración de tráiler y tema musical…',
     },
     completeness: {
       title: 'Completitud de catalogación',
@@ -409,6 +422,8 @@ export const settings = defineDomain({
       regenerate: 'Generar token nuevo',
       confirmRegenerate:
         'Generar un token nuevo invalida el actual — Jellyfin dejará de autenticarse hasta que vuelvas a configurar la URL. ¿Continuar?',
+      confirmRegenerateTitle: '¿Generar un token nuevo?',
+      confirmRegenerateAction: 'Regenerar token',
       tokenLabel: 'Token',
       tokenAria: 'Token del webhook',
       showToken: 'Mostrar token',

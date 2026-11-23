@@ -28,7 +28,7 @@ import { rotuloIdioma } from '@/lib/languages'
 // the shape of the submit (flat POST × per-language PATCH) stays in the route.
 
 const CLASSE_TEXTAREA = cn(
-  'flex min-h-20 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm shadow-xs outline-none',
+  'flex min-h-32 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm shadow-xs outline-none',
   'transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30',
 )
 
@@ -63,6 +63,9 @@ export interface SchemaFormProps {
   // state (unsaved changes since the last load/save), never on
   // every keystroke — the route combines it with the one of the other edit blocks.
   onDirtyChange?: (sujo: boolean) => void
+  // Fields that the backend requires IN THIS CONTEXT (creation): they render the
+  // asterisk and `aria-required`. The server 422 keeps being authoritative.
+  obrigatorios?: ReadonlySet<string>
 }
 
 export function SchemaForm({
@@ -82,6 +85,7 @@ export function SchemaForm({
   lang,
   header,
   onDirtyChange,
+  obrigatorios,
 }: SchemaFormProps) {
   // Zod is Standard Schema (accepted directly by TanStack Form v1). The `input` of the
   // derived schema is `unknown` (effect of the number refine), so we narrow it
@@ -104,6 +108,39 @@ export function SchemaForm({
   const t = useT()
   const traduziveis = lista.filter((f) => f.group === 'traduzivel')
   const neutros = lista.filter((f) => f.group === 'neutro')
+  // The summary appears only after a submit attempt with problems; it disappears
+  // by itself as soon as the values become valid (the `form.Subscribe` below
+  // recomputes it on every change).
+  const [mostrarResumo, setMostrarResumo] = useState(false)
+
+  // resumoDeErros names the fields that fail the SAME schema the form validates
+  // with, so the top of the form says what is missing before the owner hunts for
+  // the red text in a long form.
+  function resumoDeErros(): string[] {
+    const resultado = schema.safeParse(form.state.values)
+    if (resultado.success) return []
+    const nomes = new Set<string>()
+    for (const issue of resultado.error.issues) {
+      nomes.add(String(issue.path[0] ?? ''))
+    }
+    return [...nomes]
+      .map((nome) => lista.find((d) => d.name === nome)?.label ?? nome)
+      .filter((rotulo) => rotulo !== '')
+  }
+
+  // The submit button is ALWAYS enabled on purpose: a disabled primary action with
+  // no explanation is a dead end (the owner cannot discover what is missing).
+  // Submitting marks every field as touched, so the inline errors stop being silent.
+  async function enviar(e: React.FormEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    for (const d of lista) {
+      form.setFieldMeta(d.name, (prev) => ({ ...prev, isTouched: true }))
+    }
+    void form.validateAllFields('submit')
+    setMostrarResumo(true)
+    await form.handleSubmit()
+  }
 
   function renderCampo(d: FieldDescriptor) {
     return (
@@ -117,6 +154,7 @@ export function SchemaForm({
             placeholder={placeholders?.[d.name] ?? d.placeholder ?? undefined}
             onClear={onClear}
             clearDisabled={clearDisabled}
+            obrigatorio={obrigatorios?.has(d.name) ?? false}
           />
         )}
       />
@@ -126,13 +164,35 @@ export function SchemaForm({
   return (
     <form
       onSubmit={(e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        void form.handleSubmit()
+        void enviar(e)
       }}
       className="mt-2 flex flex-col gap-5 rounded-xl bg-card p-4 ring-1 ring-foreground/10"
     >
       {header}
+
+      {mostrarResumo ? (
+        <form.Subscribe
+          selector={(s) => s.values}
+          children={() => {
+            const problemas = resumoDeErros()
+            return problemas.length > 0 ? (
+              <div
+                role="alert"
+                className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+              >
+                <p className="font-medium">
+                  {t('entity.edit.requiredSummary')}
+                </p>
+                <ul className="list-disc pl-5">
+                  {problemas.map((problema) => (
+                    <li key={problema}>{problema}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null
+          }}
+        />
+      ) : null}
 
       {onDirtyChange ? (
         <form.Subscribe
@@ -177,17 +237,11 @@ export function SchemaForm({
         </p>
       ) : null}
 
-      <div className="flex items-center gap-2">
+      <div className="sticky bottom-0 z-10 -mx-4 flex items-center gap-2 border-t border-border bg-card/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-card/80">
         <form.Subscribe
-          selector={(s) => ({
-            canSubmit: s.canSubmit,
-            isSubmitting: s.isSubmitting,
-          })}
-          children={({ canSubmit, isSubmitting }) => (
-            <Button
-              type="submit"
-              disabled={isPending || isSubmitting || !canSubmit}
-            >
+          selector={(s) => ({ isSubmitting: s.isSubmitting })}
+          children={({ isSubmitting }) => (
+            <Button type="submit" disabled={isPending || isSubmitting}>
               {submitIcon}
               {isPending ? submitPendingLabel : submitLabel}
             </Button>
@@ -231,18 +285,24 @@ function LinhaCampo({
   placeholder,
   onClear,
   clearDisabled,
+  obrigatorio,
 }: {
   d: FieldDescriptor
   field: AnyFieldApi
   placeholder?: string
   onClear?: (campo: string, traduzivel: boolean) => void
   clearDisabled?: boolean
+  obrigatorio?: boolean
 }) {
   const t = useT()
   const erro =
     field.state.meta.isTouched && field.state.meta.errors.length > 0
       ? mensagemDoErro(field.state.meta.errors[0], t)
       : null
+  // Stable ids so the error is announced by the screen reader together with the
+  // control it belongs to (`aria-describedby`), not only painted red.
+  const inputId = `campo-${d.name}`
+  const erroId = `${inputId}-erro`
 
   const limpar = onClear ? (
     <BotaoLimpar
@@ -253,7 +313,15 @@ function LinhaCampo({
   ) : null
 
   if (d.widget === 'tags') {
-    return <CampoTags d={d} field={field} limpar={limpar} erro={erro} />
+    return (
+      <CampoTags
+        d={d}
+        field={field}
+        limpar={limpar}
+        erro={erro}
+        obrigatorio={obrigatorio}
+      />
+    )
   }
 
   // Attributes common to both widget branches (textarea × text/number input):
@@ -261,6 +329,7 @@ function LinhaCampo({
   // same list in each branch (the specific part — type, min/max/step, class — stays
   // per branch).
   const comum = {
+    id: inputId,
     value: field.state.value as string,
     onChange: (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       field.handleChange(e.target.value),
@@ -268,6 +337,8 @@ function LinhaCampo({
     placeholder,
     'aria-label': d.label,
     'aria-invalid': erro !== null || undefined,
+    'aria-required': obrigatorio || undefined,
+    'aria-describedby': erro !== null ? erroId : undefined,
   }
 
   const controle =
@@ -276,7 +347,13 @@ function LinhaCampo({
     ) : (
       <Input
         {...comum}
-        type={d.widget === 'number' ? 'number' : 'text'}
+        type={
+          d.widget === 'number'
+            ? 'number'
+            : d.widget === 'date'
+              ? 'date'
+              : 'text'
+        }
         min={d.widget === 'number' ? d.min : undefined}
         max={d.widget === 'number' ? d.max : undefined}
         step={d.widget === 'number' ? d.step : undefined}
@@ -285,13 +362,13 @@ function LinhaCampo({
     )
 
   return (
-    <label className="flex flex-col gap-1.5 text-sm">
-      <span className="font-medium">{d.label}</span>
+    <label className="flex flex-col gap-1.5 text-sm" htmlFor={inputId}>
+      <RotuloDoCampo d={d} obrigatorio={obrigatorio} />
       <div className="flex items-center gap-2">
         {controle}
         {limpar}
       </div>
-      {erro ? <span className="text-xs text-destructive">{erro}</span> : null}
+      <TextoDoErro id={erroId} erro={erro} />
     </label>
   )
 }
@@ -303,15 +380,18 @@ function CampoTags({
   field,
   limpar,
   erro,
+  obrigatorio,
 }: {
   d: FieldDescriptor
   field: AnyFieldApi
   limpar: ReactNode
   erro: string | null
+  obrigatorio?: boolean
 }) {
   const [tagInput, setTagInput] = useState('')
   const t = useT()
   const tags = (field.state.value as string[]) ?? []
+  const erroId = `campo-${d.name}-erro`
 
   function adicionar() {
     const limpo = tagInput.trim()
@@ -330,7 +410,7 @@ function CampoTags({
 
   return (
     <div className="flex flex-col gap-1.5 text-sm">
-      <span className="font-medium">{d.label}</span>
+      <RotuloDoCampo d={d} obrigatorio={obrigatorio} />
       <div className="flex flex-wrap items-center gap-1.5">
         {tags.map((tag) => (
           <Badge key={tag} variant="outline" className="gap-1 pr-1">
@@ -353,13 +433,15 @@ function CampoTags({
           </span>
         ) : null}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Input
           value={tagInput}
           onChange={(e) => setTagInput(e.target.value)}
           onKeyDown={onTagKeyDown}
           placeholder={t('entity.edit.tags.placeholder')}
           aria-label={t('entity.edit.tags.inputLabel')}
+          aria-describedby={erro !== null ? erroId : undefined}
+          className="min-w-0 basis-full sm:basis-auto sm:flex-1"
         />
         <Button type="button" variant="outline" size="sm" onClick={adicionar}>
           <Plus aria-hidden />
@@ -367,8 +449,44 @@ function CampoTags({
         </Button>
         {limpar}
       </div>
-      {erro ? <span className="text-xs text-destructive">{erro}</span> : null}
+      <TextoDoErro id={erroId} erro={erro} />
     </div>
+  )
+}
+
+// RotuloDoCampo is the label of a descriptor plus the required asterisk: the `*` is
+// `aria-hidden` because the meaning travels on `aria-required` of the control (the
+// screen reader announces the requirement once, not twice).
+function RotuloDoCampo({
+  d,
+  obrigatorio,
+}: {
+  d: FieldDescriptor
+  obrigatorio?: boolean
+}) {
+  return (
+    <span className="font-medium">
+      {d.label}
+      {obrigatorio ? (
+        <span aria-hidden className="text-destructive">
+          {' '}
+          *
+        </span>
+      ) : null}
+    </span>
+  )
+}
+
+// TextoDoErro is the inline error of the field, linked by `aria-describedby` to the
+// control (`id`) and announced as an alert when it appears.
+function TextoDoErro({ id, erro }: { id: string; erro: string | null }) {
+  if (erro === null) {
+    return null
+  }
+  return (
+    <span id={id} role="alert" className="text-xs text-destructive">
+      {erro}
+    </span>
   )
 }
 

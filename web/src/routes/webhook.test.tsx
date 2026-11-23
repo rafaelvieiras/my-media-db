@@ -135,6 +135,12 @@ describe('WebhookScreen', () => {
     expect(
       await screen.findByRole('button', { name: 'Copied!' }),
     ).toBeInTheDocument()
+    // The announcement lives in a live region NEXT TO the button: a `role="status"`
+    // inside it would be skipped by the accessible name computation (Chrome drops the
+    // name, the E2E hit it) — the button keeps its name, the region says "Copied!".
+    expect(screen.getAllByRole('status').map((r) => r.textContent)).toContain(
+      'Copied!',
+    )
 
     await user.click(screen.getByRole('button', { name: 'Copy webhook URL' }))
     expect(writeText).toHaveBeenCalledWith(
@@ -146,13 +152,16 @@ describe('WebhookScreen', () => {
     const user = userEvent.setup()
     const fetchMock = fetchRouter({ tokenInicial: 'abc123token' })
     vi.stubGlobal('fetch', fetchMock)
-    vi.spyOn(window, 'confirm').mockReturnValue(false)
     renderWithClient(<WebhookScreen />)
     await screen.findByLabelText('Webhook token')
 
+    // The confirmation is an AlertDialog (a `window.confirm` can be suppressed by
+    // the browser and was invisible to the screen reader).
     await user.click(screen.getByRole('button', { name: 'Generate new token' }))
+    expect(screen.getByRole('alertdialog')).toBeTruthy()
 
-    expect(window.confirm).toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
     expect(
       fetchMock.mock.calls.some(
         ([url, init]) =>
@@ -169,11 +178,14 @@ describe('WebhookScreen', () => {
       postResposta: { token: 'token-substituto' },
     })
     vi.stubGlobal('fetch', fetchMock)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     renderWithClient(<WebhookScreen />)
     await screen.findByLabelText('Webhook token')
 
     await user.click(screen.getByRole('button', { name: 'Generate new token' }))
+    const dialogo = screen.getByRole('alertdialog')
+    await user.click(
+      within(dialogo).getByRole('button', { name: 'Regenerate token' }),
+    )
 
     await waitFor(() =>
       expect(screen.getByLabelText('Webhook token')).toHaveValue(

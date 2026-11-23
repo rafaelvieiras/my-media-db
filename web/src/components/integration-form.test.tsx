@@ -6,6 +6,11 @@ import type { IntegrationField } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 import { erroJson, okJson } from '@/test/detail-harness'
 
+// The "leave without saving" guard is the router blocker: outside a
+// RouterProvider it cannot run, so it is mocked here (the hook has its own test and
+// each screen asserts the argument it passes).
+vi.mock('@/lib/use-unsaved-guard', () => ({ useUnsavedGuard: vi.fn() }))
+
 // IntegrationForm: the new `secret` widget over the vocabulary
 // of `integration.Campo` — it never rehydrates from the server, caption by
 // `origem`, a "Clear" button only when `origem==="banco"`, differential PUT
@@ -23,28 +28,71 @@ function campoSegredo(over: Partial<IntegrationField> = {}): IntegrationField {
   }
 }
 
-function fetchRouter(putResposta?: () => Response) {
+type FetchMock = ReturnType<typeof fetchRouter>
+type Usuario = ReturnType<typeof userEvent.setup>
+
+// fetchRouter serves the PUT of the integration `slug` with `putResposta` (or an
+// empty success); any other route fails loudly.
+function fetchRouter(putResposta?: () => Response, slug = 'tmdb') {
   return vi.fn(async (url: string, init?: RequestInit) => {
     const u = String(url)
     const method = init?.method ?? 'GET'
-    if (u === '/api/v1/integrations/tmdb' && method === 'PUT') {
+    if (u === `/api/v1/integrations/${slug}` && method === 'PUT') {
       return putResposta
         ? putResposta()
-        : okJson({ slug: 'tmdb', nome: 'TMDB', descricao: '', campos: [] })
+        : okJson({ slug, nome: slug, descricao: '', campos: [] })
     }
     throw new Error(`rota nao mockada: ${method} ${u}`)
   })
 }
 
-function corpoPut(fetchMock: ReturnType<typeof fetchRouter>): {
-  valores: Record<string, string | null>
-} {
+// montarFormulario is the arrange step that every submission test repeats: it
+// installs the fetch mock and renders the form over ONE field.
+function montarFormulario({
+  campo = campoSegredo(),
+  slug = 'tmdb',
+  responder,
+}: {
+  campo?: IntegrationField
+  slug?: string
+  responder?: () => Response
+} = {}) {
+  const user = userEvent.setup()
+  const fetchMock = fetchRouter(responder, slug)
+  vi.stubGlobal('fetch', fetchMock)
+  renderWithClient(<IntegrationForm slug={slug} campos={[campo]} />)
+  return { user, fetchMock }
+}
+
+// montarComCampoDefinido renders the form over a secret already saved in the panel
+// (origem "banco") — the state in which the "Clear" button exists.
+function montarComCampoDefinido() {
+  return montarFormulario({
+    campo: campoSegredo({ definido: true, origem: 'banco' }),
+  })
+}
+
+// corpoDoPut returns the `valores` body of the PUT already sent for `slug`.
+function corpoDoPut(fetchMock: FetchMock, slug = 'tmdb') {
+  const url = `/api/v1/integrations/${slug}`
   const chamada = fetchMock.mock.calls.find(
-    ([url, init]) =>
-      String(url) === '/api/v1/integrations/tmdb' &&
-      (init as RequestInit | undefined)?.method === 'PUT',
+    ([u, init]) =>
+      String(u) === url && (init as RequestInit | undefined)?.method === 'PUT',
   )
-  return JSON.parse(String(chamada?.[1]?.body))
+  return JSON.parse(String(chamada?.[1]?.body)) as {
+    valores: Record<string, string | null>
+  }
+}
+
+// salvar clicks Save, waits for the PUT and returns the body that went out.
+async function salvar(
+  user: Usuario,
+  fetchMock: FetchMock,
+  slug = 'tmdb',
+): Promise<{ valores: Record<string, string | null> }> {
+  await user.click(screen.getByRole('button', { name: BOTAO_SALVAR }))
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+  return corpoDoPut(fetchMock, slug)
 }
 
 // `FormSaveFooter` is a shared component outside this domain (its own extraction
@@ -57,36 +105,18 @@ afterEach(() => {
 
 describe('IntegrationForm', () => {
   it('the secret field never pre-fills, even with definido:true/origem:"banco"', () => {
-    vi.stubGlobal('fetch', fetchRouter())
-    renderWithClient(
-      <IntegrationForm
-        slug="tmdb"
-        campos={[campoSegredo({ definido: true, origem: 'banco' })]}
-      />,
-    )
+    montarComCampoDefinido()
     expect(screen.getByLabelText('Read Access Token (v4)')).toHaveValue('')
   })
 
   it('origem "banco": "Set in the panel." caption + Clear button', () => {
-    vi.stubGlobal('fetch', fetchRouter())
-    renderWithClient(
-      <IntegrationForm
-        slug="tmdb"
-        campos={[campoSegredo({ definido: true, origem: 'banco' })]}
-      />,
-    )
+    montarComCampoDefinido()
     expect(screen.getByText('Set in the panel.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Clear' })).toBeInTheDocument()
   })
 
   it('origem "env" with a known hint (tmdb/token) names the exact variable', () => {
-    vi.stubGlobal('fetch', fetchRouter())
-    renderWithClient(
-      <IntegrationForm
-        slug="tmdb"
-        campos={[campoSegredo({ definido: true, origem: 'env' })]}
-      />,
-    )
+    montarFormulario({ campo: campoSegredo({ definido: true, origem: 'env' }) })
     expect(
       screen.getByText(
         'Set by the MYMEDIADB_TMDB_TOKEN environment variable — save here to override.',
@@ -99,20 +129,15 @@ describe('IntegrationForm', () => {
   })
 
   it('origem "env" without a known hint falls back to the generic text (without inventing a variable name)', () => {
-    vi.stubGlobal('fetch', fetchRouter())
-    renderWithClient(
-      <IntegrationForm
-        slug="outra-integracao"
-        campos={[
-          campoSegredo({
-            nome: 'chave',
-            label: 'Chave',
-            definido: true,
-            origem: 'env',
-          }),
-        ]}
-      />,
-    )
+    montarFormulario({
+      slug: 'outra-integracao',
+      campo: campoSegredo({
+        nome: 'chave',
+        label: 'Chave',
+        definido: true,
+        origem: 'env',
+      }),
+    })
     expect(
       screen.getByText(
         'Set by a server environment variable — save here to override.',
@@ -121,8 +146,7 @@ describe('IntegrationForm', () => {
   })
 
   it('origem "nenhum": no caption and no Clear button', () => {
-    vi.stubGlobal('fetch', fetchRouter())
-    renderWithClient(<IntegrationForm slug="tmdb" campos={[campoSegredo()]} />)
+    montarFormulario()
     expect(screen.queryByText(/^Set (in|by) /)).not.toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: 'Clear' }),
@@ -130,9 +154,7 @@ describe('IntegrationForm', () => {
   })
 
   it('the show/hide toggle switches the input type', async () => {
-    const user = userEvent.setup()
-    vi.stubGlobal('fetch', fetchRouter())
-    renderWithClient(<IntegrationForm slug="tmdb" campos={[campoSegredo()]} />)
+    const { user } = montarFormulario()
 
     const campo = screen.getByLabelText('Read Access Token (v4)')
     expect(campo).toHaveAttribute('type', 'password')
@@ -149,75 +171,48 @@ describe('IntegrationForm', () => {
   })
 
   it('typing a new value and saving sends ONLY that field in the PUT', async () => {
-    const user = userEvent.setup()
-    const fetchMock = fetchRouter()
-    vi.stubGlobal('fetch', fetchMock)
-    renderWithClient(<IntegrationForm slug="tmdb" campos={[campoSegredo()]} />)
+    const { user, fetchMock } = montarFormulario()
 
     await user.type(
       screen.getByLabelText('Read Access Token (v4)'),
       'novo-token',
     )
-    await user.click(screen.getByRole('button', { name: BOTAO_SALVAR }))
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
-    expect(corpoPut(fetchMock)).toEqual({ valores: { token: 'novo-token' } })
+    expect(await salvar(user, fetchMock)).toEqual({
+      valores: { token: 'novo-token' },
+    })
   })
 
   it('clicking Clear on a origem "banco" field sends null in the PUT', async () => {
-    const user = userEvent.setup()
-    const fetchMock = fetchRouter()
-    vi.stubGlobal('fetch', fetchMock)
-    renderWithClient(
-      <IntegrationForm
-        slug="tmdb"
-        campos={[campoSegredo({ definido: true, origem: 'banco' })]}
-      />,
-    )
+    const { user, fetchMock } = montarComCampoDefinido()
 
     await user.click(screen.getByRole('button', { name: 'Clear' }))
-    await user.click(screen.getByRole('button', { name: BOTAO_SALVAR }))
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
-    expect(corpoPut(fetchMock)).toEqual({ valores: { token: null } })
+    expect(await salvar(user, fetchMock)).toEqual({ valores: { token: null } })
   })
 
   it('typing after clicking Clear cancels the clear intent (sends the typed value)', async () => {
-    const user = userEvent.setup()
-    const fetchMock = fetchRouter()
-    vi.stubGlobal('fetch', fetchMock)
-    renderWithClient(
-      <IntegrationForm
-        slug="tmdb"
-        campos={[campoSegredo({ definido: true, origem: 'banco' })]}
-      />,
-    )
+    const { user, fetchMock } = montarComCampoDefinido()
 
     await user.click(screen.getByRole('button', { name: 'Clear' }))
     await user.type(screen.getByLabelText('Read Access Token (v4)'), 'trocado')
-    await user.click(screen.getByRole('button', { name: BOTAO_SALVAR }))
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
-    expect(corpoPut(fetchMock)).toEqual({ valores: { token: 'trocado' } })
+    expect(await salvar(user, fetchMock)).toEqual({
+      valores: { token: 'trocado' },
+    })
   })
 
   it('does not call the PUT when nothing was touched', async () => {
-    const user = userEvent.setup()
-    const fetchMock = fetchRouter()
-    vi.stubGlobal('fetch', fetchMock)
-    renderWithClient(<IntegrationForm slug="tmdb" campos={[campoSegredo()]} />)
+    const { user, fetchMock } = montarFormulario()
 
     await user.click(screen.getByRole('button', { name: BOTAO_SALVAR }))
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('shows the PUT error inline (422)', async () => {
-    const user = userEvent.setup()
-    vi.stubGlobal(
-      'fetch',
-      fetchRouter(() => erroJson(422, 'invalid_body', 'campo desconhecido')),
-    )
-    renderWithClient(<IntegrationForm slug="tmdb" campos={[campoSegredo()]} />)
+    const { user } = montarFormulario({
+      responder: () => erroJson(422, 'invalid_body', 'campo desconhecido'),
+    })
 
     await user.type(screen.getByLabelText('Read Access Token (v4)'), 'x')
     await user.click(screen.getByRole('button', { name: BOTAO_SALVAR }))
@@ -226,9 +221,7 @@ describe('IntegrationForm', () => {
   })
 
   it('shows the success message with the restart-the-server warning', async () => {
-    const user = userEvent.setup()
-    vi.stubGlobal('fetch', fetchRouter())
-    renderWithClient(<IntegrationForm slug="tmdb" campos={[campoSegredo()]} />)
+    const { user } = montarFormulario()
 
     await user.type(screen.getByLabelText('Read Access Token (v4)'), 'x')
     await user.click(screen.getByRole('button', { name: BOTAO_SALVAR }))
@@ -241,13 +234,7 @@ describe('IntegrationForm', () => {
   })
 
   it('a required field marks an asterisk in the label', () => {
-    vi.stubGlobal('fetch', fetchRouter())
-    renderWithClient(
-      <IntegrationForm
-        slug="tmdb"
-        campos={[campoSegredo({ obrigatorio: true })]}
-      />,
-    )
+    montarFormulario({ campo: campoSegredo({ obrigatorio: true }) })
     expect(screen.getByText('*')).toBeInTheDocument()
   })
 
@@ -256,25 +243,18 @@ describe('IntegrationForm', () => {
   // today (only TMDB, only secret), but `CampoControle` renders them in a
   // generic way. Covered here so the branch does not stay untested.
   it('widget "text": pre-fills with the effective value and edits normally', async () => {
-    const user = userEvent.setup()
-    const fetchMock = fetchRouter()
-    vi.stubGlobal('fetch', fetchMock)
-    renderWithClient(
-      <IntegrationForm
-        slug="outra"
-        campos={[
-          {
-            nome: 'host',
-            label: 'Host',
-            tipo: 'text',
-            obrigatorio: false,
-            definido: true,
-            origem: 'banco',
-            valor: 'atual.example.com',
-          },
-        ]}
-      />,
-    )
+    const { user } = montarFormulario({
+      slug: 'outra',
+      campo: {
+        nome: 'host',
+        label: 'Host',
+        tipo: 'text',
+        obrigatorio: false,
+        definido: true,
+        origem: 'banco',
+        valor: 'atual.example.com',
+      },
+    })
     const input = screen.getByLabelText('Host')
     expect(input).toHaveValue('atual.example.com')
     await user.clear(input)
@@ -283,99 +263,62 @@ describe('IntegrationForm', () => {
   })
 
   it('widget "number": accepts a numeric value', () => {
-    vi.stubGlobal('fetch', fetchRouter())
-    renderWithClient(
-      <IntegrationForm
-        slug="outra"
-        campos={[
-          {
-            nome: 'porta',
-            label: 'Porta',
-            tipo: 'number',
-            obrigatorio: false,
-            definido: true,
-            origem: 'banco',
-            valor: '443',
-          },
-        ]}
-      />,
-    )
+    montarFormulario({
+      slug: 'outra',
+      campo: {
+        nome: 'porta',
+        label: 'Porta',
+        tipo: 'number',
+        obrigatorio: false,
+        definido: true,
+        origem: 'banco',
+        valor: '443',
+      },
+    })
     const input = screen.getByLabelText('Porta')
     expect(input).toHaveAttribute('type', 'number')
     expect(input).toHaveValue(443)
   })
 
   it('widget "bool": the switch toggles true/false and enters the PUT', async () => {
-    const user = userEvent.setup()
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      const u = String(url)
-      const method = init?.method ?? 'GET'
-      if (u === '/api/v1/integrations/outra' && method === 'PUT') {
-        return okJson({
-          slug: 'outra',
-          nome: 'Outra',
-          descricao: '',
-          campos: [],
-        })
-      }
-      throw new Error(`rota nao mockada: ${method} ${u}`)
+    const { user, fetchMock } = montarFormulario({
+      slug: 'outra',
+      campo: {
+        nome: 'ativo',
+        label: 'Ativo',
+        tipo: 'bool',
+        obrigatorio: false,
+        definido: false,
+        origem: 'nenhum',
+      },
     })
-    vi.stubGlobal('fetch', fetchMock)
-    renderWithClient(
-      <IntegrationForm
-        slug="outra"
-        campos={[
-          {
-            nome: 'ativo',
-            label: 'Ativo',
-            tipo: 'bool',
-            obrigatorio: false,
-            definido: false,
-            origem: 'nenhum',
-          },
-        ]}
-      />,
-    )
     const switchEl = screen.getByRole('switch', { name: 'Ativo' })
     expect(switchEl).not.toBeChecked()
     await user.click(switchEl)
     expect(switchEl).toBeChecked()
 
-    await user.click(screen.getByRole('button', { name: BOTAO_SALVAR }))
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
-    const chamada = fetchMock.mock.calls.find(
-      ([url, init]) =>
-        String(url) === '/api/v1/integrations/outra' &&
-        (init as RequestInit | undefined)?.method === 'PUT',
-    )
-    expect(JSON.parse(String(chamada?.[1]?.body))).toEqual({
+    expect(await salvar(user, fetchMock, 'outra')).toEqual({
       valores: { ativo: 'true' },
     })
   })
 
   it('widget "select": lists the options and changes the selected value', async () => {
-    const user = userEvent.setup()
-    vi.stubGlobal('fetch', fetchRouter())
-    renderWithClient(
-      <IntegrationForm
-        slug="outra"
-        campos={[
-          {
-            nome: 'regiao',
-            label: 'Região',
-            tipo: 'select',
-            obrigatorio: false,
-            definido: true,
-            origem: 'banco',
-            valor: 'us',
-            opcoes: [
-              { valor: 'us', label: 'EUA' },
-              { valor: 'br', label: 'Brasil' },
-            ],
-          },
-        ]}
-      />,
-    )
+    const { user } = montarFormulario({
+      slug: 'outra',
+      campo: {
+        nome: 'regiao',
+        label: 'Região',
+        tipo: 'select',
+        obrigatorio: false,
+        definido: true,
+        origem: 'banco',
+        valor: 'us',
+        opcoes: [
+          { valor: 'us', label: 'EUA' },
+          { valor: 'br', label: 'Brasil' },
+        ],
+      },
+    })
     const select = screen.getByLabelText('Região')
     expect(select).toHaveValue('us')
     await user.selectOptions(select, 'br')

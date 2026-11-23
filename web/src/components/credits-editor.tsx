@@ -13,6 +13,16 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
   ApiError,
   clearOverrideField,
   patchOverride,
@@ -361,6 +371,9 @@ export function CreditsEditor({
   const [novoCrewDepartamento, setNovoCrewDepartamento] = useState('')
   const [novoCrewCargo, setNovoCrewCargo] = useState('')
   const [novoCompanyNome, setNovoCompanyNome] = useState('')
+  // "Clear all credits" is a DELETE of the whole block: it asks for confirmation
+  // (it was a single tap 8 px away from "Save credits").
+  const [confirmarLimpeza, setConfirmarLimpeza] = useState(false)
 
   // Dirty: the same rule used to build the patch of each kind — any
   // pending reorder/edit/removal/addition in cast, crew or production companies.
@@ -456,11 +469,13 @@ export function CreditsEditor({
         }
         camposEditaveis={[
           {
+            label: t('entity.edit.credits.character'),
             valor: (l) => l.character,
             aoMudar: (l, v) => ({ ...l, character: v }),
             placeholder: t('entity.edit.credits.character'),
             ariaLabel: (l) =>
               t('entity.edit.credits.characterOf', { name: l.name }),
+            className: 'sm:w-44',
           },
         ]}
       />
@@ -476,19 +491,21 @@ export function CreditsEditor({
         }
         camposEditaveis={[
           {
+            label: t('entity.edit.credits.department'),
             valor: (l) => l.department,
             aoMudar: (l, v) => ({ ...l, department: v }),
             placeholder: t('entity.edit.credits.department'),
             ariaLabel: (l) =>
               t('entity.edit.credits.departmentOf', { name: l.name }),
-            className: 'max-w-[9rem]',
+            className: 'sm:w-36',
           },
           {
+            label: t('entity.edit.credits.job'),
             valor: (l) => l.job,
             aoMudar: (l, v) => ({ ...l, job: v }),
             placeholder: t('entity.edit.credits.job'),
             ariaLabel: (l) => t('entity.edit.credits.jobOf', { name: l.name }),
-            className: 'max-w-[9rem]',
+            className: 'sm:w-36',
           },
         ]}
       />
@@ -504,10 +521,12 @@ export function CreditsEditor({
         }
         camposEditaveis={[
           {
+            label: t('entity.edit.credits.companyName'),
             valor: (l) => l.name,
             aoMudar: (l, v) => ({ ...l, name: v }),
             placeholder: t('entity.edit.credits.companyName'),
             ariaLabel: () => t('entity.edit.credits.companyName'),
+            className: 'sm:w-56',
           },
         ]}
       />
@@ -519,12 +538,14 @@ export function CreditsEditor({
           podeAdicionar={!!novoCastNome.trim()}
           campos={[
             {
+              label: t('common.label.name'),
               valor: novoCastNome,
               aoMudar: setNovoCastNome,
               placeholder: t('common.label.name'),
               ariaLabel: t('entity.edit.credits.newCastName'),
             },
             {
+              label: t('entity.edit.credits.character'),
               valor: novoCastPersonagem,
               aoMudar: setNovoCastPersonagem,
               placeholder: t('entity.edit.credits.character'),
@@ -555,24 +576,27 @@ export function CreditsEditor({
           podeAdicionar={!!novoCrewNome.trim()}
           campos={[
             {
+              label: t('common.label.name'),
               valor: novoCrewNome,
               aoMudar: setNovoCrewNome,
               placeholder: t('common.label.name'),
               ariaLabel: t('entity.edit.credits.newCrewName'),
             },
             {
+              label: t('entity.edit.credits.department'),
               valor: novoCrewDepartamento,
               aoMudar: setNovoCrewDepartamento,
               placeholder: t('entity.edit.credits.department'),
               ariaLabel: t('entity.edit.credits.newCrewDepartment'),
-              className: 'max-w-[10rem]',
+              className: 'sm:w-40',
             },
             {
+              label: t('entity.edit.credits.job'),
               valor: novoCrewCargo,
               aoMudar: setNovoCrewCargo,
               placeholder: t('entity.edit.credits.job'),
               ariaLabel: t('entity.edit.credits.newCrewJob'),
-              className: 'max-w-[10rem]',
+              className: 'sm:w-40',
             },
           ]}
           aoAdicionar={() => {
@@ -601,6 +625,7 @@ export function CreditsEditor({
           podeAdicionar={!!novoCompanyNome.trim()}
           campos={[
             {
+              label: t('common.label.name'),
               valor: novoCompanyNome,
               aoMudar: setNovoCompanyNome,
               placeholder: t('common.label.name'),
@@ -630,13 +655,16 @@ export function CreditsEditor({
         </p>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Sticky action bar: on a long cast/crew list the primary action used to
+          sit 5100 px below the fold. */}
+      <div className="sticky bottom-0 z-10 -mx-1 flex flex-wrap items-center gap-2 rounded-lg border-t border-border bg-card/95 px-1 py-2 backdrop-blur supports-[backdrop-filter]:bg-card/80">
         <Button
           type="button"
           variant="outline"
           size="sm"
-          disabled={ocupado}
-          onClick={() => limpar.mutate()}
+          // Without any unsaved change there is nothing to inherit again.
+          disabled={ocupado || !sujo}
+          onClick={() => setConfirmarLimpeza(true)}
         >
           <Eraser aria-hidden />
           {t('entity.edit.credits.clearAll')}
@@ -652,6 +680,30 @@ export function CreditsEditor({
             : t('entity.edit.credits.save')}
         </Button>
       </div>
+
+      <AlertDialog open={confirmarLimpeza} onOpenChange={setConfirmarLimpeza}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('entity.edit.credits.clearAllTitle')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('entity.edit.credits.clearAllDescription')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.action.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmarLimpeza(false)
+                limpar.mutate()
+              }}
+            >
+              {t('entity.edit.credits.clearAllConfirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   )
 }
@@ -671,8 +723,7 @@ function BotoesOrdem({
       <Button
         type="button"
         variant="ghost"
-        size="icon"
-        className="size-6"
+        size="icon-xs"
         aria-label={t('entity.edit.credits.moveUp')}
         disabled={indice === 0}
         onClick={() => mover(-1)}
@@ -682,8 +733,7 @@ function BotoesOrdem({
       <Button
         type="button"
         variant="ghost"
-        size="icon"
-        className="size-6"
+        size="icon-xs"
         aria-label={t('entity.edit.credits.moveDown')}
         disabled={indice === total - 1}
         onClick={() => mover(1)}
@@ -755,7 +805,10 @@ function CampoPosicao({
 // CampoEditavel describes ONE editable input of a credit row (used by
 // SecaoCreditos, generic across cast/crew/production companies): `character` (cast),
 // `department`+`job` (crew) or `name` (companies, which has no "fixed name").
+// `label` is VISIBLE above the input (a placeholder disappears as soon as the owner
+// types, and the screen reader only had the aria-label).
 interface CampoEditavel<L> {
+  label: string
   valor: (l: L) => string
   aoMudar: (l: L, v: string) => L
   placeholder: string
@@ -801,48 +854,66 @@ function SecaoCreditos<
       ) : (
         <ul className="flex flex-col gap-2">
           {linhas.map((l, i) => (
-            <li key={l.id} className="flex items-center gap-2">
+            // The row WRAPS on mobile: character/department/job used to collapse
+            // into 35–78 px slivers squeezed next to the arrows and the name.
+            <li
+              key={l.id}
+              className="flex flex-wrap items-end gap-2 sm:flex-nowrap"
+            >
               <BotoesOrdem
                 indice={i}
                 total={linhas.length}
                 mover={(d) => setLinhas((atual) => moverItem(atual, i, d))}
               />
-              <CampoPosicao
-                indice={i}
-                total={linhas.length}
-                rotulo={t('entity.edit.credits.moveToPosition', {
-                  name: l.name,
-                  total: linhas.length,
-                })}
-                mover={(destino) =>
-                  setLinhas((atual) => moverParaIndice(atual, i, destino))
-                }
-              />
+              <label className="flex w-16 shrink-0 flex-col gap-0.5">
+                <span className="text-xs text-muted-foreground">
+                  {t('entity.edit.credits.position')}
+                </span>
+                <CampoPosicao
+                  indice={i}
+                  total={linhas.length}
+                  rotulo={t('entity.edit.credits.moveToPosition', {
+                    name: l.name,
+                    total: linhas.length,
+                  })}
+                  mover={(destino) =>
+                    setLinhas((atual) => moverParaIndice(atual, i, destino))
+                  }
+                />
+              </label>
               {mostrarNomeFixo ? (
                 <span className="w-32 shrink-0 truncate text-sm" title={l.name}>
                   {l.name}
                 </span>
               ) : null}
               {camposEditaveis.map((campo) => (
-                <Input
-                  key={campo.placeholder}
-                  value={campo.valor(l)}
-                  onChange={(e) =>
-                    setLinhas((atual) =>
-                      atual.map((x) =>
-                        x.id === l.id ? campo.aoMudar(x, e.target.value) : x,
-                      ),
-                    )
-                  }
-                  placeholder={campo.placeholder}
-                  aria-label={campo.ariaLabel(l)}
-                  className={campo.className}
-                />
+                <label
+                  key={campo.label}
+                  className="flex min-w-0 basis-full flex-col gap-0.5 sm:basis-auto"
+                >
+                  <span className="text-xs text-muted-foreground">
+                    {campo.label}
+                  </span>
+                  <Input
+                    value={campo.valor(l)}
+                    onChange={(e) =>
+                      setLinhas((atual) =>
+                        atual.map((x) =>
+                          x.id === l.id ? campo.aoMudar(x, e.target.value) : x,
+                        ),
+                      )
+                    }
+                    placeholder={campo.placeholder}
+                    aria-label={campo.ariaLabel(l)}
+                    className={campo.className}
+                  />
+                </label>
               ))}
               <Button
                 type="button"
                 variant="ghost"
-                size="icon"
+                size="icon-sm"
+                className="sm:ml-auto"
                 aria-label={removerAriaLabel(l)}
                 onClick={() =>
                   setLinhas((atual) => atual.filter((x) => x.id !== l.id))
@@ -859,8 +930,10 @@ function SecaoCreditos<
 }
 
 // CampoNovo describes ONE input of the "Adicionar X" form (generic across the 3
-// sections — only the amount/label of the fields changes).
+// sections — only the amount/label of the fields changes). `label` is visible above
+// the input, like in `LinhaCampo` of the schema-form.
 interface CampoNovo {
+  label: string
   valor: string
   aoMudar: (v: string) => void
   placeholder: string
@@ -886,16 +959,21 @@ function FormularioAdicionar({
   return (
     <>
       <h3 className="text-sm font-medium">{titulo}</h3>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-end gap-2">
         {campos.map((c) => (
-          <Input
+          <label
             key={c.ariaLabel}
-            value={c.valor}
-            onChange={(e) => c.aoMudar(e.target.value)}
-            placeholder={c.placeholder}
-            aria-label={c.ariaLabel}
-            className={c.className ?? 'max-w-[12rem]'}
-          />
+            className="flex min-w-0 basis-full flex-col gap-0.5 sm:basis-auto"
+          >
+            <span className="text-xs text-muted-foreground">{c.label}</span>
+            <Input
+              value={c.valor}
+              onChange={(e) => c.aoMudar(e.target.value)}
+              placeholder={c.placeholder}
+              aria-label={c.ariaLabel}
+              className={c.className ?? 'sm:w-48'}
+            />
+          </label>
         ))}
         <Button
           type="button"

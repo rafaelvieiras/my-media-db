@@ -1,11 +1,11 @@
-import type { MouseEvent, ReactNode } from 'react'
-import { useEffect } from 'react'
-import { Link, useNavigate } from '@tanstack/react-router'
+import type { ReactNode } from 'react'
+import { Link } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
 import { PosterImg } from '@/components/rich-detail-view'
 import { LanguageSelector } from '@/components/language-selector'
 import { arteSrc, type ResolvedEntity } from '@/lib/api'
 import { useT } from '@/lib/i18n'
+import { useUnsavedGuard } from '@/lib/use-unsaved-guard'
 import { cn } from '@/lib/utils'
 
 // Edit section: the THREE only sections that my-media-db has
@@ -63,41 +63,18 @@ export function EntityEditShell({
   sujo: boolean
   children: ReactNode
 }) {
-  const navigate = useNavigate()
   const t = useT()
 
-  useEffect(() => {
-    if (!sujo) return
-    function aoFechar(e: BeforeUnloadEvent) {
-      e.preventDefault()
-      e.returnValue = ''
-    }
-    window.addEventListener('beforeunload', aoFechar)
-    return () => window.removeEventListener('beforeunload', aoFechar)
-  }, [sujo])
-
-  // guardarClique intercepts the click of ANY navigation link out of the
-  // current section (another section of the sidebar OR "Voltar ao item"): if the current section
-  // is dirty, it confirms before navigating — the same behavior the guard already
-  // had for "Voltar ao item", now reused for the 3 links of the sidebar.
-  function guardarClique(navegar: () => void) {
-    return (e: MouseEvent<HTMLAnchorElement>) => {
-      if (!sujo) return
-      e.preventDefault()
-      if (window.confirm(t('common.message.unsavedChanges'))) {
-        navegar()
-      }
-    }
-  }
+  // "Leave without saving" guard: extracted to `lib/use-unsaved-guard` and reused by
+  // the other form routes (settings, integrations, creation).
+  const guardaSaida = useUnsavedGuard(sujo)
 
   return (
     <main className="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-6">
+      {guardaSaida}
       <Link
         to="/entities/$id"
         params={{ id }}
-        onClick={guardarClique(() =>
-          navigate({ to: '/entities/$id', params: { id } }),
-        )}
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="size-4" aria-hidden />
@@ -117,9 +94,12 @@ export function EntityEditShell({
       </header>
 
       <div className="flex flex-col gap-6 sm:flex-row">
+        {/* The three tabs WRAP on mobile instead of scrolling inside a clipped
+            strip: the third one used to be cut ("Elenco e…") with no affordance
+            telling there was more to the right. */}
         <nav
           aria-label={t('entity.edit.sectionsNav')}
-          className="flex shrink-0 flex-row gap-1 overflow-x-auto sm:w-48 sm:flex-col sm:overflow-visible"
+          className="flex shrink-0 flex-row flex-wrap gap-1 sm:w-48 sm:flex-col sm:flex-nowrap"
         >
           {SECOES.map((item) => {
             const ativa = item.secao === secaoAtiva
@@ -128,9 +108,6 @@ export function EntityEditShell({
                 key={item.secao}
                 to={item.to}
                 params={{ id }}
-                onClick={guardarClique(() =>
-                  navigate({ to: item.to, params: { id } }),
-                )}
                 aria-current={ativa ? 'page' : undefined}
                 className={cn(
                   'rounded-md px-3 py-2 text-sm whitespace-nowrap',

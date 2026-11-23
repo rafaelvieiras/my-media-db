@@ -56,22 +56,23 @@ describe('EntityEditCreditosScreen (real route tree)', () => {
   })
 
   it('reordering without saving fires the confirmation; cancelling keeps, confirming navigates', async () => {
-    const confirmar = vi.fn(() => false)
-    vi.stubGlobal('confirm', confirmar)
     const user = userEvent.setup()
     await renderRota('/entities/e1/edit/creditos')
     await user.click((await screen.findAllByLabelText('Move down'))[0])
+
+    // First attempt, cancelled: the product dialog asks and the owner stays.
     await user.click(screen.getByRole('link', { name: 'External IDs' }))
-    expect(confirmar).toHaveBeenCalledTimes(1)
-    // It cancelled the exit: it stays in the same section (Beto still 2nd, unchanged).
+    await user.click(await screen.findByRole('button', { name: 'Cancel' }))
     expect(screen.getByRole('link', { name: 'Cast and crew' })).toHaveAttribute(
       'aria-current',
       'page',
     )
 
-    // Confirming this time, the navigation actually happens.
-    confirmar.mockReturnValue(true)
+    // Second attempt, confirmed: the navigation actually happens.
     await user.click(screen.getByRole('link', { name: 'External IDs' }))
+    await user.click(
+      await screen.findByRole('button', { name: 'Leave without saving' }),
+    )
     await waitFor(() =>
       expect(
         screen.getByRole('link', { name: 'External IDs' }),

@@ -5,6 +5,7 @@ import type {
   OverridePatch,
   ResolvedEntity,
 } from '@/lib/api'
+import type { Translate } from '@/lib/i18n/types'
 
 // PURE core (no JSX) of the schema-driven form:
 // it turns the descriptors served by the backend into (a) initial values, (b)
@@ -22,7 +23,8 @@ export type ValoresForm = Record<string, ValorCampo>
 // `title` is the ONLY editorial field that the backend requires on creation — it is not a
 // "list of fields" for rendering (the ratchet targets the JSX enumerations),
 // it is the only requiredness rule. The server's 422 stays authoritative.
-const OBRIGATORIO_NA_CRIACAO = new Set(['title'])
+// Exported so the form can render the asterisk/`aria-required` from the SAME source.
+export const OBRIGATORIO_NA_CRIACAO: ReadonlySet<string> = new Set(['title'])
 
 // ordenados returns the descriptors by increasing `order` (the backend already sorts,
 // but we reinforce it so we do not depend on the arrival order).
@@ -113,11 +115,31 @@ export function valoresDeCriacao(fields: FieldDescriptor[]): ValoresForm {
 
 // ── Zod schema ───────────────────────────────────────────────────────────────
 
+// ISO_DATE is the ONLY shape the backend accepts for a date field (`YYYY-MM-DD`);
+// anything else used to pass as valid text (e.g. "32/13/2026").
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+function dataValida(texto: string): boolean {
+  if (!ISO_DATE.test(texto)) return false
+  const [ano, mes, dia] = texto.split('-').map(Number)
+  const data = new Date(Date.UTC(ano, mes - 1, dia))
+  return (
+    data.getUTCFullYear() === ano &&
+    data.getUTCMonth() === mes - 1 &&
+    data.getUTCDate() === dia
+  )
+}
+
 // regraCampo derives the Zod rule of ONE descriptor. `obrigatorio` only applies on
 // creation (editing allows empty = set empty). The number validates the min/max
 // range of the descriptor itself (it mirrors the backend's `formaNumero`) over the
-// text of the input, accepting empty.
-function regraCampo(d: FieldDescriptor, obrigatorio: boolean): z.ZodType {
+// text of the input, accepting empty. The date only accepts the empty state or a
+// real `YYYY-MM-DD` date.
+function regraCampo(
+  d: FieldDescriptor,
+  obrigatorio: boolean,
+  t?: Translate,
+): z.ZodType {
   if (d.widget === 'tags') {
     return z.array(z.string())
   }
@@ -136,25 +158,37 @@ function regraCampo(d: FieldDescriptor, obrigatorio: boolean): z.ZodType {
       { message: `Informe um número entre ${min} e ${max}.` },
     )
   }
-  // text | textarea | date
+  if (d.widget === 'date') {
+    return z.string().refine((v) => v.trim() === '' || dataValida(v.trim()), {
+      message: t
+        ? t('entity.edit.invalidDate')
+        : 'Informe uma data válida (AAAA-MM-DD).',
+    })
+  }
+  // text | textarea
   if (obrigatorio) {
-    return z.string().trim().min(1, `${d.label} é obrigatório`)
+    const mensagem = t
+      ? t('entity.edit.requiredField', { field: d.label })
+      : `${d.label} é obrigatório`
+    return z.string().trim().min(1, mensagem)
   }
   return z.string()
 }
 
 // schemaZod builds the `z.object` from the descriptors. `contexto` cuts out the
 // set (creation uses only `creatable`) and turns on requiredness (only on creation).
+// `t` (optional) localizes the new messages; without it the legacy pt-BR fallback stays.
 export function schemaZod(
   fields: FieldDescriptor[],
   contexto: 'criacao' | 'edicao',
+  t?: Translate,
 ): z.ZodType<ValoresForm> {
   const lista = contexto === 'criacao' ? criaveis(fields) : ordenados(fields)
   const shape: Record<string, z.ZodType> = {}
   for (const d of lista) {
     const obrigatorio =
       contexto === 'criacao' && OBRIGATORIO_NA_CRIACAO.has(d.name)
-    shape[d.name] = regraCampo(d, obrigatorio)
+    shape[d.name] = regraCampo(d, obrigatorio, t)
   }
   // The output of z.object is assignable to `ValoresForm` (every value is a string or
   // string[]); the cast narrows the type for the generic consumer (SchemaForm).

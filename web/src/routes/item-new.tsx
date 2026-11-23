@@ -6,8 +6,10 @@ import { SchemaForm } from '@/components/schema-form'
 import { NewEntityPage } from '@/components/new-entity-page'
 import { createItem } from '@/lib/api'
 import { useCriarEntidade } from '@/lib/use-criar-entidade'
+import { useUnsavedGuard } from '@/lib/use-unsaved-guard'
 import { useT } from '@/lib/i18n'
 import {
+  OBRIGATORIO_NA_CRIACAO,
   criaveis,
   schemaZod,
   valoresDeCriacao,
@@ -61,24 +63,36 @@ function ItemNewForm({
   const navigate = useNavigate()
   const t = useT()
   const [type, setType] = useState<'movie' | 'tv'>('movie')
+  // "Leave without saving" guard: the creation screen used to navigate away on a
+  // single tap of "Back to the library"/Cancel with the form half filled.
+  const [sujo, setSujo] = useState(false)
+  // While the creation is in flight the guard steps aside: the success redirect is
+  // not a "leave without saving". A failure puts it back (the typed data stays).
+  const [criando, setCriando] = useState(false)
+  const guardaSaida = useUnsavedGuard(sujo && !criando)
   const criaveisFields = criaveis(fields)
   const { mutation, mensagemErro } = useCriarEntidade(
     createItem,
     t('collections.item.failed'),
   )
 
-  function onSubmit(valores: ValoresForm) {
-    const title = String(valores.title ?? '').trim()
-    if (!title) {
-      return
+  async function onSubmit(valores: ValoresForm) {
+    // The empty title never reaches the API: the SchemaForm marks the fields as
+    // touched and shows the inline error + the summary at the top.
+    setCriando(true)
+    try {
+      await mutation.mutateAsync({
+        type,
+        title: String(valores.title ?? '').trim(),
+        original_title: str(valores.original_title),
+        description: str(valores.description),
+        release_date: str(valores.release_date),
+      })
+    } catch {
+      // A failed creation leaves the owner on the form: the guard comes back so
+      // the typed data is not lost by accident.
+      setCriando(false)
     }
-    mutation.mutate({
-      type,
-      title,
-      original_title: str(valores.original_title),
-      description: str(valores.description),
-      release_date: str(valores.release_date),
-    })
   }
 
   const header = (
@@ -97,19 +111,24 @@ function ItemNewForm({
   )
 
   return (
-    <SchemaForm
-      fields={criaveisFields}
-      defaultValues={valoresDeCriacao(criaveisFields)}
-      schema={schemaZod(criaveisFields, 'criacao')}
-      onSubmit={onSubmit}
-      onCancel={() => navigate({ to: '/' })}
-      submitLabel={t('collections.item.submit')}
-      submitPendingLabel={t('collections.item.submitting')}
-      submitIcon={<FilmIcon aria-hidden />}
-      isPending={mutation.isPending}
-      mensagemErro={mensagemErro}
-      header={header}
-    />
+    <>
+      {guardaSaida}
+      <SchemaForm
+        fields={criaveisFields}
+        defaultValues={valoresDeCriacao(criaveisFields)}
+        schema={schemaZod(criaveisFields, 'criacao', t)}
+        onSubmit={onSubmit}
+        onCancel={() => navigate({ to: '/' })}
+        submitLabel={t('collections.item.submit')}
+        submitPendingLabel={t('collections.item.submitting')}
+        submitIcon={<FilmIcon aria-hidden />}
+        isPending={mutation.isPending}
+        mensagemErro={mensagemErro}
+        header={header}
+        obrigatorios={OBRIGATORIO_NA_CRIACAO}
+        onDirtyChange={setSujo}
+      />
+    </>
   )
 }
 
