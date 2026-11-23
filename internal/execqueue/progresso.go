@@ -55,6 +55,10 @@ type Progresso struct {
 	EtapaTotal  int
 	// Item is what is being processed RIGHT NOW (a file path relative to the
 	// source, an entity title, a source path) -- the answer to "which item".
+	// A runner that only has the ENTITY ID may report it: the queue view resolves
+	// the readable label itself (server.currentItemLabel), so the screen never
+	// shows a bare UUID where a title exists. The title/path is still what a new
+	// runner should report, because it is the label every consumer shows.
 	Item string
 	// ReiniciarContadores forces Atual/Total to the values reported here, even
 	// when both are zero. Needed at a STEP transition: a step with "0 of 4 done"

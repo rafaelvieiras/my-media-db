@@ -46,7 +46,7 @@ func TestExecutarResumeOSugeridasESemNovidade(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar: %v", err)
 	}
-	if !strings.Contains(msg, "3 serie(s)") || !strings.Contains(msg, "2 com identidade sugerida") ||
+	if !strings.Contains(msg, "3 séries sinalizadas") || !strings.Contains(msg, "2 com identidade sugerida") ||
 		!strings.Contains(msg, "1 sem novidade") {
 		t.Errorf("mensagem = %q", msg)
 	}
@@ -68,7 +68,7 @@ func TestExecutarSobreviveAFalhaDeUmaSerie(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar: %v", err)
 	}
-	if !strings.Contains(msg, "1 falha(s)") || !strings.Contains(msg, "1 com identidade sugerida") {
+	if !strings.Contains(msg, "1 falha") || !strings.Contains(msg, "1 com identidade sugerida") {
 		t.Errorf("mensagem = %q", msg)
 	}
 }
@@ -80,7 +80,7 @@ func TestExecutarSemAlvos(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar: %v", err)
 	}
-	if !strings.Contains(msg, "0 serie(s)") {
+	if !strings.Contains(msg, "0 séries sinalizadas") {
 		t.Errorf("mensagem = %q", msg)
 	}
 }

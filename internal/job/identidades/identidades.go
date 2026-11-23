@@ -128,6 +128,8 @@ func (h *Handler) executar(ctx context.Context, _ json.RawMessage, p *job.Progre
 
 // montarMensagem is the summary of the execution: what the owner reads in the queue.
 func montarMensagem(total, sugeridas, semNovidade, falhas int) string {
-	return fmt.Sprintf("%d serie(s) sinalizada(s), %d com identidade sugerida, %d sem novidade, %d falha(s)",
-		total, sugeridas, semNovidade, falhas)
+	return fmt.Sprintf("%s, %d com identidade sugerida, %d sem novidade, %s",
+		job.Plural(total, "série sinalizada", "séries sinalizadas"),
+		sugeridas, semNovidade,
+		job.Plural(falhas, "falha", "falhas"))
 }

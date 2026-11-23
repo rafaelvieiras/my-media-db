@@ -1526,7 +1526,7 @@ export interface paths {
     }
     /**
      * The whole execution queue (ADR-0040) — running, waiting and recently finished.
-     * @description One request for the queue screen: the running item (with stage, current item, counters and elapsed time), the items waiting in FIFO order (with position and waiting time) and the last finished ones (with duration). It covers kind=scan and kind=job; `ref_label` brings the readable name of the reference. Read-only.
+     * @description One request for the queue screen: the running item (with stage, current item, counters and elapsed time), the items waiting in FIFO order (with position and waiting time) and the last finished ones (with duration). It covers kind=scan and kind=job; `ref_label` brings the readable name of the reference and `current_label` the readable name of the item being processed (the entity title, when the run narrates only an id). Read-only.
      */
     get: operations['getQueue']
     put?: never
@@ -2794,6 +2794,8 @@ export interface components {
       step_index: number
       step_total: number
       current_item?: string | null
+      /** @description `current_item` written the way a person reads it: when the run narrates an entity id instead of a title, this is the entity title. null when `current_item` already is the label (a file path, a source path) or when the id no longer resolves — the screen then shows `current_item`. */
+      current_label?: string | null
       done: number
       total: number
       ok: number
@@ -2836,6 +2838,8 @@ export interface components {
       step_total: number
       /** @description What is being processed now (file, title, source). */
       current_item?: string | null
+      /** @description `current_item` written the way a person reads it (the entity title when the run narrates only an id). null when `current_item` already is the label or when the id no longer resolves. */
+      current_label?: string | null
       done: number
       total: number
       ok: number

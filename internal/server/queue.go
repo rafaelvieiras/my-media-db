@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 )
@@ -43,10 +44,16 @@ type queueItemDTO struct {
 	StepIndex   int     `json:"step_index"`
 	StepTotal   int     `json:"step_total"`
 	CurrentItem *string `json:"current_item"`
-	Done        int     `json:"done"`
-	Total       int     `json:"total"`
-	OK          int     `json:"ok"`
-	Failed      int     `json:"failed"`
+	// CurrentLabel is current_item written the way a person reads it: some steps
+	// narrate the ENTITY ID they are on (they had the row, not the title), and
+	// the screen used to show "Now: 78616b63-…". Absent when current_item already
+	// IS the label (a file path, a source path) or when the id no longer
+	// resolves.
+	CurrentLabel *string `json:"current_label"`
+	Done         int     `json:"done"`
+	Total        int     `json:"total"`
+	OK           int     `json:"ok"`
+	Failed       int     `json:"failed"`
 
 	EnqueuedAt string  `json:"enqueued_at"`
 	StartedAt  *string `json:"started_at"`
@@ -121,16 +128,19 @@ func (s *Server) queueView(w http.ResponseWriter, r *http.Request) {
 	if fila.Rodando != nil {
 		dto := filaParaDTO(*fila.Rodando)
 		dto.RefLabel = rotulos[fila.Rodando.Kind+":"+fila.Rodando.RefID]
+		dto.CurrentLabel = s.currentItemLabel(r.Context(), fila.Rodando.ItemAtual)
 		corpo.Running = &dto
 	}
 	for _, item := range fila.NaFila {
 		dto := filaParaDTO(item)
 		dto.RefLabel = rotulos[item.Kind+":"+item.RefID]
+		dto.CurrentLabel = s.currentItemLabel(r.Context(), item.ItemAtual)
 		corpo.Queued = append(corpo.Queued, dto)
 	}
 	for _, item := range fila.Recentes {
 		dto := filaParaDTO(item)
 		dto.RefLabel = rotulos[item.Kind+":"+item.RefID]
+		dto.CurrentLabel = s.currentItemLabel(r.Context(), item.ItemAtual)
 		corpo.Recent = append(corpo.Recent, dto)
 	}
 	writeJSON(w, http.StatusOK, corpo)
@@ -169,6 +179,7 @@ func (s *Server) queueItemDetail(w http.ResponseWriter, r *http.Request) {
 	corpo.Item.RefLabel = s.rotulosDasReferencias(r, &execqueue.Fila{
 		NaFila: []execqueue.ItemDaFila{detalhe.Item},
 	})[detalhe.Item.Kind+":"+detalhe.Item.RefID]
+	corpo.Item.CurrentLabel = s.currentItemLabel(r.Context(), detalhe.Item.ItemAtual)
 	for _, ev := range detalhe.Eventos {
 		corpo.Eventos = append(corpo.Eventos, queueEventoDTO{
 			Seq:    ev.Seq,
@@ -179,6 +190,25 @@ func (s *Server) queueItemDetail(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, corpo)
+}
+
+// currentItemLabel turns a current_item that is only an ENTITY ID into the title
+// the owner recognises. Some steps of the health job narrate the id they had at
+// hand (internal/server/reprocessar_artes.go, reconcilia_orfaos.go,
+// arte_local_musica.go) and the queue screen read "Now: 78616b63-…". The queue
+// itself cannot resolve it -- it stores what the runner reported and knows
+// nothing about entities (same reason ref_id becomes ref_label right here).
+// nil when the value is not an entity id (a file path, a source path, a title)
+// or when the entity no longer exists: the screen then shows current_item.
+func (s *Server) currentItemLabel(ctx context.Context, currentItem string) *string {
+	if _, err := uuid.Parse(currentItem); err != nil {
+		return nil
+	}
+	titulo, err := s.leitura().ObterTituloEntity(ctx, currentItem)
+	if err != nil || titulo == "" {
+		return nil
+	}
+	return &titulo
 }
 
 // rotulosDasReferencias resolves the human label of every reference in the queue

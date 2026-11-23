@@ -23,7 +23,7 @@ func (descriptorIntegracao) Nome() string { return "AcoustID" }
 
 // Descricao is the short supporting text for the UI.
 func (descriptorIntegracao) Descricao() string {
-	return "Fingerprint acustico (Chromaprint) como ultimo fallback do matching de faixa de musica -- consulta o AcoustID para identificar audio sem tag confiavel."
+	return "Fingerprint acústico (Chromaprint) como último fallback do matching de faixa de música -- consulta o AcoustID para identificar áudio sem tag confiável."
 }
 
 // Campos describes the client key -- the only credential the LOOKUP requires
@@ -36,7 +36,7 @@ func (descriptorIntegracao) Campos() []integration.Campo {
 			Label:  "Client Key",
 			Tipo:   integration.TipoSegredo,
 			EnvVar: "MYMEDIADB_ACOUSTID_CLIENT_KEY",
-			Ajuda:  "Client key da aplicacao, obtida registrando o app em acoustid.org (gratuito, uso nao-comercial). Nao e a mesma coisa que a 'user key' pessoal (usada so para submeter fingerprints).",
+			Ajuda:  "Client key da aplicação, obtida registrando o app em acoustid.org (gratuito, uso não-comercial). Não é a mesma coisa que a 'user key' pessoal (usada só para submeter fingerprints).",
 		},
 	}
 }
