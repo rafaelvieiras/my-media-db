@@ -111,13 +111,11 @@ export function DashboardShell() {
   const fecharMenu = () => setMenuAberto(false)
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 md:flex-row">
-      <div className="flex items-center justify-between md:hidden">
-        {/* A label for the menu, not the page title: the section below owns the h1.
-            As an h1 it produced two level-1 headings per screen, the smaller one first. */}
-        <p className="font-heading text-lg font-semibold">
-          {t('nav.dashboard.title')}
-        </p>
+    <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-6 md:flex-row md:gap-6">
+      {/* Mobile bar: only the menu. The screen below owns the title — showing
+          "Administration" above it cost ~40 px of every admin screen and read as a second
+          heading. The label survives inside the sheet, where it names the panel. */}
+      <div className="-mb-2 flex items-center justify-end md:hidden">
         <Sheet open={menuAberto} onOpenChange={setMenuAberto}>
           <SheetTrigger asChild>
             <Button

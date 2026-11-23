@@ -202,10 +202,20 @@ function CapaQuadrada({
 // background — image, placeholder or none) so as not to duplicate the overlay per branch.
 function HeroBackdropFundo({ src }: { src: string | null }) {
   const [falhou, setFalhou] = useState(false)
-  const mostrarPlaceholder = !src || falhou
+  // The icon means "this artwork failed", not "this item has none". With no backdrop the
+  // plain muted panel is the honest answer — drawing the icon alone made an album without a
+  // backdrop look like a broken image sitting next to the cover.
+  const semArte = !src
+  const mostrarPlaceholder = !semArte && falhou
   return (
     <div className="relative h-full min-h-[32vh] w-full bg-muted sm:min-h-[40vh]">
-      {mostrarPlaceholder ? (
+      {semArte ? (
+        <div
+          data-testid="backdrop-empty"
+          aria-hidden
+          className="h-full w-full"
+        />
+      ) : mostrarPlaceholder ? (
         <div
           data-testid="backdrop-placeholder"
           className="absolute inset-0 flex items-center justify-center text-muted-foreground"
