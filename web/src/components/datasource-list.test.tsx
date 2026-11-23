@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { DatasourceList } from '@/components/datasource-list'
 import type { ScanStatus, Source } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
+import { erroJson } from '@/test/detail-harness'
 
 // The creation and the editing/removal of a path migrated to dedicated
 // routes (`/library/new`, `/library/$id/edit` — covered in
@@ -187,5 +188,39 @@ describe('DatasourceList', () => {
     expect(
       screen.queryByRole('button', { name: 'Remove datasource' }),
     ).not.toBeInTheDocument()
+  })
+
+  it('shows the whole path instead of cutting the part that tells folders apart', async () => {
+    // `/mnt/user/media/filmes/4K` measured `sw 334 / cw 294` inside a `truncate`
+    // span: the mobile row hid exactly the tail that distinguishes one folder from another.
+    const longo = '/mnt/user/media/filmes/4K/HDR/Documentarios'
+    vi.stubGlobal('fetch', fetchRouter([sourceFixture({ path: longo })], idle))
+    renderWithClient(<DatasourceList />)
+
+    const caminho = await screen.findByText(longo)
+    expect(caminho).toHaveClass('break-all')
+    expect(caminho).not.toHaveClass('truncate')
+  })
+
+  it('offers a retry when the datasource list fails to load', async () => {
+    const user = userEvent.setup()
+    let tentativas = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        tentativas += 1
+        return tentativas === 1
+          ? erroJson(500, 'internal', 'database is locked')
+          : okJson({ items: [sourceFixture()] })
+      }),
+    )
+    renderWithClient(<DatasourceList />)
+
+    expect(await screen.findByText('database is locked')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Try again' }))
+
+    await waitFor(() =>
+      expect(screen.getByText('/mnt/filmes')).toBeInTheDocument(),
+    )
   })
 })

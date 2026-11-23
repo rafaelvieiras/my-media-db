@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { FolderPlus } from 'lucide-react'
@@ -32,6 +32,10 @@ export function LibraryNewScreen() {
   const [type, setType] = useState<CreateSource['type']>('movie')
   const [preferredLanguage, setPreferredLanguage] = useState('')
   const [retryDays, setRetryDays] = useState('')
+  // The empty path used to return in silence: the screen looked broken because
+  // nothing happened at all. Now the first submit marks the field and moves the focus.
+  const [tentouEnviar, setTentouEnviar] = useState(false)
+  const campoCaminho = useRef<HTMLInputElement>(null)
 
   const languagesQuery = useQuery(languageSettingsQueryOptions)
   const idiomasPermitidos = languagesQuery.data?.allowed ?? []
@@ -50,6 +54,8 @@ export function LibraryNewScreen() {
     e.preventDefault()
     const limpo = path.trim()
     if (!limpo) {
+      setTentouEnviar(true)
+      campoCaminho.current?.focus()
       return
     }
     // Series (type=tv) marks the library as content_type='series'; Movies stay
@@ -74,9 +80,23 @@ export function LibraryNewScreen() {
         ? t('library.create.failed')
         : null
 
+  // Live on purpose: the message disappears as soon as the owner types, without
+  // another submit to clear the state.
+  const erroCaminho =
+    tentouEnviar && path.trim() === '' ? t('library.form.pathRequired') : null
+  const caminhoInvalido = erroCaminho !== null || mensagemErro !== null
+
   return (
     <main className="mx-auto max-w-2xl px-4 py-6">
-      <LibraryFormHeader titulo={t('library.create.title')} />
+      <LibraryFormHeader
+        titulo={t('library.create.title')}
+        dirty={
+          path !== '' ||
+          type !== 'movie' ||
+          preferredLanguage !== '' ||
+          retryDays !== ''
+        }
+      />
 
       {/* noValidate: the min/max of the retry field is only a native hint;
           the range validation belongs to the backend (422 inline), without depending on the
@@ -85,15 +105,32 @@ export function LibraryNewScreen() {
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-muted-foreground">
             {t('library.form.path')}
+            <span aria-hidden className="ml-0.5 text-destructive">
+              *
+            </span>
           </span>
           <Input
+            ref={campoCaminho}
             value={path}
             onChange={(e) => setPath(e.target.value)}
             placeholder={t('library.form.pathPlaceholder')}
             aria-label={t('library.form.pathAriaLabel')}
-            aria-invalid={mensagemErro !== null || undefined}
+            required
+            aria-invalid={caminhoInvalido || undefined}
+            aria-describedby={
+              erroCaminho !== null ? 'library-path-error' : undefined
+            }
           />
         </label>
+        {erroCaminho !== null ? (
+          <p
+            id="library-path-error"
+            role="alert"
+            className="text-sm font-medium text-destructive"
+          >
+            {erroCaminho}
+          </p>
+        ) : null}
 
         <PathBrowser value={path} onChange={setPath} />
 

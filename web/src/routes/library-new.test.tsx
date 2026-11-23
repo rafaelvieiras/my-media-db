@@ -113,6 +113,111 @@ describe('LibraryNewScreen', () => {
     expect(spies.navigate).not.toHaveBeenCalled()
   })
 
+  it('an empty submit says what is missing, marks and focuses the path field', async () => {
+    const user = userEvent.setup()
+    const fetchMock = fetchRouter({})
+    vi.stubGlobal('fetch', fetchMock)
+    renderWithClient(<LibraryNewScreen />)
+
+    const campo = screen.getByLabelText('Datasource path')
+    await user.click(screen.getByRole('button', { name: /Add datasource/ }))
+
+    // The silent `return` used to leave the screen looking broken: no message, no
+    // `aria-invalid`, no request.
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Enter the folder path.',
+    )
+    expect(campo).toHaveAttribute('aria-invalid', 'true')
+    expect(campo).toHaveAttribute('aria-describedby', 'library-path-error')
+    expect(campo).toBeRequired()
+    expect(campo).toHaveFocus()
+    expect(
+      fetchMock.mock.calls.some(
+        ([u, init]) =>
+          String(u) === '/api/v1/library' &&
+          (init as RequestInit | undefined)?.method === 'POST',
+      ),
+    ).toBe(false)
+  })
+
+  it('clears the required error as soon as the path is typed', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('fetch', fetchRouter({}))
+    renderWithClient(<LibraryNewScreen />)
+
+    const campo = screen.getByLabelText('Datasource path')
+    await user.click(screen.getByRole('button', { name: /Add datasource/ }))
+    await screen.findByRole('alert')
+
+    await user.type(campo, '/mnt/filmes')
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(campo).not.toHaveAttribute('aria-invalid')
+  })
+
+  it('asks for confirmation before leaving a form with an unsaved path', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('fetch', fetchRouter({}))
+    renderWithClient(<LibraryNewScreen />)
+
+    await user.type(screen.getByLabelText('Datasource path'), '/mnt/filmes')
+    await user.click(screen.getByRole('link', { name: /Back to libraries/ }))
+
+    expect(
+      await screen.findByRole('alertdialog', { name: 'Discard changes?' }),
+    ).toBeInTheDocument()
+    expect(spies.navigate).not.toHaveBeenCalled()
+
+    // The browser itself asks before a reload/close (the same guard).
+    const despejo = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(despejo)
+    expect(despejo.defaultPrevented).toBe(true)
+
+    await user.click(screen.getByRole('button', { name: 'Discard and leave' }))
+    expect(spies.navigate).toHaveBeenCalledWith({
+      to: '/dashboard/library',
+    })
+  })
+
+  it('Esc closes the leave confirmation and gives the focus back to the link', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('fetch', fetchRouter({}))
+    renderWithClient(<LibraryNewScreen />)
+
+    const link = screen.getByRole('link', { name: /Back to libraries/ })
+    await user.type(screen.getByLabelText('Datasource path'), '/mnt/filmes')
+    await user.click(link)
+    await screen.findByRole('alertdialog')
+
+    await user.keyboard('{Escape}')
+
+    await waitFor(() =>
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument(),
+    )
+    // The dialog promised Esc + focus back: the focus does not fall into `<body>`.
+    expect(link).toHaveFocus()
+    expect(spies.navigate).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Datasource path')).toHaveValue('/mnt/filmes')
+  })
+
+  it('"Keep editing" closes the confirmation and stays on the form', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('fetch', fetchRouter({}))
+    renderWithClient(<LibraryNewScreen />)
+
+    await user.type(screen.getByLabelText('Datasource path'), '/mnt/filmes')
+    await user.click(screen.getByRole('link', { name: /Back to libraries/ }))
+    await screen.findByRole('alertdialog')
+
+    await user.click(screen.getByRole('button', { name: 'Keep editing' }))
+
+    await waitFor(() =>
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument(),
+    )
+    expect(spies.navigate).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Datasource path')).toHaveValue('/mnt/filmes')
+  })
+
   it('shows the 422 error inline and does not navigate', async () => {
     const user = userEvent.setup()
     vi.stubGlobal(

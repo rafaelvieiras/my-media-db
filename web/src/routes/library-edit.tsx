@@ -1,8 +1,18 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { LoaderCircle, Save, Trash2, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Input } from '@/components/ui/input'
 import { PathBrowser } from '@/components/path-browser'
 import { LibraryFormHeader } from '@/components/library-form-header'
@@ -35,10 +45,13 @@ export function LibraryEditScreen() {
   const { id } = useParams({ from: '/dashboard/library/$id/edit' })
   const query = useQuery(libraryQueryOptions)
   const source = query.data?.items.find((s) => s.id === id)
+  // The guard of "leave without saving" lives in the header, but the unsaved state
+  // belongs to the form below it — the screen only relays it.
+  const [sujo, setSujo] = useState(false)
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-6">
-      <LibraryFormHeader titulo={t('library.edit.title')} />
+      <LibraryFormHeader titulo={t('library.edit.title')} dirty={sujo} />
 
       {query.isPending ? (
         <LoadingState label={t('library.edit.loading')} />
@@ -48,17 +61,26 @@ export function LibraryEditScreen() {
           message={
             query.error instanceof Error ? query.error.message : undefined
           }
+          onRetry={() => void query.refetch()}
         />
       ) : !source ? (
         <ErrorState title={t('library.edit.notFound')} />
       ) : (
-        <LibraryEditForm id={id} source={source} />
+        <LibraryEditForm id={id} source={source} onSujoChange={setSujo} />
       )}
     </main>
   )
 }
 
-function LibraryEditForm({ id, source }: { id: string; source: Source }) {
+function LibraryEditForm({
+  id,
+  source,
+  onSujoChange,
+}: {
+  id: string
+  source: Source
+  onSujoChange: (sujo: boolean) => void
+}) {
   const t = useT()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -73,6 +95,26 @@ function LibraryEditForm({ id, source }: { id: string; source: Source }) {
       : '',
   )
   const [retryDaysTocado, setRetryDaysTocado] = useState(false)
+  // The empty path used to return in silence (the same defect of the creation
+  // screen): the submit now marks the field and moves the focus.
+  const [tentouSalvar, setTentouSalvar] = useState(false)
+  const campoCaminho = useRef<HTMLInputElement>(null)
+
+  // "Leave without saving" guard: the header asks before navigating when one of the
+  // three fields holds a value different from the one loaded from the API.
+  const sujo =
+    path !== source.path ||
+    (preferredLanguageTocado &&
+      preferredLanguage !== (source.preferred_language ?? '')) ||
+    (retryDaysTocado &&
+      retryDays.trim() !==
+        (source.retroactive_enrichment_days != null
+          ? String(source.retroactive_enrichment_days)
+          : ''))
+
+  useEffect(() => {
+    onSujoChange(sujo)
+  }, [sujo, onSujoChange])
 
   const languagesQuery = useQuery(languageSettingsQueryOptions)
   const idiomasPermitidos = languagesQuery.data?.allowed ?? []
@@ -103,6 +145,8 @@ function LibraryEditForm({ id, source }: { id: string; source: Source }) {
     e.preventDefault()
     const limpo = path.trim()
     if (!limpo) {
+      setTentouSalvar(true)
+      campoCaminho.current?.focus()
       return
     }
     const body: PatchSource = { path: limpo }
@@ -139,6 +183,11 @@ function LibraryEditForm({ id, source }: { id: string; source: Source }) {
         ? t('library.edit.removeFailed')
         : null
 
+  // Live on purpose: the message disappears as soon as the owner types.
+  const erroCaminho =
+    tentouSalvar && path.trim() === '' ? t('library.form.pathRequired') : null
+  const caminhoInvalido = erroCaminho !== null || mensagemErroSalvar !== null
+
   return (
     <div className="flex flex-col gap-8">
       {/* noValidate: the min/max of the retry field is only a native hint;
@@ -148,14 +197,31 @@ function LibraryEditForm({ id, source }: { id: string; source: Source }) {
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-muted-foreground">
             {t('library.form.path')}
+            <span aria-hidden className="ml-0.5 text-destructive">
+              *
+            </span>
           </span>
           <Input
+            ref={campoCaminho}
             value={path}
             onChange={(e) => setPath(e.target.value)}
             aria-label={t('library.form.pathAriaLabel')}
-            aria-invalid={mensagemErroSalvar !== null || undefined}
+            required
+            aria-invalid={caminhoInvalido || undefined}
+            aria-describedby={
+              erroCaminho !== null ? 'library-path-error' : undefined
+            }
           />
         </label>
+        {erroCaminho !== null ? (
+          <p
+            id="library-path-error"
+            role="alert"
+            className="text-sm font-medium text-destructive"
+          >
+            {erroCaminho}
+          </p>
+        ) : null}
 
         <PathBrowser value={path} onChange={setPath} />
 
@@ -200,8 +266,10 @@ function LibraryEditForm({ id, source }: { id: string; source: Source }) {
 }
 
 // "Danger zone": the removal of the datasource — previously a click
-// straight without confirmation, now it requires an explicit second step in the UI itself
-// (without `window.confirm`), the same pattern already used in the orphan purge.
+// straight without confirmation, now it requires an explicit second step. The
+// confirmation is the shared `AlertDialog` (not a hand-rolled `role="alertdialog"`):
+// it moves the focus into the dialog, closes on Esc and gives the focus back to the
+// button that opened it — the three things the old inline block promised and did not do.
 function DangerZone({
   ocupado,
   erro,
@@ -213,6 +281,7 @@ function DangerZone({
 }) {
   const t = useT()
   const [confirmando, setConfirmando] = useState(false)
+  const gatilho = useRef<HTMLButtonElement | null>(null)
 
   return (
     <section className="flex flex-col gap-2 rounded-xl border border-destructive/30 bg-destructive/5 p-4">
@@ -222,57 +291,76 @@ function DangerZone({
       <p className="text-sm text-muted-foreground">
         {t('library.edit.danger.description')}
       </p>
-      {confirmando ? (
-        <div
-          role="alertdialog"
-          aria-label={t('library.edit.danger.confirmAriaLabel')}
-          className="flex flex-wrap items-center gap-2"
+      <div>
+        <Button
+          ref={gatilho}
+          variant="destructive"
+          size="sm"
+          onClick={() => setConfirmando(true)}
         >
-          <span className="flex items-center gap-1.5 text-sm font-medium text-destructive">
-            <TriangleAlert className="size-4" aria-hidden />
-            {t('library.edit.danger.question')}
-          </span>
-          <Button
-            variant="destructive"
-            size="sm"
-            disabled={ocupado}
-            onClick={onConfirmar}
-          >
-            {ocupado ? (
-              <LoaderCircle className="animate-spin" aria-hidden />
-            ) : (
-              <Trash2 aria-hidden />
-            )}
-            {ocupado
-              ? t('library.edit.danger.removing')
-              : t('library.edit.danger.confirm')}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={ocupado}
-            onClick={() => setConfirmando(false)}
-          >
-            {t('common.action.cancel')}
-          </Button>
-        </div>
-      ) : (
-        <div>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => setConfirmando(true)}
-          >
-            <Trash2 aria-hidden />
-            {t('library.edit.danger.remove')}
-          </Button>
-        </div>
-      )}
+          <Trash2 aria-hidden />
+          {t('library.edit.danger.remove')}
+        </Button>
+      </div>
       {erro ? (
         <p role="alert" className="text-sm font-medium text-destructive">
           {erro}
         </p>
       ) : null}
+
+      <AlertDialog open={confirmando} onOpenChange={setConfirmando}>
+        <AlertDialogContent
+          onCloseAutoFocus={(e) => {
+            // Esc/cancel: the focus goes back to "Remove datasource" instead of
+            // falling into `<body>`.
+            e.preventDefault()
+            gatilho.current?.focus()
+          }}
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('library.edit.danger.remove')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('library.edit.danger.question')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {/* The dialog stays open on error (the mutation above does not close it):
+              the message has to live inside it, otherwise it lands in the region the
+              dialog marks as `aria-hidden`. */}
+          {erro ? (
+            <p role="alert" className="text-sm font-medium text-destructive">
+              {erro}
+            </p>
+          ) : null}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={ocupado}>
+              {t('common.action.cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={ocupado}
+              onClick={(e) => {
+                // preventDefault: the automatic close of `AlertDialogAction` would
+                // close the dialog BEFORE the mutation resolves — the `open` state is
+                // ours (it stays open on error, showing the message; on success the
+                // `navigate` unmounts the screen) — same pattern as the collection
+                // removal in `entity-manage-menu.tsx`.
+                e.preventDefault()
+                onConfirmar()
+              }}
+            >
+              {ocupado ? (
+                <LoaderCircle className="animate-spin" aria-hidden />
+              ) : (
+                <TriangleAlert aria-hidden />
+              )}
+              {ocupado
+                ? t('library.edit.danger.removing')
+                : t('library.edit.danger.confirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   )
 }
