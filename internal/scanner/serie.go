@@ -105,16 +105,25 @@ func (r *scanRun) factsSerie(ctx context.Context, path string) fileFacts {
 	}
 	if !ok {
 		log.Printf("scanner: %q sem padrão de episódio reconhecível; vai para revisão", path)
-		if !res.emRevisao && res.index != nil {
-			// Without SxxEyy in the name, but the folder may tell the season: the
-			// file still becomes a provisional episode.
-			f.prov = provisorioDe(path, base)
+		// Without SxxEyy in the name, but the folder may tell the season: the
+		// file still becomes a provisional episode.
+		f.prov = provisorioDe(path, base)
+		if f.prov != nil {
 			f.serieConf = res.conf
 		}
 		return f
 	}
 	if res.emRevisao || res.index == nil {
-		return f // series under review: the media_file stays pending, without a link
+		// Series still without identity (no external tree): it does NOT stay flat on the
+		// series. The folders and the file names already say the shape, so the provisional
+		// tree is built from them -- season from the folder, episode from SxxEyy -- and the
+		// file is linked to the episode it names. Before this, 785 files of 16 unmatched
+		// series hung directly on the series, with no season and no episode to open.
+		f.prov = provisorioDe(path, base)
+		if f.prov != nil {
+			f.serieConf = res.conf
+		}
+		return f
 	}
 	ids, temporadaResolvida, matched := tvmatch.CasarComPasta(res.index, ep, temporadaDaPasta(path), base)
 	if matched && ep.IsAbsolute && temporadaResolvida != 0 {
@@ -616,15 +625,25 @@ func provisorioDe(path, base string) *provisorioEpisodio {
 	if ep, ok := naming.ParseEpisode(base); ok && len(ep.Episodes) > 0 && !ep.IsAbsolute {
 		return &provisorioEpisodio{season: ep.Season, numeros: ep.Episodes, titulo: tituloDoArquivo(base), arquivo: base}
 	}
-	if pareceExtra(base) {
-		// Extras (featurette, sample, trailer...) live in the season folders and
-		// are not episodes: they only become provisional when the name states the
-		// number.
-		return nil
-	}
 	if n, ok := naming.NumeroDaPastaTemporada(filepath.Base(filepath.Dir(path))); ok {
+		// A SPECIALS folder (season 0) declares by itself that the material IS special:
+		// the extra-word filter would drop exactly the items the folder exists for --
+		// commercials, bumpers, interviews recorded by hand -- and those are the ones the
+		// owner wants listed under the series to match by hand. Inside a real season the
+		// filter stays: a "featurette bonus.mkv" is not an episode.
+		if n == 0 {
+			return &provisorioEpisodio{season: 0, titulo: tituloDoArquivo(base), arquivo: base}
+		}
+		if pareceExtra(base) {
+			// Extras (featurette, sample, trailer...) live in the season folders and
+			// are not episodes: they only become provisional when the name states the
+			// number.
+			return nil
+		}
 		return &provisorioEpisodio{season: n, titulo: tituloDoArquivo(base), arquivo: base}
 	}
+	// No season folder: a loose file only becomes provisional when the name states the
+	// numbering (handled above), never from an extra word.
 	return nil
 }
 
@@ -736,7 +755,7 @@ func (r *scanRun) acharOuCriarEpisodioProvisorio(ctx context.Context, q *sqlcgen
 		// version to another (that was what created duplicate provisional episodes
 		// in the first round).
 		existente, oerr := q.ObterEntity(ctx, rel.ChildID)
-		if oerr == nil && strings.Contains(existente.ExtensionDataJson.String, `"arquivo":"`+arquivo+`"`) {
+		if oerr == nil && arquivoDoProvisorio(existente.ExtensionDataJson.String) == arquivo {
 			return rel.ChildID, nil
 		}
 	}
@@ -824,6 +843,32 @@ func extensionProvisorio(season, number int, comNumero bool, arquivo string) []b
 		return nil
 	}
 	return b
+}
+
+// arquivoDoProvisorio returns the file name the extension_data records for a provisional
+// episode, or "" when it is not one. It DECODES the JSON instead of looking for the raw
+// substring: json.Marshal escapes "&" (and "<", ">") as \u0026, so a comparison against the
+// literal name never matched a file called "Beavis & Butt-Head ..." -- every re-scan created
+// ANOTHER provisional episode of the same file (10 copies of one title measured, 213
+// duplicates in production).
+func arquivoDoProvisorio(extensao string) string {
+	if extensao == "" {
+		return ""
+	}
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(extensao), &doc); err != nil {
+		return ""
+	}
+	ns, ok := doc[nsTV].(map[string]any)
+	if !ok {
+		return ""
+	}
+	prov, ok := ns["provisorio"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	arquivo, _ := prov["arquivo"].(string)
+	return arquivo
 }
 
 // arquivosNaSerie counts the video files under the series folder -- the SIZE EVIDENCE the

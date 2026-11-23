@@ -73,13 +73,19 @@ func idsDe(cards []entityCardDTO) map[string]bool {
 }
 
 // TestFilaRevisaoClassifica covers criterion §5.1 (classification): the queue lists
-// draft + low confidence (present, 0<conf<70) and EXCLUDES high confidence and missing.
+// draft + low confidence (present, 0<conf<70) and EXCLUDES high confidence, missing and
+// the entity that has NO file at all -- a hole in the collection is not a decision.
 func TestFilaRevisaoClassifica(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 
-	// draft (unidentified) — it enters by status.
+	// draft (unidentified) WITH a file — it enters by status.
 	semearEntity(t, d, "e-draft", "movie", "Draft")
 	definirStatus(t, d, "e-draft", "draft")
+	semearFile(t, d, "f-draft", "e-draft", "/lib/draft.mkv", "missing", 0, "")
+	// draft imported from the provider, WITHOUT any file — it does NOT enter: it is a hole
+	// in the collection (422 episodes measured in production, all inside cataloged series).
+	semearEntity(t, d, "e-draft-sem-arquivo", "episode", "Draft sem arquivo")
+	definirStatus(t, d, "e-draft-sem-arquivo", "draft")
 	// low confidence, present file — it enters through the confidence predicate.
 	semearEntity(t, d, "e-baixa", "movie", "Baixa")
 	semearFile(t, d, "f-baixa", "e-baixa", "/lib/baixa.mkv", "present", 60, "")
@@ -103,6 +109,9 @@ func TestFilaRevisaoClassifica(t *testing.T) {
 	}
 	if got["e-missing"] {
 		t.Error("fila de revisão incluiu baixa confiança MISSING")
+	}
+	if got["e-draft-sem-arquivo"] {
+		t.Error("fila de revisão incluiu item sem arquivo (buraco de acervo, não decisão)")
 	}
 }
 
@@ -553,11 +562,9 @@ func TestReviewEpisodioContaArquivoDaJuncao(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("AtualizarEntity: %v", err)
 	}
-	if err := escrita(t, d).CriarVinculoEntidade(context.Background(), sqlcgen.CriarVinculoEntidadeParams{
+	escrita(t, d).CriarVinculoEntidade(context.Background(), sqlcgen.CriarVinculoEntidadeParams{
 		MediaFileID: "mf1", EntityID: "ep1", Kind: "tv_episode", Ordinal: 0,
-	}); err != nil {
-		t.Fatalf("CriarVinculoEntidade: %v", err)
-	}
+	})
 
 	rec := do(t, h, http.MethodGet, "/api/v1/review", nil)
 	cards := decodeCards(t, rec)
@@ -573,9 +580,9 @@ func TestReviewEpisodioContaArquivoDaJuncao(t *testing.T) {
 	eq(t, "ep1 owned", ep1.Owned, true)
 	eq(t, "ep1 file_count", ep1.FileCount, 1)
 	// The group comes from the path: with the path coming from the join, the episode stops
-	// falling into "Sem arquivo" and starts grouping by the series folder.
-	if ep1.ReviewGroup == nil || ep1.ReviewGroup.Kind == "sem_arquivo" {
-		t.Fatalf("review_group = %+v, quero agrupado pela pasta (nao 'sem arquivo')", ep1.ReviewGroup)
+	// falling into the "no file" kind and starts grouping by the series folder.
+	if ep1.ReviewGroup == nil || ep1.ReviewGroup.Kind != grupoRevisaoSerie {
+		t.Fatalf("review_group = %+v, quero agrupado pela pasta da serie", ep1.ReviewGroup)
 	}
 }
 
@@ -737,4 +744,41 @@ func temAsset(assets []sqlcgen.Asset, id string) bool {
 		}
 	}
 	return false
+}
+
+// TestFilaRevisaoIgnoraEpisodioProvisorio guards the shape of the queue after the provisional
+// tree: an episode the scan built from the file name only has no identity OF ITS OWN -- the
+// identity that is missing belongs to the SERIES. Listing them would put 832 episodes of 16
+// series in the queue instead of 16 items (measured on the production copy), so the series is
+// the card and the episode stays in its tree.
+func TestFilaRevisaoIgnoraEpisodioProvisorio(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+
+	semearEntity(t, d, "e-serie", "tv", "Serie Sem Identidade")
+	definirStatus(t, d, "e-serie", "draft")
+	semearFile(t, d, "f-serie", "e-serie", "/lib/Serie S01E01.mkv", "present", 40, "")
+
+	// Provisional episode: draft + the scanner marker in the extension_data, linked to the
+	// same file through the junction.
+	semearEntity(t, d, "e-prov", "episode", "Episódio 1")
+	definirStatus(t, d, "e-prov", "draft")
+	if _, err := escrita(t, d).AtualizarEntity(context.Background(), sqlcgen.AtualizarEntityParams{
+		ID: "e-prov", Type: "episode", Title: "Episódio 1", Status: "draft",
+		ExtensionDataJson: nsOf(`{"core.tv@1":{"numbering":{"official":{"season":1,"number":1}},"provisorio":{"origem":"arquivo","arquivo":"Serie S01E01.mkv"}}}`),
+	}); err != nil {
+		t.Fatalf("marcar provisório: %v", err)
+	}
+	// CriarVinculoEntidade returns no error (sqlc :exec without RETURNING).
+	escrita(t, d).CriarVinculoEntidade(context.Background(), sqlcgen.CriarVinculoEntidadeParams{
+		MediaFileID: "f-serie", EntityID: "e-prov", Kind: "tv_episode",
+	})
+
+	cards := decodeCards(t, do(t, h, http.MethodGet, "/api/v1/review", nil))
+	got := idsDe(cards)
+	if !got["e-serie"] {
+		t.Error("fila de revisão não incluiu a série sem identidade (o item de decisão)")
+	}
+	if got["e-prov"] {
+		t.Error("fila de revisão incluiu episódio provisório (a decisão é da série)")
+	}
 }

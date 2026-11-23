@@ -31,6 +31,12 @@ var reSeasonOrdinal = regexp.MustCompile(`(?i)^\d{1,3}\s*[ªº°ao]?\s*(season|t
 // ("Looney Tunes - S1931E09.mkv"). Only 4 digits between 1900 and 2099.
 var reSeasonAno = regexp.MustCompile(`^(?:19|20)\d{2}$`)
 
+// reSeasonEspeciais is the specials folder with the WORD in front of it -- "Temporada
+// Specials", "Season Extras" -- and the bare "Extras". The bare "Specials"/"Especiais"
+// are checked by hand below. Without it the folder is taken for the SERIES folder and a
+// phantom series named "Temporada Specials" is born (2 files measured in production).
+var reSeasonEspeciais = regexp.MustCompile(`(?i)^(?:(season|temporada|s)[ ._-]*)?(specials?|especiais|extras?)$`)
+
 // reDigitosPasta extracts the number from the end of a season folder name.
 var reDigitosPasta = regexp.MustCompile(`\d{1,4}`)
 
@@ -39,6 +45,9 @@ var reDigitosPasta = regexp.MustCompile(`\d{1,4}`)
 func EhPastaTemporada(nome string) bool {
 	l := strings.ToLower(strings.TrimSpace(nome))
 	if l == "specials" || l == "especiais" {
+		return true
+	}
+	if reSeasonEspeciais.MatchString(strings.TrimSpace(nome)) {
 		return true
 	}
 	return reSeasonFolder.MatchString(nome) || reSeasonOrdinal.MatchString(strings.TrimSpace(nome)) ||
@@ -71,6 +80,11 @@ func NumeroDaPastaTemporada(nome string) (int, bool) {
 	}
 	l := strings.ToLower(strings.TrimSpace(nome))
 	if l == "specials" || l == "especiais" {
+		return 0, true
+	}
+	// The specials folder has no number of its own: it IS season 0 (the Kodi/TMDB
+	// convention the whole codebase already uses for "Specials").
+	if reSeasonEspeciais.MatchString(strings.TrimSpace(nome)) {
 		return 0, true
 	}
 	digitos := reDigitosPasta.FindString(l)

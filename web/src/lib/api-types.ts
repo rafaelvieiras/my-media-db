@@ -1733,10 +1733,10 @@ export interface components {
     /** @description Group of review queue items (briefing 0137). The key is the path (relative to the library root) already without the disc/season segment; the label is what the UI shows in the section header. */
     ReviewGroup: {
       /**
-       * @description File context: `album` (type=faixa), `serie` (type=episode), `pasta` (any other type with a file) and `sem_arquivo` (imported item, without media_file).
+       * @description File context: `album` (type=faixa), `serie` (type=episode) and `pasta` (any other type with a file). Every item of the queue has a file: an entity the provider publishes and the library does not have is a hole in the collection, not a review decision.
        * @enum {string}
        */
-      kind: 'album' | 'serie' | 'pasta' | 'sem_arquivo'
+      kind: 'album' | 'serie' | 'pasta'
       /** @description Stable group key (used to group in the frontend). */
       key: string
       /** @description Readable label — e.g. "Duran Duran — Notorious (Deluxe Edition)". */

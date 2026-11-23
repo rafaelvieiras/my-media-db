@@ -35,9 +35,6 @@ export interface ReviewGroup {
 
 export const REVIEW_PAGE_SIZE = 50
 
-const NO_FILE_KIND = 'sem_arquivo'
-const NO_FILE_KEY = 'sem_arquivo'
-
 // Case- and accent-insensitive: "Série"/"serie" and "Amélie"/"amelie" are the
 // same search. The catalog has no collation, so the normalization is ours.
 export function normalizeSearch(text: string): string {
@@ -48,10 +45,11 @@ export function normalizeSearch(text: string): string {
     .trim()
 }
 
-// Group kind of a card; an item without a group (older backend) counts as "no file",
-// the same fallback the screen uses to never hide an item of the queue.
+// Group kind of a card; an item without a group (older backend) counts as "folder", the
+// neutral kind, so the screen never hides an item of the queue. "No file" is not a kind
+// anymore: the queue only holds what the owner has.
 export function groupKind(card: ReviewCard): string {
-  return card.review_group?.kind ?? NO_FILE_KIND
+  return card.review_group?.kind ?? 'pasta'
 }
 
 // Reason the card is in the queue, from the same signal the row shows.
@@ -67,16 +65,15 @@ export function groupPath(key: string): string {
 
 // Label and folder of the group, normalized for the search: typing the name of a
 // series finds its episodes even when the individual titles do not carry it.
-function groupSearchText(card: ReviewCard, noFileLabel: string): string {
+function groupSearchText(card: ReviewCard): string {
   const group = card.review_group
-  const label = group?.label ?? noFileLabel
+  const label = group?.label ?? ''
   return normalizeSearch(`${label} ${groupPath(group?.key ?? '')}`)
 }
 
 export function filterReviewItems(
   cards: ReviewCard[],
   filters: ReviewFilters,
-  noFileLabel: string,
 ): ReviewCard[] {
   const needle = normalizeSearch(filters.query)
   return cards.filter((card) => {
@@ -91,19 +88,18 @@ export function filterReviewItems(
     }
     return (
       normalizeSearch(card.title).includes(needle) ||
-      groupSearchText(card, noFileLabel).includes(needle)
+      groupSearchText(card).includes(needle)
     )
   })
 }
 
-export function groupReviewItems(
-  cards: ReviewCard[],
-  noFileLabel: string,
-): ReviewGroup[] {
+export function groupReviewItems(cards: ReviewCard[]): ReviewGroup[] {
   const byKey = new Map<string, ReviewGroup>()
   for (const card of cards) {
     const group = card.review_group
-    const key = group?.key ?? NO_FILE_KEY
+    // A card without a group (older backend) gets a key of its own so it is never
+    // merged into another section.
+    const key = group?.key ?? `pasta:${card.id}`
     const existing = byKey.get(key)
     if (existing) {
       existing.items.push(card)
@@ -111,8 +107,8 @@ export function groupReviewItems(
     }
     byKey.set(key, {
       key,
-      kind: group?.kind ?? NO_FILE_KIND,
-      label: group?.label ?? noFileLabel,
+      kind: group?.kind ?? 'pasta',
+      label: group?.label ?? card.title,
       path: groupPath(key),
       items: [card],
     })

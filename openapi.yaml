@@ -3038,11 +3038,12 @@ components:
       properties:
         kind:
           type: string
-          enum: [album, serie, pasta, sem_arquivo]
+          enum: [album, serie, pasta]
           description: >
-            File context: `album` (type=faixa), `serie` (type=episode),
-            `pasta` (any other type with a file) and `sem_arquivo` (imported item,
-            without media_file).
+            File context: `album` (type=faixa), `serie` (type=episode) and
+            `pasta` (any other type with a file). Every item of the queue has a
+            file: an entity the provider publishes and the library does not have is
+            a hole in the collection, not a review decision.
         key:
           type: string
           description: Stable group key (used to group in the frontend).
