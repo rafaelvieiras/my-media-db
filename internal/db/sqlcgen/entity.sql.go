@@ -1941,8 +1941,8 @@ type ObterEntityPorTmdbTipoParams struct {
 }
 
 // TYPE-SCOPED lookup by tmdb id. TMDB episode ids and series ids live in the SAME
-// numeric space (measured: series 13943 = Beavis and Butt-Head, episode 13943 =
-// Everybody Hates PSATs of series 252), so an unscoped lookup lets an episode import
+// numeric space (measured: a series and an episode of another series both answer to id
+// 13943), so an unscoped lookup lets an episode import
 // reuse the series entity -- exactly the corruption that turned a series into an
 // episode-shaped entity holding 314 files.
 func (q *Queries) ObterEntityPorTmdbTipo(ctx context.Context, arg ObterEntityPorTmdbTipoParams) (Entity, error) {

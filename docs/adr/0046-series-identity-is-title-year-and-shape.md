@@ -29,16 +29,17 @@ Three measured causes, each independent:
 
 1. **The year never reached the decision.** `derivarSerie` parses `(1990)` out of the folder name
    and the import function did not take it.
-2. **The exact-title rule preferred the wrong entry.** TMDb answers `Clube do Terror` with
-   `2913 "O Clube do Terror" (1992)` and `93693 "Clube do Terror" (2019)`; `EqualFold` rejects the
-   1992 show because of the article and accepts the reboot.
+2. **The exact-title rule preferred the wrong entry.** TMDb answers that folder name with two
+   entries: `2913`, the 1992 show, whose title in that language carries a leading article, and
+   `93693`, the 2019 remake, whose title does not. `EqualFold` rejected the 1992 show because of
+   the article and accepted the remake.
 3. **Nothing compared sizes.** An entry with 3 episodes was accepted for a folder with 26 files,
    and an entry with **zero** episodes was accepted at all — `ErrArvoreVazia` only guarded the
    scan path.
 
 The provider also knows the titles a show has in other languages
 (`/tv/{id}?append_to_response=translations`), and the local folder very often uses the original
-title ("Cold Case" for the pt-BR "Arquivo Morto"). The movie auto-match already scored the original
+title (the English title while the local folder carries the pt-BR one). The movie auto-match already scored the original
 and the alternative titles; the series path did not.
 
 ## Decision
@@ -48,9 +49,9 @@ The identity of a series is decided by three pieces of evidence, in this order o
 1. **The name, in any language the source knows.** The score compares the folder's name against
    the candidate's translated title, its **original** title (free in the search payload) and, for
    the few closest candidates only, its **alternative/translated** titles (one extra round trip,
-   capped at 3 candidates). Comparison tolerates a leading article ("O Clube do Terror" vs
-   "Clube do Terror"), because an article is not part of a name — measured: that difference alone
-   costs 17 points of Jaro-Winkler and pushed the correct show 9 points below the cut.
+   capped at 3 candidates). Comparison tolerates a leading article (`O Show` vs `Show`),
+   because an article is not part of a name — measured: that difference alone costs 17 points of
+   Jaro-Winkler and pushed the correct show 9 points below the cut.
 2. **The year the folder states**, with a **2-year slack** for series (movies keep 1). The slack is
    not cosmetic: a folder marked `(1990)` was measured against the 1992 show, so a 1-year gate
    would discard the only

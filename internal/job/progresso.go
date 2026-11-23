@@ -93,7 +93,7 @@ func (p *Progresso) Etapa(indice, total int, rotulo string) {
 		// The item of the previous step does not belong to this one: it is either
 		// replaced by the step's own reports or cleared. Without this, a step that
 		// narrates no item keeps showing the last file name of the step before it --
-		// "discovering local music artwork" on screen while naming an X-Men episode.
+		// "discovering local music artwork" on screen while naming a series episode.
 		ReiniciarItem: true,
 	})
 }

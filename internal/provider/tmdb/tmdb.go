@@ -704,8 +704,8 @@ func mapearItem(it itemMulti) (provider.ResultadoExterno, bool) {
 		Type:     it.MediaType,
 		Title:    titulo,
 		// The original title comes in the SAME search payload -- no extra request. It is
-		// what the local folder name usually matches ("White Collar" against the pt-BR
-		// "Crimes do Colarinho Branco" is a ~0 score).
+		// what the local folder name usually matches (an English folder name against the
+		// pt-BR translation of that title is a ~0 score).
 		TituloOriginal: original,
 		Year:           anoDe(data),
 		Overview:       ptrNaoVazio(it.Overview),

@@ -197,7 +197,8 @@ func casarNaOrdem(idx *Index, ordem string, season int, numeros []int) ([]string
 // casarAbsoluto resolves ALL the absolute numbers; (nil,false) if any is missing. The
 // provider's absolute_number wins when it exists; otherwise the number goes through the
 // series' orderings (resolverAbsoluto), which is what makes a release numbered only by
-// absolute position ("X-Men - 27 - …") reach the real episode instead of becoming a draft.
+// absolute position ("<series> - 27 - <title>.mkv") reach the real episode instead of becoming
+// a draft.
 func casarAbsoluto(idx *Index, absolutos []int, temporadaDaPasta int, titulo string) ([]string, int, bool) {
 	out := make([]string, 0, len(absolutos))
 	temporada := 0
@@ -403,7 +404,7 @@ type candidatoPorTitulo struct {
 }
 
 // tituloDeclarado tells whether the file states a TITLE to compare: at least two meaningful
-// words. One word is the series name ("X-Men - 02.mkv"), which matches nothing and would
+// words. One word is the series name ("<series> - 02.mkv"), which matches nothing and would
 // condemn every file with no episode title to review.
 func tituloDeclarado(titulo string) bool {
 	palavras := 0
