@@ -100,6 +100,10 @@ export const common = defineDomain({
       confirmDelete: 'Delete "{name}"? This cannot be undone.',
       unsavedChanges: 'You have unsaved changes. Leave anyway?',
     },
+    live: {
+      updatedJustNow: 'updated just now',
+      updatedAgo: 'updated {seconds}s ago',
+    },
   },
   'pt-BR': {
     action: {
@@ -194,6 +198,10 @@ export const common = defineDomain({
       confirmDelete: 'Excluir "{name}"? Não dá para desfazer.',
       unsavedChanges: 'Há alterações não salvas. Sair mesmo assim?',
     },
+    live: {
+      updatedJustNow: 'atualizado agora',
+      updatedAgo: 'atualizado há {seconds}s',
+    },
   },
   es: {
     action: {
@@ -287,6 +295,10 @@ export const common = defineDomain({
       unexpectedError: 'Error inesperado: {detail}',
       confirmDelete: '¿Eliminar "{name}"? No se puede deshacer.',
       unsavedChanges: 'Hay cambios sin guardar. ¿Salir igualmente?',
+    },
+    live: {
+      updatedJustNow: 'actualizado ahora',
+      updatedAgo: 'actualizado hace {seconds}s',
     },
   },
 })

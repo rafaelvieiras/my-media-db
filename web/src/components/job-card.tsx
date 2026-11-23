@@ -9,13 +9,30 @@ import {
   CircleX,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { LoadingState, ErrorState } from '@/components/query-states'
 import { jobExecutionsQueryOptions } from '@/lib/queries'
 import { ApiError, patchJob, runJob, type JobDefinition } from '@/lib/api'
 import { formatarCarimbo, formatarDuracaoMS } from '@/lib/format'
 import { useLocale, useT } from '@/lib/i18n'
+
+// numero writes a count in the interface locale ("36,599" in English, "36.599" in
+// pt-BR): the counters arrive raw from the server while the bytes next to them are
+// already localized.
+function numero(valor: number, locale: string): string {
+  return new Intl.NumberFormat(locale).format(valor)
+}
 
 function invalidarJobs(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ['jobs'] })
@@ -26,12 +43,16 @@ function invalidarJobs(qc: ReturnType<typeof useQueryClient>) {
 // inline 422 feedback), "Executar agora" button and the last/next run.
 // The history (`JobHistoryList`) stays expandable inside the card itself, so
 // it does not require a route of its own per job.
+//
+// "Executar agora" asks first: the click fires 20–30 min of server work, so the
+// AlertDialog states the verb and how long the last run took.
 export function JobCard({ job }: { job: JobDefinition }) {
   const t = useT()
   const locale = useLocale()
   const qc = useQueryClient()
   const [cron, setCron] = useState(job.schedule_cron ?? '')
   const [historicoAberto, setHistoricoAberto] = useState(false)
+  const [confirmarExecucao, setConfirmarExecucao] = useState(false)
 
   const toggleEnabled = useMutation({
     mutationFn: (enabled: boolean) => patchJob(job.id, { enabled }),
@@ -62,6 +83,22 @@ export function JobCard({ job }: { job: JobDefinition }) {
   const progresso = job.progress
   const corrido = formatarDuracaoMS(progresso?.elapsed_ms)
 
+  // The two counters of the progress measure different things — `done/total` counts
+  // files of the current step, `ok/failed` counts reported items — so each carries
+  // its noun and `ok` hides when nothing succeeded.
+  const contagemDoProgresso = progresso
+    ? progresso.ok > 0
+      ? t('jobs.card.okFailedItems', {
+          ok: numero(progresso.ok, locale),
+          failed: numero(progresso.failed, locale),
+        })
+      : progresso.failed > 0
+        ? t('jobs.card.failedItems', {
+            failed: numero(progresso.failed, locale),
+          })
+        : null
+    : null
+
   return (
     <li className="flex flex-col gap-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -83,7 +120,7 @@ export function JobCard({ job }: { job: JobDefinition }) {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -99,26 +136,27 @@ export function JobCard({ job }: { job: JobDefinition }) {
         </label>
 
         <form
-          className="flex items-center gap-1.5"
+          className="flex min-w-0 flex-col gap-1.5 sm:flex-row sm:items-center"
           onSubmit={(e) => {
             e.preventDefault()
             salvarCron.mutate(cron)
           }}
         >
-          <label className="flex items-center gap-1.5 text-sm">
+          <label className="flex min-w-0 flex-col gap-1 text-sm sm:flex-row sm:items-center sm:gap-1.5">
             <span className="text-muted-foreground">{t('jobs.card.cron')}</span>
             <Input
               value={cron}
               onChange={(e) => setCron(e.target.value)}
               placeholder={t('jobs.card.cronPlaceholder')}
               aria-label={t('jobs.card.cronSchedule', { name: job.nome })}
-              className="w-56"
+              className="w-full sm:w-56"
             />
           </label>
           <Button
             type="submit"
             variant="outline"
             size="sm"
+            className="sm:w-auto"
             disabled={salvarCron.isPending}
           >
             {salvarCron.isPending
@@ -130,8 +168,9 @@ export function JobCard({ job }: { job: JobDefinition }) {
         <Button
           type="button"
           size="sm"
+          className="sm:w-auto"
           disabled={job.running || executar.isPending}
-          onClick={() => executar.mutate()}
+          onClick={() => setConfirmarExecucao(true)}
         >
           {job.running || executar.isPending ? (
             <LoaderCircle className="animate-spin" aria-hidden />
@@ -143,6 +182,35 @@ export function JobCard({ job }: { job: JobDefinition }) {
             : t('jobs.card.runNow')}
         </Button>
       </div>
+
+      <AlertDialog open={confirmarExecucao} onOpenChange={setConfirmarExecucao}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('jobs.card.runNowConfirmTitle', { name: job.nome })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {levou
+                ? t('jobs.card.runNowConfirmDescription', { duration: levou })
+                : t('jobs.card.runNowConfirmDescriptionUnknown')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.action.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              // The action is not destructive: it starts a background run. The
+              // default look of `AlertDialogAction` is the destructive pair.
+              className={buttonVariants({ variant: 'default' })}
+              onClick={() => {
+                setConfirmarExecucao(false)
+                executar.mutate()
+              }}
+            >
+              {t('jobs.card.runNowConfirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {erroCron ? (
         <p role="alert" className="text-sm font-medium text-destructive">
@@ -191,30 +259,26 @@ export function JobCard({ job }: { job: JobDefinition }) {
               })}
             </span>
           ) : null}
-          <span className="flex flex-wrap items-center gap-3 text-muted-foreground">
+          <span
+            role="status"
+            aria-live="polite"
+            className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground"
+          >
             {progresso.total > 0 ? (
               <span>
-                {t('jobs.card.progressCount', {
-                  done: progresso.done,
-                  total: progresso.total,
+                {t('jobs.card.progressFiles', {
+                  done: numero(progresso.done, locale),
+                  total: numero(progresso.total, locale),
                 })}
               </span>
             ) : null}
-            <span>
-              {t('jobs.card.okFailed', {
-                ok: progresso.ok,
-                failed: progresso.failed,
-              })}
-            </span>
+            {contagemDoProgresso ? <span>{contagemDoProgresso}</span> : null}
             {corrido ? (
               <span>{t('jobs.card.elapsed', { duration: corrido })}</span>
             ) : null}
           </span>
           {progresso.current_item ? (
-            <span
-              className="truncate text-muted-foreground"
-              title={progresso.current_item}
-            >
+            <span className="break-words text-muted-foreground">
               {t('jobs.card.currentItem', { item: progresso.current_item })}
             </span>
           ) : null}
@@ -247,7 +311,7 @@ export function JobCard({ job }: { job: JobDefinition }) {
 function JobHistoryList({ jobId }: { jobId: string }) {
   const t = useT()
   const locale = useLocale()
-  const { data, isPending, isError, error } = useQuery(
+  const { data, isPending, isError, error, refetch } = useQuery(
     jobExecutionsQueryOptions(jobId, { limit: 20 }),
   )
 
@@ -259,6 +323,7 @@ function JobHistoryList({ jobId }: { jobId: string }) {
       <ErrorState
         title={t('jobs.history.loadError')}
         message={error instanceof Error ? error.message : undefined}
+        onRetry={() => void refetch()}
       />
     )
   }
@@ -302,16 +367,27 @@ function JobHistoryList({ jobId }: { jobId: string }) {
             </Badge>
             {duracao ? (
               <span className="text-muted-foreground">
-                {t('jobs.card.took', { duration: duracao })}
+                {/* Own key: `jobs.card.took` says "Last run took", which is wrong for
+                    every older row of the history. */}
+                {t('jobs.history.took', { duration: duracao })}
               </span>
             ) : null}
             {exec.ok > 0 || exec.failed > 0 ? (
               <span className="text-muted-foreground">
-                {t('jobs.card.okFailed', { ok: exec.ok, failed: exec.failed })}
+                {exec.ok > 0
+                  ? t('jobs.card.okFailedItems', {
+                      ok: numero(exec.ok, locale),
+                      failed: numero(exec.failed, locale),
+                    })
+                  : t('jobs.card.failedItems', {
+                      failed: numero(exec.failed, locale),
+                    })}
               </span>
             ) : null}
             {exec.message ? (
-              <span className="text-muted-foreground">{exec.message}</span>
+              <span className="min-w-0 break-words text-muted-foreground">
+                {exec.message}
+              </span>
             ) : null}
           </li>
         )

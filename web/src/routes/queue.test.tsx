@@ -102,8 +102,8 @@ describe('QueueScreen — a fila observável (ADR-0040)', () => {
     expect(
       dentro.getByText('Step 3/8: enriquecimento retroativo'),
     ).toBeInTheDocument()
-    expect(dentro.getByText('40 of 120')).toBeInTheDocument()
-    expect(dentro.getByText('37 ok · 3 failed')).toBeInTheDocument()
+    expect(dentro.getByText('40 of 120 files')).toBeInTheDocument()
+    expect(dentro.getByText('37 items ok · 3 failed')).toBeInTheDocument()
     expect(
       dentro.getByText('Now: Filmes/O Auto da Compadecida (2000)'),
     ).toBeInTheDocument()
@@ -114,6 +114,71 @@ describe('QueueScreen — a fila observável (ADR-0040)', () => {
       'aria-valuenow',
       '40',
     )
+  })
+
+  it('announces the counters of the run and does not read them as one number', async () => {
+    renderFila(filaVazia({ running: itemFixture({ ok: 0, failed: 15 }) }))
+
+    const card = (await screen.findByText('Saúde da biblioteca')).closest('li')
+    const dentro = within(card as HTMLElement)
+
+    // `ok` disappears when nothing succeeded; the failure counter keeps its noun.
+    expect(dentro.getByText('40 of 120 files')).toBeInTheDocument()
+    expect(dentro.getByText('15 items failed')).toBeInTheDocument()
+    expect(dentro.queryByText(/items ok/)).not.toBeInTheDocument()
+
+    // The counters live in a polite live region: they change on their own every 4s.
+    const viva = dentro.getByText('15 items failed').closest('[role="status"]')
+    expect(viva).not.toBeNull()
+    expect(viva).toHaveAttribute('aria-live', 'polite')
+  })
+
+  it('formats the counters with the locale separator', async () => {
+    renderFila(
+      filaVazia({
+        recent: [
+          itemFixture({
+            id: 'q-9',
+            status: 'success',
+            done: 36599,
+            total: 36599,
+            ok: 15,
+            failed: 0,
+            elapsed_ms: null,
+            duration_ms: 3600000,
+          }),
+        ],
+      }),
+    )
+
+    await screen.findByText('Recently finished')
+    expect(screen.getByText('36,599 of 36,599 files')).toBeInTheDocument()
+    expect(screen.getByText('15 items ok · 0 failed')).toBeInTheDocument()
+  })
+
+  it('paints the progress bar by status and labels it for screen readers', async () => {
+    renderFila(
+      filaVazia({
+        recent: [
+          itemFixture({
+            id: 'q-4',
+            status: 'success',
+            done: 120,
+            total: 120,
+            ok: 120,
+            failed: 0,
+            elapsed_ms: null,
+            duration_ms: 140000,
+          }),
+        ],
+      }),
+    )
+
+    await screen.findByText('Recently finished')
+    const barra = screen.getByRole('progressbar')
+    expect(barra).toHaveAttribute('aria-label', 'Progress of this run')
+    expect(barra).toHaveAttribute('aria-valuetext', '120 of 120 files (100%)')
+    expect(barra.firstElementChild?.className).toContain('bg-emerald-600')
   })
 
   it('a waiting item shows its position and how long it has been waiting', async () => {
@@ -219,6 +284,35 @@ describe('QueueScreen — a fila observável (ADR-0040)', () => {
     ).toBeInTheDocument()
   })
 
+  it('paginates the trail instead of dumping every row into the page', async () => {
+    const user = userEvent.setup()
+    const eventos: QueueEvent[] = Array.from({ length: 45 }, (_, i) => ({
+      seq: i + 1,
+      at: '2026-11-19T15:50:00Z',
+      status: 'ok' as const,
+      label: `Item ${String(i + 1).padStart(2, '0')}`,
+      detail: null,
+    }))
+    renderFila(filaVazia({ running: itemFixture() }), eventos)
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Show what it did' }),
+    )
+
+    expect(await screen.findByText('Showing 20 of 45')).toBeInTheDocument()
+    expect(screen.getAllByText(/^Item \d\d$/)).toHaveLength(20)
+
+    await user.click(screen.getByRole('button', { name: 'Show more' }))
+    expect(screen.getByText('Showing 40 of 45')).toBeInTheDocument()
+    expect(screen.getAllByText(/^Item \d\d$/)).toHaveLength(40)
+
+    await user.click(screen.getByRole('button', { name: 'Show more' }))
+    expect(screen.getByText('Showing 45 of 45')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Show more' }),
+    ).not.toBeInTheDocument()
+  })
+
   it('the trail of a run that reported nothing says so', async () => {
     const user = userEvent.setup()
     renderFila(
@@ -246,5 +340,33 @@ describe('QueueScreen — a fila observável (ADR-0040)', () => {
     await waitFor(() =>
       expect(screen.getByText('Could not load the queue')).toBeInTheDocument(),
     )
+  })
+
+  it('a failed load offers a retry instead of a dead end', async () => {
+    const user = userEvent.setup()
+    let chamadas = 0
+    vi.stubGlobal(
+      'fetch',
+      criarFetch(() => {
+        chamadas += 1
+        if (chamadas === 1) {
+          return { ok: false, status: 503, json: async () => ({}) } as Response
+        }
+        return okJson(filaVazia({ running: itemFixture() }))
+      }),
+    )
+    renderComEspioes(<QueueScreen />)
+
+    await user.click(await screen.findByRole('button', { name: 'Try again' }))
+
+    expect(await screen.findByText('Running now')).toBeInTheDocument()
+  })
+
+  it('says how fresh the polling data is', async () => {
+    renderFila(filaVazia({ running: itemFixture() }))
+
+    expect(
+      await screen.findByText(/^updated (just now|\d+s ago)$/),
+    ).toBeInTheDocument()
   })
 })

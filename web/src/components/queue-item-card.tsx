@@ -24,6 +24,16 @@ import type { QueueEvent, QueueItem } from '@/lib/api'
 // recently finished. What differs between them is only what the numbers mean
 // (`running for`, `waiting`, `took`) and the position in line.
 
+// Trail rows rendered at once. The server caps the trail at 200 rows, which used to
+// land in the DOM in one block (a 13 000 px card): the rest arrives on demand.
+const RASTRO_PASSO = 20
+
+// numero writes a count in the interface locale ("36,599" in English, "36.599" in
+// pt-BR): raw five-digit numbers next to locale-formatted bytes read as noise.
+function numero(valor: number, locale: string): string {
+  return new Intl.NumberFormat(locale).format(valor)
+}
+
 // etiquetaDoStatus maps the queue status to its catalog label.
 function etiquetaDoStatus(status: QueueItem['status']): string {
   switch (status) {
@@ -49,6 +59,22 @@ function corDoStatus(status: QueueItem['status']): string {
       return 'bg-sky-500/15 text-sky-700 dark:text-sky-400'
     default:
       return 'bg-muted text-muted-foreground'
+  }
+}
+
+// corDaBarra: the progress bar used to be sky for every state — a finished run with
+// an error looked exactly like one still going. Running is sky, done is emerald,
+// failure is destructive; a waiting run has nothing to show yet.
+function corDaBarra(status: QueueItem['status']): string {
+  switch (status) {
+    case 'success':
+      return 'bg-emerald-600'
+    case 'error':
+      return 'bg-destructive'
+    case 'running':
+      return 'bg-sky-600'
+    default:
+      return 'bg-muted-foreground/40'
   }
 }
 
@@ -84,6 +110,25 @@ export function QueueItemCard({ item }: { item: QueueItem }) {
       : 0
   const temEtapa = item.step_total > 0 && item.step_label
 
+  // The two counters of a run measure DIFFERENT things (the scan counts files seen
+  // of files found, the counters count reported items), so each one carries its
+  // noun and `ok` hides when nothing succeeded.
+  const contagem =
+    item.ok > 0
+      ? t('queue.item.okFailedItems', {
+          ok: numero(item.ok, locale),
+          failed: numero(item.failed, locale),
+        })
+      : item.failed > 0
+        ? t('queue.item.failedItems', {
+            failed: numero(item.failed, locale),
+          })
+        : null
+  const arquivos = t('queue.item.progressFiles', {
+    done: numero(item.done, locale),
+    total: numero(item.total, locale),
+  })
+
   return (
     <li className="flex flex-col gap-2 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -93,7 +138,7 @@ export function QueueItemCard({ item }: { item: QueueItem }) {
               {tipo}
             </span>
             <span
-              className="truncate font-heading text-base font-medium"
+              className="line-clamp-2 font-heading text-base font-medium break-words"
               title={referencia}
             >
               {referencia}
@@ -145,33 +190,32 @@ export function QueueItemCard({ item }: { item: QueueItem }) {
 
       {item.total > 0 ? (
         <div className="flex flex-col gap-1">
-          <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-            <span>
-              {t('queue.item.progress', { done: item.done, total: item.total })}
-            </span>
-            <span>
-              {t('queue.item.okFailed', { ok: item.ok, failed: item.failed })}
-            </span>
+          <div
+            role="status"
+            aria-live="polite"
+            className="flex flex-wrap items-center justify-between gap-x-2 text-xs text-muted-foreground"
+          >
+            <span>{arquivos}</span>
+            {contagem ? <span>{contagem}</span> : null}
           </div>
           <div
             className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
             role="progressbar"
+            aria-label={t('queue.item.progressbarLabel')}
             aria-valuemin={0}
             aria-valuemax={item.total}
             aria-valuenow={item.done}
+            aria-valuetext={`${arquivos} (${percentual}%)`}
           >
             <div
-              className="h-full rounded-full bg-sky-600 transition-all"
+              className={`h-full rounded-full transition-all ${corDaBarra(item.status)}`}
               style={{ width: `${percentual}%` }}
             />
           </div>
         </div>
       ) : null}
 
-      <p
-        className="truncate text-sm text-muted-foreground"
-        title={item.current_item ?? ''}
-      >
+      <p className="text-sm break-words text-muted-foreground">
         {item.current_item
           ? t('queue.item.currentItem', { item: item.current_item })
           : t('queue.item.unknownItem')}
@@ -202,11 +246,14 @@ export function QueueItemCard({ item }: { item: QueueItem }) {
 }
 
 // RastroDoItem is the trail of ONE run, fetched only when the owner expands it
-// (up to 200 rows per run — not something to load for every card of the list).
+// (up to 200 rows per run — not something to load for every card of the list) and
+// rendered RASTRO_PASSO rows at a time inside a scroll box: 200 rows in the page
+// flow made the card 13 000 px tall and pushed the next one out of reach.
 function RastroDoItem({ id }: { id: string }) {
   const t = useT()
   const locale = useLocale()
-  const { data, isPending, isError, error } = useQuery(
+  const [visiveis, setVisiveis] = useState(RASTRO_PASSO)
+  const { data, isPending, isError, error, refetch } = useQuery(
     queueItemQueryOptions(id),
   )
 
@@ -218,6 +265,7 @@ function RastroDoItem({ id }: { id: string }) {
       <ErrorState
         title={t('queue.item.trailError')}
         message={error instanceof Error ? error.message : undefined}
+        onRetry={() => void refetch()}
       />
     )
   }
@@ -229,12 +277,34 @@ function RastroDoItem({ id }: { id: string }) {
     )
   }
 
+  const total = data.events.length
+  const mostrados = data.events.slice(0, visiveis)
+
   return (
-    <ul className="flex flex-col divide-y divide-border/60 pt-1">
-      {data.events.map((evento) => (
-        <EventoDoRastro key={evento.seq} evento={evento} locale={locale} />
-      ))}
-    </ul>
+    <div className="flex flex-col gap-1 pt-1">
+      <p className="text-xs text-muted-foreground">
+        {t('queue.item.trailCount', {
+          shown: numero(mostrados.length, locale),
+          total: numero(total, locale),
+        })}
+      </p>
+      <ul className="flex max-h-72 flex-col divide-y divide-border/60 overflow-y-auto">
+        {mostrados.map((evento) => (
+          <EventoDoRastro key={evento.seq} evento={evento} locale={locale} />
+        ))}
+      </ul>
+      {visiveis < total ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="self-start"
+          onClick={() => setVisiveis((n) => n + RASTRO_PASSO)}
+        >
+          {t('queue.item.trailMore')}
+        </Button>
+      ) : null}
+    </div>
   )
 }
 
@@ -263,9 +333,7 @@ function EventoDoRastro({
     <li className="flex items-start gap-2 py-1.5">
       <Icone className={`mt-0.5 size-3.5 shrink-0 ${cor}`} aria-hidden />
       <div className="flex min-w-0 flex-col">
-        <span className="truncate text-sm" title={evento.label}>
-          {evento.label}
-        </span>
+        <span className="text-sm break-words">{evento.label}</span>
         <span className="text-xs text-muted-foreground">
           {t(`queue.event.${evento.status}`)} ·{' '}
           {formatarCarimbo(evento.at, locale)}

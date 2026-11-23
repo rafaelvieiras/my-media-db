@@ -97,6 +97,47 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+// The cron form used to keep "Cron + Salvar agendamento" on one line at any
+// width: at 390 px the button ended at x=461 and the label read "Salvar age:".
+// jsdom does not lay out, so the test pins the classes that make it stack.
+it('the cron form stacks on a phone (input w-full, save button below it)', async () => {
+  renderJobs()
+  await esperarLista()
+
+  const campo = screen.getByLabelText(
+    'Cron schedule of Backup do banco (VACUUM INTO)',
+  )
+  expect(campo.className).toContain('w-full')
+  expect(campo.className).toContain('sm:w-56')
+  const form = campo.closest('form') as HTMLFormElement
+  expect(form.className).toContain('flex-col')
+  expect(form.className).toContain('sm:flex-row')
+})
+
+it('a failed load offers a retry', async () => {
+  const user = userEvent.setup()
+  let chamadas = 0
+  vi.stubGlobal(
+    'fetch',
+    criarFetch(({ path, method }) => {
+      if (path !== '/api/v1/jobs' || method !== 'GET') {
+        throw new Error(`rota nao mockada: ${method} ${path}`)
+      }
+      chamadas += 1
+      if (chamadas === 1) {
+        return { ok: false, status: 503, json: async () => ({}) } as Response
+      }
+      return okJson({ items: [jobFixture()] })
+    }),
+  )
+  renderComEspioes(<JobsScreen />)
+
+  await user.click(await screen.findByRole('button', { name: 'Try again' }))
+  expect(
+    await screen.findByText('Backup do banco (VACUUM INTO)'),
+  ).toBeInTheDocument()
+})
+
 describe('JobsScreen — jobs administration (0052)', () => {
   it('lists the known jobs', async () => {
     renderJobs()
@@ -183,12 +224,30 @@ describe('JobsScreen — jobs administration (0052)', () => {
     )
   })
 
-  it('"Run now" fires POST and shows loading→running', async () => {
+  it('"Run now" asks for confirmation and only then fires POST', async () => {
     const user = userEvent.setup()
-    const { espioes, invalidateSpy } = renderJobs()
+    const { espioes, invalidateSpy } = renderJobs({
+      job: jobFixture({
+        last_run_at: '2026-07-12T03:00:00Z',
+        last_duration_ms: 1680000,
+      }),
+    })
     await esperarLista()
 
     await user.click(screen.getByRole('button', { name: /Run now/ }))
+
+    // Nothing runs on the first click: a run is 20–30 min of server work.
+    const dialogo = await screen.findByRole('alertdialog')
+    expect(espioes.onRun).not.toHaveBeenCalled()
+    expect(
+      within(dialogo).getByText('Run Backup do banco (VACUUM INTO) now?'),
+    ).toBeInTheDocument()
+    // The dialog says how long the last run took (28min here).
+    expect(
+      within(dialogo).getByText(/the last run took 28min/),
+    ).toBeInTheDocument()
+
+    await user.click(within(dialogo).getByRole('button', { name: 'Run now' }))
 
     await waitFor(() => expect(espioes.onRun).toHaveBeenCalled())
     await esperarChaves(invalidateSpy, [
@@ -264,8 +323,8 @@ describe('JobsScreen — jobs administration (0052)', () => {
     expect(
       screen.getByText(/Step 3\/8: enriquecimento retroativo/),
     ).toBeInTheDocument()
-    expect(screen.getByText('40 of 120')).toBeInTheDocument()
-    expect(screen.getByText('37 ok · 3 failed')).toBeInTheDocument()
+    expect(screen.getByText('40 of 120 files')).toBeInTheDocument()
+    expect(screen.getByText('37 items ok · 3 failed')).toBeInTheDocument()
     expect(screen.getByText('running for 1h 15min')).toBeInTheDocument()
     expect(
       screen.getByText('Now: Filmes/O Auto da Compadecida (2000)'),
@@ -298,7 +357,8 @@ describe('JobsScreen — jobs administration (0052)', () => {
     const linha = (await screen.findByText(/backup gravado em/)).closest('li')
     expect(linha).not.toBeNull()
     const dentro = within(linha as HTMLElement)
-    expect(dentro.getByText('Last run took 2min')).toBeInTheDocument()
-    expect(dentro.getByText('12 ok · 1 failed')).toBeInTheDocument()
+    // Historical rows say "took", never "Last run took".
+    expect(dentro.getByText('took 2min')).toBeInTheDocument()
+    expect(dentro.getByText('12 items ok · 1 failed')).toBeInTheDocument()
   })
 })

@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ScreenHeader } from '@/components/screen-header'
 import { QueueItemCard } from '@/components/queue-item-card'
 import { EmptyState, LoadingState, ErrorState } from '@/components/query-states'
-import { queueQueryOptions } from '@/lib/queries'
+import { queueQueryOptions, useFreshnessSeconds } from '@/lib/queries'
 import { useT } from '@/lib/i18n'
 
 // Route `/dashboard/queue`: the execution queue in one screen (ADR-0040, issue
@@ -15,7 +15,11 @@ import { useT } from '@/lib/i18n'
 // screen triggers (plus the scans, which have no screen of their own).
 export function QueueScreen() {
   const t = useT()
-  const { data, isPending, isError, error } = useQuery(queueQueryOptions)
+  const { data, isPending, isError, error, refetch, dataUpdatedAt } =
+    useQuery(queueQueryOptions)
+  // The screen polls every 4s while something runs; without this line the counters
+  // moved on their own and nothing said the page was alive.
+  const idade = useFreshnessSeconds(dataUpdatedAt)
 
   const vazia =
     !data ||
@@ -28,12 +32,21 @@ export function QueueScreen() {
         subtitle={t('queue.screen.subtitle')}
       />
 
+      {idade !== null ? (
+        <p className="-mt-2 mb-4 text-xs text-muted-foreground">
+          {idade <= 1
+            ? t('common.live.updatedJustNow')
+            : t('common.live.updatedAgo', { seconds: idade })}
+        </p>
+      ) : null}
+
       {isPending ? (
         <LoadingState label={t('queue.screen.loading')} />
       ) : isError ? (
         <ErrorState
           title={t('queue.screen.loadError')}
           message={error instanceof Error ? error.message : undefined}
+          onRetry={() => void refetch()}
         />
       ) : vazia ? (
         <EmptyState
@@ -69,7 +82,12 @@ export function QueueScreen() {
           {data.recent.length > 0 ? (
             <section className="flex flex-col gap-2">
               <h2 className="font-heading text-lg font-medium">
-                {t('queue.sections.recent')}
+                {t('queue.sections.recent')}{' '}
+                <span className="text-sm font-normal text-muted-foreground">
+                  {t('queue.sections.recentCount', {
+                    count: data.recent.length,
+                  })}
+                </span>
               </h2>
               <ul className="flex flex-col gap-3">
                 {data.recent.map((item) => (
