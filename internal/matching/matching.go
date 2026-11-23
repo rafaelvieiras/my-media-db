@@ -141,7 +141,7 @@ func PontuarComAlternativos(tituloConsulta string, anoConsulta int, tituloCandid
 const ToleranciaAnoPadrao = 1
 
 // ToleranciaAnoSerie is wider, and for a measured reason: the year a SERIES FOLDER states is
-// often not the first air date. "Clube do Terror (1990)" is the 1992 show, and a 1-year
+// often not the first air date. A folder marked 1990 was measured against the 1992 show, and a 1-year
 // gate would discard the only correct candidate of the search -- leaving the item to review
 // while the wrong show (the 2019 reboot) is the one that survives a naive gate. Two years
 // still keeps remakes apart: the measured cases differ by 20+ (1990 vs 2019, 1983 vs 2012).

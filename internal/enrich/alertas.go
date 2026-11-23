@@ -42,7 +42,7 @@ const (
 
 // SinalizarArvoreInutil persists the alert of a series whose source returned ZERO episodes.
 // It looks for ANOTHER candidate of the same name (the phantom entry usually has a real
-// sibling: measured, "Aladdin" #14383 has 0 episodes while "Aladdin: A Série Animada"
+// sibling: measured, the phantom #14383 has 0 episodes while the real
 // #2745 has 86) and stores it as a one-click fix. When no sibling reaches the suggestion
 // threshold, the row describes the CURRENT match instead -- the screen then shows the
 // warning without an apply button, which is still better than silence.
@@ -146,9 +146,9 @@ func (s *Servico) alternativaDeMesmoNome(ctx context.Context, ent sqlcgen.Entity
 			continue
 		}
 		anoCand, _ := strconv.Atoi(strings.TrimSpace(deref(r.Year)))
-		// The original title counts too: the sibling of a phantom entry is often titled
-		// "Aladdin: A Série Animada" in the library language while the name on disk is
-		// "Aladdin" -- scoring only the localized title rejects the right item.
+		// The original title counts too: the sibling of a phantom entry is often titled with
+		// its translated name in the library language while the name on disk is the original --
+		// scoring only the localized title rejects the right item.
 		score, _, descartado := matching.PontuarComAlternativos(nome, ano, r.Title, []string{r.TituloOriginal}, anoCand)
 		if descartado || score <= scoreMelhor {
 			continue

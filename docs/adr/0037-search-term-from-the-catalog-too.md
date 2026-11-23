@@ -7,26 +7,26 @@
 ## Context
 
 The auto-match derived the search term from the **file name** for every type except
-series. For a movie that is the release name — `Alligator2.91.BD1080p.MemoriadaTV.Maior` —
-while the entity already carries a perfectly good title, taken from the **folder** the
-owner curated: `Alligator 2 A Mutação`. The catalog title was never used.
+series. For a movie that is the release name — `ACleanTitle.91.BD1080p.SomeGROUP` — while
+the entity already carries a perfectly good title, taken from the **folder** the owner
+curated: `A Clean Title`. The catalog title was never used.
 
 The consequence is visible in production (18/nov/2026): of **1291 movies, 625 have no
 external id**, and none of them had ever been checked by the retroactive enrichment
 (`last_external_match_attempt_at` NULL in all 625). Sampling 25 of them and repeating the
 search by hand:
 
-| search term | outcome |
-|---|---|
-| release name (`Alligator2 91 BD1080p MemoriadaTV Maior`) | **0 candidates** — the source is literal ([ADR-0035](0035-suggested-match-hint.md)) |
-| catalog title (`Alligator 2 A Mutação`) | the right movie, first result, score **100** |
+| search term                                       | outcome                                                                             |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| release name (`ACleanTitle 91 BD1080p SomeGROUP`) | **0 candidates** — the source is literal ([ADR-0035](0035-suggested-match-hint.md)) |
+| catalog title (`A Clean Title`)                   | the right movie, first result, score **100**                                        |
 
 Across the sample, **21 of 25** movies reach `LimiarAutoMatch` when searched by the catalog
 title, against about **0** by the release name. Three failure shapes account for the rest:
 
-1. **Garbage in the release name** — `Alligator2.91`, `TMNT2.91`, `VendedorArma.89`: the
+1. **Garbage in the release name** — `ACleanTitle.91`, `Another2.91`, `NoSpace.89`: the
    scan's parser cuts the year at `(year)`, and a dot-separated release keeps quality tokens
-   (`BD1080p`, `MemoriadaTV`) glued to the title.
+   (`BD1080p`, `SomeGROUP`) glued to the title.
 2. **Cross-language** — the file is in English (`Get.The.Gringo`, `Rush Hour 3`) and the
    folder in pt-BR (`Plano de Fuga`, `A Hora do Rush 3`). The provider answers in the
    library language, so the two never agree.
@@ -43,12 +43,12 @@ its own ([ADR-0027](0027-music-model-artist-album-track.md)).
 The search term becomes a **list of attempts, tried in order**, and the caller stops at the
 first one that reaches `LimiarAutoMatch` (`Server.variantesTituloAno`, `automatch.go`):
 
-| type | attempts |
-|---|---|
-| movie | **catalog title** (with the year of `release_date`), then the release name |
-| series | the series folder, with the entity title as fallback |
-| artist | the entity title, no year |
-| anything else | the release name of the first file |
+| type          | attempts                                                                   |
+| ------------- | -------------------------------------------------------------------------- |
+| movie         | **catalog title** (with the year of `release_date`), then the release name |
+| series        | the series folder, with the entity title as fallback                       |
+| artist        | the entity title, no year                                                  |
+| anything else | the release name of the first file                                         |
 
 1. **Catalog first, file second.** The catalog title wins because it is the part a human
    organized and it is what the provider indexes; the release name stays as the second

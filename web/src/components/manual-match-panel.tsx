@@ -19,8 +19,8 @@ const DEBOUNCE_MS = 350
 // Why it exists as an action of the entity detail, and not only in the review queue:
 // the auto-match can pick the WRONG item ABOVE the threshold, and then the entity is
 // `cataloged` -- it never shows up in the review queue, so there was no place where the
-// owner could say "no, it is this one". Measured case: the folder "White Collar" (2009)
-// matched "White Collar Blue" (2002) with score 94 and stayed cataloged.
+// owner could say "no, it is this one". Measured case: a folder matched a longer same-name
+// title of another year with score 94 and stayed cataloged.
 function ManualMatchPanel({
   entityId,
   initialQuery = '',

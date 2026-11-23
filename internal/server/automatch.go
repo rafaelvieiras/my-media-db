@@ -412,8 +412,8 @@ func (s *Server) variantesDaPastaDoFilme(ctx context.Context, ent sqlcgen.Entity
 }
 
 // comVariantesSemEnfeite puts, right after each attempt, the SAME attempt without the trailing
-// filler of the title ("101 Dálmatas O Filme" -> "101 Dálmatas", "Mortal Kombat O Filme" ->
-// "Mortal Kombat"). It never comes BEFORE its literal: the title as it is on disk is always
+// filler of the title ("<title> O Filme" -> "<title>"). It never comes BEFORE its literal: the
+// title as it is on disk is always
 // tried first, and the variant only costs a provider call when that one failed.
 //
 // MEASURED against TMDb, the case that motivated it: "101 Dálmatas O Filme" returns ZERO
@@ -601,7 +601,8 @@ func titulosDoCandidato(c provider.ResultadoExterno) []string {
 // or when the main title was already the best.
 func (s *Server) melhorCandidatoExterno(ctx context.Context, candidatos []provider.ResultadoExterno, titulo string, ano int) (provider.ResultadoExterno, float64, string, bool) {
 	// The year slack comes from the TYPE of the candidates: a series folder states a year more
-	// loosely than a movie folder does ("Clube do Terror (1990)" is the 1992 show), so a 1-year
+	// loosely than a movie folder does (a folder marked 1990 was measured against the 1992 show),
+	// so a 1-year
 	// gate would discard the only correct candidate and let the remake win -- see ADR-0046.
 	toleranciaAno := matching.ToleranciaAnoPadrao
 	if len(candidatos) > 0 && candidatos[0].Type == tipoEntSerie {
@@ -612,9 +613,9 @@ func (s *Server) melhorCandidatoExterno(ctx context.Context, candidatos []provid
 		anoCand := anoDeStringPtr(c.Year)
 		// Stage 1 also compares against the ORIGINAL title the source reports for free in
 		// the search payload. Without it the candidate whose displayed title is the
-		// translation ("Crimes do Colarinho Branco" for "White Collar") scores ~0, never
-		// reaches the top-3 of stage 2, and loses to a longer title that merely starts
-		// with the query ("White Collar Blue", 94.1) -- a wrong match ABOVE
+		// translation of the folder name scores ~0, never reaches the top-3 of stage 2, and
+		// loses to a longer title that merely starts with the query (measured 94.1) -- a wrong
+		// match ABOVE
 		// LimiarAutoMatch, i.e. silently cataloged without review.
 		alternativos := titulosDoCandidato(c)
 		pontos, _, descartado := matching.PontuarComAlternativosTolerancia(titulo, ano, c.Title, alternativos, anoCand, toleranciaAno)
