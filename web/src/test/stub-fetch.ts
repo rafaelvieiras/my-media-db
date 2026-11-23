@@ -1,4 +1,5 @@
 import { vi } from 'vitest'
+import type { EntityCard } from '@/lib/api'
 
 // paginaResposta builds the paginated shape that `GET /entities` returns
 // (`{items, total, limit, offset}`) — used by any test that stubs that
@@ -13,6 +14,23 @@ export function paginaResposta(
     status: 200,
     json: async () => ({ items, total, limit: 24, offset: 0 }),
   } as Response
+}
+
+// pageCards builds `n` minimal cards for one page of `GET /entities`: the grid only
+// renders the pagination when it has items (an empty page falls into the empty state), so
+// the pagination tests need a page with content and a `total` of their own.
+export function pageCards(n: number): EntityCard[] {
+  return Array.from({ length: n }, (_, i) => ({
+    id: `c${i}`,
+    type: 'movie',
+    title: `Filme ${i}`,
+    status: 'cataloged',
+    owned: true,
+    file_count: 1,
+    match_confidence: 100,
+    poster_url: null,
+    catalog_completeness: null,
+  }))
 }
 
 // stubRota installs a global `fetch` that answers `resp()` when `casa(pathname, method)`

@@ -90,6 +90,94 @@ describe('RichDetailView — album/artist hero (0111): 1:1 square cover', () => 
   })
 })
 
+// Broken artwork of the OWNER's assets (console 404): a preferred logo/banner/disc whose
+// file is missing used to draw the browser's broken-image icon over the fanart.
+describe('RichDetailView — broken artwork never draws a broken image (03xx)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('movie poster that fails to load falls back to the placeholder', () => {
+    hero(
+      richDetailBase({
+        type: 'movie',
+        title: 'Duna',
+        posterUrl: 'https://cdn.example/missing.jpg',
+      }),
+    )
+    const img = screen.getByAltText('Poster of Duna')
+    fireEvent.error(img)
+    expect(screen.getByTestId('poster-placeholder')).toBeInTheDocument()
+    expect(screen.queryByAltText('Poster of Duna')).toBeNull()
+  })
+
+  it('album cover that fails to load falls back to the square placeholder', () => {
+    hero(
+      richDetailBase({
+        type: 'album',
+        title: 'Rio',
+        posterUrl: '/api/v1/entities/e1/assets/missing',
+      }),
+    )
+    fireEvent.error(screen.getByAltText('Cover of Rio'))
+    expect(screen.getByTestId('capa-placeholder')).toBeInTheDocument()
+    expect(screen.queryByAltText('Cover of Rio')).toBeNull()
+  })
+
+  it('preferred logo that fails to load falls back to the TEXT title', async () => {
+    stubEntityFetch([assetFixture({ kind: 'logo' })])
+    const { container } = renderComEntity()
+    const logo = await waitFor(() => {
+      const el = container.querySelector('img[alt="Duna"]')
+      expect(el).toBeTruthy()
+      return el as HTMLImageElement
+    })
+    fireEvent.error(logo)
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Duna' }),
+    ).toBeInTheDocument()
+  })
+
+  it('preferred banner/disc that fail to load disappear (decorative)', async () => {
+    stubEntityFetch([
+      assetFixture({ id: 'b1', kind: 'banner', url: '/api/v1/x/banner' }),
+      assetFixture({ id: 'd1', kind: 'disc', url: '/api/v1/x/disc' }),
+    ])
+    const { container } = renderComEntity()
+    const banner = await waitFor(() => {
+      const el = container.querySelector('img[src="/api/v1/x/banner"]')
+      expect(el).toBeTruthy()
+      return el as HTMLImageElement
+    })
+    const disc = container.querySelector(
+      'img[src="/api/v1/x/disc"]',
+    ) as HTMLImageElement
+    fireEvent.error(banner)
+    fireEvent.error(disc)
+    expect(container.querySelector('img[src="/api/v1/x/banner"]')).toBeNull()
+    expect(container.querySelector('img[src="/api/v1/x/disc"]')).toBeNull()
+  })
+
+  it('a production company logo that fails to load falls back to the name', () => {
+    renderWithClient(
+      <RichDetailView
+        source="tmdb"
+        detail={richDetailBase({
+          companies: [
+            {
+              source_id: '2',
+              name: 'Warner Bros.',
+              logo_url: '/api/v1/images?src=logo',
+            },
+          ],
+        })}
+      />,
+    )
+    fireEvent.error(screen.getByRole('img', { name: 'Warner Bros.' }))
+    expect(screen.getByText('Warner Bros.')).toBeInTheDocument()
+  })
+})
+
 describe('RichDetailView — artwork availability badges (0049)', () => {
   it('shows one badge per available kind, with label + count, in the canonical order', () => {
     renderWithClient(
@@ -153,6 +241,27 @@ describe('RichDetailView — credits (cast/crew/companies, 0029)', () => {
     expect(screen.getByText('Ator 29')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Show less' }))
     expect(screen.queryByText('Ator 24')).toBeNull()
+  })
+
+  it('on a phone (<=639px) the cast opens with 8 cards; "Show all" reveals the rest', () => {
+    // jsdom has no `matchMedia`: the stub answers "narrow viewport" for the same query
+    // the component asks (`max-width: 639px`).
+    vi.stubGlobal('matchMedia', (consulta: string) => ({
+      matches: true,
+      media: consulta,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }))
+    const cast = Array.from({ length: 24 }, (_, i) => ator(i))
+    renderWithClient(
+      <RichDetailView source="tmdb" detail={richDetailBase({ cast })} />,
+    )
+    expect(screen.getByText('Ator 7')).toBeInTheDocument()
+    expect(screen.queryByText('Ator 8')).toBeNull()
+    // 24 > 8: the button exists on the phone too (before, only with more than 24).
+    fireEvent.click(screen.getByRole('button', { name: 'Show all (24)' }))
+    expect(screen.getByText('Ator 23')).toBeInTheDocument()
+    vi.unstubAllGlobals()
   })
 
   it('cast respects the billing order (order asc)', () => {

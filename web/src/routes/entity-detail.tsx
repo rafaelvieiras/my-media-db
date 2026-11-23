@@ -208,8 +208,12 @@ function SecaoSerie({
     })
   }
 
+  // The row of the order selector + "Ordem dos episódios" must survive a 390 px screen:
+  // `min-w-0` lets it shrink inside the section header and `flex-wrap` drops the button to
+  // a second line instead of pushing the page 51 px to the side (the whole row used to end
+  // at x=440 in a 390 px viewport).
   const seletor = (
-    <div className="flex items-center gap-2">
+    <div className="flex min-w-0 flex-wrap items-center gap-2">
       {mostrarSeletor && def && orderings ? (
         <SeletorOrdenacao
           value={ordering ?? def}

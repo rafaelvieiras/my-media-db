@@ -59,7 +59,7 @@ export function SeletorOrdenacao({
       aria-label={t('media.ordering.selectLabel')}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="w-auto"
+      className="w-auto max-w-full"
     >
       {options.map((o) => (
         <option key={o} value={o}>
@@ -92,7 +92,9 @@ export function EpisodiosAgrupados({
   )
   return (
     <section className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-3">
+      {/* `flex-wrap`: the header wraps when the order selector does not fit (390 px) —
+          the same layout rule as the section header of the seasons. */}
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
         <h2 className="font-heading text-lg font-medium">
           {t('common.entityTypePlural.episode')}
         </h2>

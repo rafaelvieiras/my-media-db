@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import {
@@ -644,7 +644,7 @@ function SimilaresRail({
       </h2>
       <ul className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
         {similares.map((item) => (
-          <li key={`${item.type}:${item.source_id}`}>
+          <li key={`${item.type}:${item.source_id}`} className="min-w-0">
             <SimilarCard source={source} item={item} />
           </li>
         ))}
@@ -676,7 +676,10 @@ function SimilarCard({
         {item.title}
       </span>
       {internalId != null ? (
-        <Badge variant="secondary" className="w-fit">
+        <Badge
+          variant="secondary"
+          className="w-fit max-w-full overflow-hidden text-ellipsis whitespace-nowrap"
+        >
           {t('entity.label.inLibrary')}
         </Badge>
       ) : item.year ? (
@@ -886,13 +889,25 @@ function SelosArtes({
 
 // LogoHero replaces the TITLE IN TEXT with the preferred logo (`kind=logo`),
 // overlaid on the backdrop in the Jellyfin style. Without a logo, the CALLER falls back to the usual
-// `<h1>` — the same behavior as today, without regression.
-function LogoHero({ logo, alt }: { logo: Asset; alt: string }) {
+// `<h1>` — the same behavior as today, without regression. `onError` makes the caller
+// fall back to the text title when the file is gone from disk (a preferred asset whose
+// file the scan has not seen yet used to draw the browser's broken-image icon over the
+// fanart).
+function LogoHero({
+  logo,
+  alt,
+  onError,
+}: {
+  logo: Asset
+  alt: string
+  onError: () => void
+}) {
   return (
     <img
       src={assetFileSrc(logo.url)}
       alt={alt}
       loading="lazy"
+      onError={onError}
       className="max-h-16 w-auto max-w-full object-contain drop-shadow-lg sm:max-h-24"
     />
   )
@@ -900,13 +915,22 @@ function LogoHero({ logo, alt }: { logo: Asset; alt: string }) {
 
 // BannerFaixa shows the preferred banner (`kind=banner`) as a wide, low
 // band — only when it exists; without gating by type beyond "exists or not".
-function BannerFaixa({ banner }: { banner: Asset }) {
+// A banner whose file is missing fires `onError` and the caller hides the band
+// (decorative, `aria-hidden`): no broken image, no empty box.
+function BannerFaixa({
+  banner,
+  onError,
+}: {
+  banner: Asset
+  onError: () => void
+}) {
   return (
     <img
       src={assetFileSrc(banner.url)}
       alt=""
       aria-hidden
       loading="lazy"
+      onError={onError}
       className="aspect-[1000/185] w-56 shrink-0 overflow-hidden rounded-md object-cover shadow-lg sm:w-72"
     />
   )
@@ -916,8 +940,15 @@ function BannerFaixa({ banner }: { banner: Asset }) {
 // continuous rotation in pure CSS (`animate-spin`, arbitrary for one turn every 9s —
 // much slower than the default spinner) — `motion-reduce:animate-none` turns the
 // animation off for whoever asked for `prefers-reduced-motion: reduce` (native Tailwind
-// variant, without extra JS). It only appears with a preferred asset of the kind.
-function DiscoGiratorio({ disc }: { disc: Asset }) {
+// variant, without extra JS). It only appears with a preferred asset of the kind, and
+// `onError` hides it when the file is gone (no broken image over the cover).
+function DiscoGiratorio({
+  disc,
+  onError,
+}: {
+  disc: Asset
+  onError: () => void
+}) {
   const t = useT()
   return (
     <div
@@ -929,6 +960,7 @@ function DiscoGiratorio({ disc }: { disc: Asset }) {
         alt=""
         aria-hidden
         loading="lazy"
+        onError={onError}
         className="h-full w-full animate-spin object-cover [animation-duration:9s] motion-reduce:animate-none"
       />
     </div>
@@ -1070,7 +1102,35 @@ function ThemeDownloadButton({ entityId }: { entityId: string }) {
 // TETO_ELENCO: how many actors the Cast shows BEFORE "Show all". The backend
 // persists ~top 50 by billing; the UI opens with the ~24 most billed and expands on
 // demand (huge grids — a movie with 76, a series with 781 — are not worth the initial scroll).
+// On a PHONE the initial ceiling drops to `TETO_ELENCO_MOBILE`: with 3 columns, 24 cards
+// are 8 rows of covers between the hero and the sections that come after — the crew and
+// the collection were unreachable without a long scroll. "Show all (N)" expands both.
 const TETO_ELENCO = 24
+const TETO_ELENCO_MOBILE = 8
+
+// useTelaEstreita tracks the `sm` breakpoint (640px) that the grids below use, so the
+// ceiling follows the SAME ruler as the CSS. Without `matchMedia` (jsdom, old browsers) it
+// stays on the desktop ceiling — the pre-existing behavior.
+const CONSULTA_ESTREITA = '(max-width: 639px)'
+
+function useTelaEstreita(): boolean {
+  const [estreita, setEstreita] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia(CONSULTA_ESTREITA).matches,
+  )
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') {
+      return
+    }
+    const consulta = window.matchMedia(CONSULTA_ESTREITA)
+    const aoMudar = () => setEstreita(consulta.matches)
+    consulta.addEventListener('change', aoMudar)
+    return () => consulta.removeEventListener('change', aoMudar)
+  }, [])
+  return estreita
+}
 
 // Base of the person page on TMDB. In this phase the card is, at most, a link to the
 // source (the person page of its own is a follow-up — §7). The `source_id` of the
@@ -1182,6 +1242,7 @@ function PessoaCard({
 // whole list (and "Show less" collapses it). Empty → the section disappears.
 function ElencoGrid({ cast }: { cast: CreditCast[] }) {
   const t = useT()
+  const estreita = useTelaEstreita()
   const [expandido, setExpandido] = useState(false)
   if (cast.length === 0) {
     return null
@@ -1190,8 +1251,9 @@ function ElencoGrid({ cast }: { cast: CreditCast[] }) {
   // but we reinforce it here so the display does not depend on that. `slice()` keeps the
   // source intact; the sort is stable in V8.
   const ordenado = [...cast].sort((a, b) => a.order - b.order)
-  const temMais = ordenado.length > TETO_ELENCO
-  const visiveis = expandido ? ordenado : ordenado.slice(0, TETO_ELENCO)
+  const teto = estreita ? TETO_ELENCO_MOBILE : TETO_ELENCO
+  const temMais = ordenado.length > teto
+  const visiveis = expandido ? ordenado : ordenado.slice(0, teto)
   return (
     <section className="flex flex-col gap-3">
       <h2 className="font-heading text-lg font-medium">
@@ -1199,7 +1261,7 @@ function ElencoGrid({ cast }: { cast: CreditCast[] }) {
       </h2>
       <ul className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
         {visiveis.map((p, i) => (
-          <li key={`${p.source_id}:${i}`}>
+          <li key={`${p.source_id}:${i}`} className="min-w-0">
             <PessoaCard
               sourceId={p.source_id}
               name={p.name}
@@ -1340,7 +1402,7 @@ function GrupoEquipeFotos({ grupo }: { grupo: GrupoEquipe }) {
       </h3>
       <ul className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
         {grupo.membros.map((m, i) => (
-          <li key={`${m.source_id}:${m.job}:${i}`}>
+          <li key={`${m.source_id}:${m.job}:${i}`} className="min-w-0">
             <PessoaCard
               sourceId={m.source_id}
               name={m.name}
@@ -1415,6 +1477,28 @@ function EquipeGrupos({ crew }: { crew: CreditCrew[] }) {
   )
 }
 
+// LogoProdutora is ONE company chip: the logo (already proxied) in a light chip (so dark
+// logos show up in the dark theme) or the name in a `<Badge>` when there is no logo — and
+// also when the logo URL fails (the same fallback, so a broken image never reaches the
+// band).
+function LogoProdutora({ company }: { company: CreditCompany }) {
+  const [falhou, setFalhou] = useState(false)
+  if (!company.logo_url || falhou) {
+    return <Badge variant="outline">{company.name}</Badge>
+  }
+  return (
+    <span className="flex h-10 items-center justify-center rounded-md bg-white px-3 ring-1 ring-foreground/10">
+      <img
+        src={company.logo_url}
+        alt={company.name}
+        loading="lazy"
+        onError={() => setFalhou(true)}
+        className="max-h-8 w-auto object-contain"
+      />
+    </span>
+  )
+}
+
 // ProdutorasBand shows the production companies/studios in a band: the logo (already proxied) in a
 // chip with a light background (so dark logos show up in the dark theme) or the name in a
 // `<Badge>` when there is no logo. Empty → the section disappears.
@@ -1431,18 +1515,7 @@ function ProdutorasBand({ companies }: { companies: CreditCompany[] }) {
       <ul className="flex flex-wrap items-center gap-3">
         {companies.map((c, i) => (
           <li key={`${c.source_id}:${i}`}>
-            {c.logo_url ? (
-              <span className="flex h-10 items-center justify-center rounded-md bg-white px-3 ring-1 ring-foreground/10">
-                <img
-                  src={c.logo_url}
-                  alt={c.name}
-                  loading="lazy"
-                  className="max-h-8 w-auto object-contain"
-                />
-              </span>
-            ) : (
-              <Badge variant="outline">{c.name}</Badge>
-            )}
+            <LogoProdutora company={c} />
           </li>
         ))}
       </ul>
@@ -1490,6 +1563,13 @@ function HeroImersivo({
   entityId?: string
 }) {
   const t = useT()
+  // Broken artwork of the OWNER's assets: a preferred logo/banner/disc whose file is
+  // missing from disk used to draw the browser's broken-image icon over the fanart.
+  // The state hides the image and lets the hero fall back to what it had before
+  // (the text title for the logo, nothing for the decorative banner/disc).
+  const [logoFalhou, setLogoFalhou] = useState(false)
+  const [bannerFalhou, setBannerFalhou] = useState(false)
+  const [discoFalhou, setDiscoFalhou] = useState(false)
   return (
     <div className="dark relative left-1/2 right-1/2 grid w-screen -mx-[50vw]">
       {/* Contrast fix: the `dark` class here is DELIBERATE and
@@ -1510,7 +1590,7 @@ function HeroImersivo({
           poster disappears — an episode has none); the other types use the backdrop,
           with a minimum height of ~40vh (HeroBackdropFundo) even without an image
           (placeholder). Explicit `z-0`/`z-10`/`z-20` (instead of trusting the
-          DOM order) guarantee the background→gradient→content stack without
+          DOM order) guarantee the background→scrim→content stack without
           ambiguity between the overlapping grid items. */}
       <div className="relative z-0 col-start-1 row-start-1">
         {detail.type === 'episode' ? (
@@ -1523,11 +1603,20 @@ function HeroImersivo({
         )}
       </div>
 
-      {/* Overlay: vertical gradient (the text lives at the base) + horizontal on screens
-          wide ones (darker on the left, in the Jellyfin/TMDB pattern). `background`
-          here is always the near-black of the `.dark` forced on the wrapper (not the one of
-          the app theme) — it guarantees AA without depending on the brightness of the image behind. */}
-      <div className="relative z-10 col-start-1 row-start-1 bg-gradient-to-t from-background via-background/75 to-background/10" />
+      {/* Scrim: a FLAT dark layer over the whole artwork (whatever its brightness) plus a
+          vertical gradient that goes opaque at the base and lets the top of the fanart
+          show through.
+
+          Why both: the hero grows with the CONTENT (the text can take most of a phone
+          screen), so a gradient anchored only at the base leaves the middle of the text
+          block on a nearly untouched photo — bright patches of the artwork (a sky, a
+          light wall) erased the synopsis and the chips. The flat layer guarantees AA
+          behind the whole text block regardless of the photo; the gradient keeps the
+          fanart visible at the top and blends the hero into the page at the base.
+          `background` here is always the near-black of the `.dark` forced on the wrapper
+          (not the one of the app theme). */}
+      <div className="relative z-10 col-start-1 row-start-1 bg-black/40" />
+      <div className="relative z-10 col-start-1 row-start-1 bg-gradient-to-t from-background via-background/90 to-background/30" />
       <div className="relative z-10 col-start-1 row-start-1 hidden bg-gradient-to-r from-background/90 via-background/25 to-transparent sm:block" />
 
       {/* Content: re-centered in the usual max-w-4xl, anchored at the base of the
@@ -1556,18 +1645,32 @@ function HeroImersivo({
                 alt={t('entity.alt.poster', { title: detail.title })}
               />
               <FaixaStatusPoster situacao={situacao} />
-              {disc ? <DiscoGiratorio disc={disc} /> : null}
+              {disc && !discoFalhou ? (
+                <DiscoGiratorio
+                  disc={disc}
+                  onError={() => setDiscoFalhou(true)}
+                />
+              ) : null}
             </div>
           )}
           <div className="flex min-w-0 flex-col gap-2">
-            {banner ? <BannerFaixa banner={banner} /> : null}
+            {banner && !bannerFalhou ? (
+              <BannerFaixa
+                banner={banner}
+                onError={() => setBannerFalhou(true)}
+              />
+            ) : null}
 
             {/* Title row: the LOGO (when preferred) replaces the text
                 of the title — without it, it falls back to the usual `<h1>` (no regression). The year
                 and the type stay next to it, as before. */}
             <div className="flex flex-wrap items-end gap-2">
-              {logo ? (
-                <LogoHero logo={logo} alt={detail.title} />
+              {logo && !logoFalhou ? (
+                <LogoHero
+                  logo={logo}
+                  alt={detail.title}
+                  onError={() => setLogoFalhou(true)}
+                />
               ) : (
                 <h1 className="font-heading text-2xl font-semibold text-foreground sm:text-3xl">
                   {detail.title}

@@ -39,19 +39,34 @@ function montarParams(
 // each type now lives on a screen of its own per type — which is why there is no
 // type selector (`MediaTypeFilter`) inside the grid anymore, the type already comes fixed from the
 // route. Ownership stays local (internal state of the screen).
-export function PosterGrid({ lang, type }: { lang?: string; type: string }) {
+export function PosterGrid({
+  lang,
+  type,
+  page = 0,
+  onPageChange,
+}: {
+  lang?: string
+  type: string
+  // Zero-based page, CONTROLLED by the route (the page lives in the URL search param, so
+  // back/refresh keep the position — see `routes/library-browse.tsx`). Defaults to the
+  // first page so the component stays usable on its own.
+  page?: number
+  onPageChange?: (page: number) => void
+}) {
   const t = useT()
   const [posse, setPosse] = useState<FiltroPosse>('all')
-  const [pagina, setPagina] = useState(0)
+  const pagina = Math.max(0, page)
 
   const params = montarParams(type, posse, pagina)
   const { data, isPending, isError, error } = useQuery(
     entitiesQueryOptions(params, lang),
   )
 
+  // A filter change starts over on the first page (otherwise the offset of a far page
+  // lands past the filtered total).
   function reiniciarPagina<T>(setter: (v: T) => void) {
     return (v: T) => {
-      setPagina(0)
+      onPageChange?.(0)
       setter(v)
     }
   }
@@ -108,8 +123,8 @@ export function PosterGrid({ lang, type }: { lang?: string; type: string }) {
             total={data.total}
             offset={data.offset}
             limit={data.limit}
-            onPrev={() => setPagina((p) => Math.max(0, p - 1))}
-            onNext={() => setPagina((p) => p + 1)}
+            page={pagina}
+            onGoTo={(destino) => onPageChange?.(destino)}
           />
         </>
       )}
@@ -117,45 +132,104 @@ export function PosterGrid({ lang, type }: { lang?: string; type: string }) {
   )
 }
 
+// Paginacao is the footer control: how many items the page holds, WHICH page of how many
+// (the count the audit missed — with 1361 items the old control only had Previous/Next at
+// the end of 4223 px and no sense of position) and the two buttons. The state lives in the
+// URL (owner of the `page` search param), so the component is presentational.
 function Paginacao({
   total,
   offset,
   limit,
-  onPrev,
-  onNext,
+  page,
+  onGoTo,
 }: {
   total: number
   offset: number
   limit: number
-  onPrev: () => void
-  onNext: () => void
+  page: number
+  // Zero-based destination page — the SAME single channel for the arrows and the numbered
+  // buttons, so an out-of-range `page` in the URL can never send the owner further away.
+  onGoTo: (page: number) => void
 }) {
   const inicio = total === 0 ? 0 : offset + 1
   const fim = Math.min(offset + limit, total)
-  const temAnterior = offset > 0
-  const temProximo = fim < total
+  const paginas = Math.max(1, Math.ceil(total / limit))
+  const atual = Math.min(page + 1, paginas)
+  const temAnterior = atual > 1
+  const temProximo = atual < paginas
   const t = useT()
+  // A short window of page numbers around the current one (1 … 4 5 6 … 57): enough to jump
+  // without rendering 57 buttons on a phone.
+  const janela = janelaDePaginas(atual, paginas)
   return (
-    <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
-      <span>{t('media.grid.range', { from: inicio, to: fim, total })}</span>
-      <div className="flex gap-2">
+    <nav
+      aria-label={t('media.grid.pageOf', { page: atual, pages: paginas })}
+      className="flex flex-col gap-2 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between"
+    >
+      <span aria-live="polite">
+        {t('media.grid.range', { from: inicio, to: fim, total })}
+        {' · '}
+        {t('media.grid.pageOf', { page: atual, pages: paginas })}
+      </span>
+      <div className="flex flex-wrap items-center gap-2">
         <Button
           variant="outline"
           size="sm"
           disabled={!temAnterior}
-          onClick={onPrev}
+          onClick={() => onGoTo(atual - 2)}
         >
           {t('common.action.previous')}
         </Button>
+        {janela.map((n, i) =>
+          n === null ? (
+            <span key={`gap-${i}`} aria-hidden className="px-1">
+              …
+            </span>
+          ) : (
+            <Button
+              key={n}
+              variant={n === atual ? 'default' : 'outline'}
+              size="sm"
+              aria-current={n === atual ? 'page' : undefined}
+              aria-label={t('media.grid.goToPage', { page: n })}
+              onClick={() => onGoTo(n - 1)}
+            >
+              {n}
+            </Button>
+          ),
+        )}
         <Button
           variant="outline"
           size="sm"
           disabled={!temProximo}
-          onClick={onNext}
+          onClick={() => onGoTo(atual)}
         >
           {t('common.action.next')}
         </Button>
       </div>
-    </div>
+    </nav>
   )
+}
+
+// janelaDePaginas returns the page numbers to render: all of them when there are few,
+// otherwise the first, the last and the neighborhood of the current one, with `null`
+// marking a gap.
+function janelaDePaginas(atual: number, paginas: number): (number | null)[] {
+  if (paginas <= 7) {
+    return Array.from({ length: paginas }, (_, i) => i + 1)
+  }
+  const vizinhas = [atual - 1, atual, atual + 1].filter(
+    (n) => n > 1 && n < paginas,
+  )
+  const janela: (number | null)[] = [1]
+  if (vizinhas[0] != null && vizinhas[0] > 2) {
+    janela.push(null)
+  }
+  janela.push(...vizinhas)
+  const ultima = vizinhas[vizinhas.length - 1]
+  if (ultima != null && ultima < paginas - 1) {
+    janela.push(null)
+  }
+  janela.push(paginas)
+  return janela
 }
