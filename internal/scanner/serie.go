@@ -105,16 +105,25 @@ func (r *scanRun) factsSerie(ctx context.Context, path string) fileFacts {
 	}
 	if !ok {
 		log.Printf("scanner: %q sem padrão de episódio reconhecível; vai para revisão", path)
-		if !res.emRevisao && res.index != nil {
-			// Without SxxEyy in the name, but the folder may tell the season: the
-			// file still becomes a provisional episode.
-			f.prov = provisorioDe(path, base)
+		// Without SxxEyy in the name, but the folder may tell the season: the
+		// file still becomes a provisional episode.
+		f.prov = provisorioDe(path, base)
+		if f.prov != nil {
 			f.serieConf = res.conf
 		}
 		return f
 	}
 	if res.emRevisao || res.index == nil {
-		return f // series under review: the media_file stays pending, without a link
+		// Series still without identity (no external tree): it does NOT stay flat on the
+		// series. The folders and the file names already say the shape, so the provisional
+		// tree is built from them -- season from the folder, episode from SxxEyy -- and the
+		// file is linked to the episode it names. Before this, 785 files of 16 unmatched
+		// series hung directly on the series, with no season and no episode to open.
+		f.prov = provisorioDe(path, base)
+		if f.prov != nil {
+			f.serieConf = res.conf
+		}
+		return f
 	}
 	ids, temporadaResolvida, matched := tvmatch.CasarComPasta(res.index, ep, temporadaDaPasta(path), base)
 	if matched && ep.IsAbsolute && temporadaResolvida != 0 {
@@ -616,15 +625,25 @@ func provisorioDe(path, base string) *provisorioEpisodio {
 	if ep, ok := naming.ParseEpisode(base); ok && len(ep.Episodes) > 0 && !ep.IsAbsolute {
 		return &provisorioEpisodio{season: ep.Season, numeros: ep.Episodes, titulo: tituloDoArquivo(base), arquivo: base}
 	}
-	if pareceExtra(base) {
-		// Extras (featurette, sample, trailer...) live in the season folders and
-		// are not episodes: they only become provisional when the name states the
-		// number.
-		return nil
-	}
 	if n, ok := naming.NumeroDaPastaTemporada(filepath.Base(filepath.Dir(path))); ok {
+		// A SPECIALS folder (season 0) declares by itself that the material IS special:
+		// the extra-word filter would drop exactly the items the folder exists for --
+		// commercials, bumpers, interviews recorded by hand -- and those are the ones the
+		// owner wants listed under the series to match by hand. Inside a real season the
+		// filter stays: a "featurette bonus.mkv" is not an episode.
+		if n == 0 {
+			return &provisorioEpisodio{season: 0, titulo: tituloDoArquivo(base), arquivo: base}
+		}
+		if pareceExtra(base) {
+			// Extras (featurette, sample, trailer...) live in the season folders and
+			// are not episodes: they only become provisional when the name states the
+			// number.
+			return nil
+		}
 		return &provisorioEpisodio{season: n, titulo: tituloDoArquivo(base), arquivo: base}
 	}
+	// No season folder: a loose file only becomes provisional when the name states the
+	// numbering (handled above), never from an extra word.
 	return nil
 }
 

@@ -186,9 +186,15 @@ func TestSystemHealthEntitiesByType(t *testing.T) {
 func TestSystemHealthFilaBateComReviewEOrphans(t *testing.T) {
 	s, d := setupSystemHealthServer(t)
 
-	// e-draft: unidentified -> it enters review.
+	// e-draft: unidentified WITH a file -> it enters review.
 	semearEntity(t, d, "e-draft", "movie", "Draft")
 	definirStatus(t, d, "e-draft", "draft")
+	semearFile(t, d, "f-draft", "e-draft", "/x/draft.mkv", "missing", 0, "")
+
+	// e-draft-sem-arquivo: unidentified WITHOUT any file -> it enters NEITHER queue: it is
+	// a hole in the collection, not a decision (the same rule GET /review applies).
+	semearEntity(t, d, "e-draft-sem-arquivo", "episode", "Draft Sem Arquivo")
+	definirStatus(t, d, "e-draft-sem-arquivo", "draft")
 
 	// e-baixa: present with confidence 40 (< 70) -> it enters review.
 	semearEntity(t, d, "e-baixa", "movie", "Baixa Confianca")

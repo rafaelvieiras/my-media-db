@@ -134,20 +134,14 @@ export function ReviewScreen() {
     },
   })
 
-  const noFileLabel = t('review.group.noFileLabel')
   const cards = useMemo(() => data ?? [], [data])
   const filtered = useMemo(
-    () =>
-      filterReviewItems(
-        cards,
-        { query: debouncedSearch, kind, reason },
-        noFileLabel,
-      ),
-    [cards, debouncedSearch, kind, reason, noFileLabel],
+    () => filterReviewItems(cards, { query: debouncedSearch, kind, reason }),
+    [cards, debouncedSearch, kind, reason],
   )
   const grupos = useMemo(
-    () => sortReviewGroups(groupReviewItems(filtered, noFileLabel), locale),
-    [filtered, noFileLabel, locale],
+    () => sortReviewGroups(groupReviewItems(filtered), locale),
+    [filtered, locale],
   )
   // Kinds present in the queue, in the fixed order of the scanner — the filter only
   // offers what exists, instead of a list of empty options.
@@ -394,13 +388,12 @@ function ConfirmDialog({
 
 // ORDEM_KINDS is only the order of the FILTER options now: the sections themselves come
 // from `sortReviewGroups`, biggest first.
-const ORDEM_KINDS = ['pasta', 'serie', 'album', 'sem_arquivo']
+const ORDEM_KINDS = ['pasta', 'serie', 'album']
 
 const CHAVE_KIND: Record<string, string> = {
   pasta: 'review.group.kind.pasta',
   serie: 'review.group.kind.serie',
   album: 'review.group.kind.album',
-  sem_arquivo: 'review.group.kind.semArquivo',
 }
 
 // Label of the section kind; a kind the catalog does not know echoes raw.

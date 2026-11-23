@@ -536,13 +536,22 @@ SELECT
             WHERE mfe.entity_id = e.id
     ) ORDER BY st DESC, p LIMIT 1), '') AS TEXT) AS path
 FROM entity e
-WHERE e.status = 'draft'
+WHERE (e.status = 'draft'
    OR EXISTS (
         SELECT 1 FROM media_file m
         WHERE m.entity_id = e.id
           AND m.state = 'present'
           AND m.match_confidence > 0
           AND m.match_confidence < ?1
+   ))
+   -- REVIEW REQUIRES A FILE. An entity the provider publishes and the library does not
+   -- have is a HOLE IN THE COLLECTION, not a decision: 422 draft episodes measured in
+   -- production, every one of them inside a season of an already cataloged series. They
+   -- stay visible in the completeness of the series; the queue is for what the owner has.
+   AND EXISTS (
+        SELECT 1 FROM media_file m WHERE m.entity_id = e.id
+        UNION ALL
+        SELECT 1 FROM media_file_entity mfe WHERE mfe.entity_id = e.id
    )
 ORDER BY (match_confidence IS NULL), match_confidence ASC, e.title COLLATE NOCASE ASC, e.id
 `

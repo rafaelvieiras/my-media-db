@@ -73,13 +73,19 @@ func idsDe(cards []entityCardDTO) map[string]bool {
 }
 
 // TestFilaRevisaoClassifica covers criterion §5.1 (classification): the queue lists
-// draft + low confidence (present, 0<conf<70) and EXCLUDES high confidence and missing.
+// draft + low confidence (present, 0<conf<70) and EXCLUDES high confidence, missing and
+// the entity that has NO file at all -- a hole in the collection is not a decision.
 func TestFilaRevisaoClassifica(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 
-	// draft (unidentified) — it enters by status.
+	// draft (unidentified) WITH a file — it enters by status.
 	semearEntity(t, d, "e-draft", "movie", "Draft")
 	definirStatus(t, d, "e-draft", "draft")
+	semearFile(t, d, "f-draft", "e-draft", "/lib/draft.mkv", "missing", 0, "")
+	// draft imported from the provider, WITHOUT any file — it does NOT enter: it is a hole
+	// in the collection (422 episodes measured in production, all inside cataloged series).
+	semearEntity(t, d, "e-draft-sem-arquivo", "episode", "Draft sem arquivo")
+	definirStatus(t, d, "e-draft-sem-arquivo", "draft")
 	// low confidence, present file — it enters through the confidence predicate.
 	semearEntity(t, d, "e-baixa", "movie", "Baixa")
 	semearFile(t, d, "f-baixa", "e-baixa", "/lib/baixa.mkv", "present", 60, "")
@@ -103,6 +109,9 @@ func TestFilaRevisaoClassifica(t *testing.T) {
 	}
 	if got["e-missing"] {
 		t.Error("fila de revisão incluiu baixa confiança MISSING")
+	}
+	if got["e-draft-sem-arquivo"] {
+		t.Error("fila de revisão incluiu item sem arquivo (buraco de acervo, não decisão)")
 	}
 }
 
@@ -573,9 +582,9 @@ func TestReviewEpisodioContaArquivoDaJuncao(t *testing.T) {
 	eq(t, "ep1 owned", ep1.Owned, true)
 	eq(t, "ep1 file_count", ep1.FileCount, 1)
 	// The group comes from the path: with the path coming from the join, the episode stops
-	// falling into "Sem arquivo" and starts grouping by the series folder.
-	if ep1.ReviewGroup == nil || ep1.ReviewGroup.Kind == "sem_arquivo" {
-		t.Fatalf("review_group = %+v, quero agrupado pela pasta (nao 'sem arquivo')", ep1.ReviewGroup)
+	// falling into the "no file" kind and starts grouping by the series folder.
+	if ep1.ReviewGroup == nil || ep1.ReviewGroup.Kind != grupoRevisaoSerie {
+		t.Fatalf("review_group = %+v, quero agrupado pela pasta da serie", ep1.ReviewGroup)
 	}
 }
 

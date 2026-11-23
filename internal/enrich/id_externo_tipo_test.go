@@ -42,7 +42,7 @@ func TestEpisodioNaoReusaSerieComOMesmoID(t *testing.T) {
 		Title:     map[string]string{"en": "Everybody Hates PSATs"},
 		Numbering: map[string]provider.Numero{"official": {Season: 4, Number: 14}},
 	}
-	epID, err := svc.idDoEpisodio(ctx, "tmdb", ep, []string{"en"})
+	epID, err := svc.idDoEpisodio(ctx, "tmdb", ep, []string{"en"}, "")
 	if err != nil {
 		t.Fatalf("idDoEpisodio: %v", err)
 	}
@@ -89,11 +89,11 @@ func TestEpisodioReusaEpisodioComOMesmoID(t *testing.T) {
 		Title:     map[string]string{"en": "Everybody Hates PSATs"},
 		Numbering: map[string]provider.Numero{"official": {Season: 4, Number: 14}},
 	}
-	primeiro, err := svc.idDoEpisodio(ctx, "tmdb", ep, []string{"en"})
+	primeiro, err := svc.idDoEpisodio(ctx, "tmdb", ep, []string{"en"}, "")
 	if err != nil {
 		t.Fatalf("primeiro idDoEpisodio: %v", err)
 	}
-	segundo, err := svc.idDoEpisodio(ctx, "tmdb", ep, []string{"en"})
+	segundo, err := svc.idDoEpisodio(ctx, "tmdb", ep, []string{"en"}, "")
 	if err != nil {
 		t.Fatalf("segundo idDoEpisodio: %v", err)
 	}

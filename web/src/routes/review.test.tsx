@@ -906,10 +906,7 @@ describe('review-filters (pure helpers)', () => {
   })
 
   it('sorts the biggest group first and breaks ties by label', () => {
-    const grupos = groupReviewItems(
-      [draftCard, album, album2, baixaCard],
-      'No file',
-    )
+    const grupos = groupReviewItems([draftCard, album, album2, baixaCard])
     const ordenados = sortReviewGroups(grupos, 'en')
 
     expect(ordenados.map((g) => g.label)).toEqual([
@@ -921,41 +918,29 @@ describe('review-filters (pure helpers)', () => {
 
   it('filters by title, kind and reason on the client', () => {
     const cards = [draftCard, baixaCard, album]
-    const semFiltro = filterReviewItems(
-      cards,
-      { query: '', kind: 'all', reason: 'all' },
-      'No file',
-    )
+    const semFiltro = filterReviewItems(cards, {
+      query: '',
+      kind: 'all',
+      reason: 'all',
+    })
     expect(semFiltro).toHaveLength(3)
 
     expect(
-      filterReviewItems(
-        cards,
-        { query: 'faixa', kind: 'all', reason: 'all' },
-        'No file',
-      ),
+      filterReviewItems(cards, { query: 'faixa', kind: 'all', reason: 'all' }),
     ).toEqual([album])
     expect(
-      filterReviewItems(
-        cards,
-        { query: '', kind: 'serie', reason: 'all' },
-        'No file',
-      ),
+      filterReviewItems(cards, { query: '', kind: 'serie', reason: 'all' }),
     ).toEqual([baixaCard])
     expect(
-      filterReviewItems(
-        cards,
-        { query: '', kind: 'all', reason: 'not_identified' },
-        'No file',
-      ),
+      filterReviewItems(cards, {
+        query: '',
+        kind: 'all',
+        reason: 'not_identified',
+      }),
     ).toEqual([draftCard])
     // The group label/path also answers the search: the series name brings its items.
     expect(
-      filterReviewItems(
-        cards,
-        { query: 'DISC', kind: 'all', reason: 'all' },
-        'No file',
-      ),
+      filterReviewItems(cards, { query: 'DISC', kind: 'all', reason: 'all' }),
     ).toEqual([album])
   })
 
@@ -963,7 +948,6 @@ describe('review-filters (pure helpers)', () => {
     expect(groupContext('Musicas/Artista/Disco', 'Artista — Disco')).toBe(
       'Musicas/Artista/Disco',
     )
-    expect(groupContext('Sem arquivo', 'Sem arquivo')).toBe('')
     expect(groupContext('', 'Sem arquivo')).toBe('')
   })
 })
