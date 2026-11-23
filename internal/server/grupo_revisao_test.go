@@ -41,6 +41,17 @@ func TestGrupoDeRevisaoPorTipo(t *testing.T) {
 			queroMesmaK: "/media/gdrive-media/Videos/Series/The Office/Season 3/S03E24.mkv",
 		},
 		{
+			// A series still without identity holds the files of its seasons: the section
+			// names the SERIES, never "Temporada 01" (the season is not an item waiting for
+			// a series of its own -- the owner read it that way, and he was right).
+			nome:        "série sem identidade (temporada ignorada)",
+			tipo:        "tv",
+			caminho:     "/media/gdrive-media/Videos/Series/C.S.I. NY/Temporada 01/CSI NY - S01E01 - Blink.mkv",
+			queroKind:   grupoRevisaoPasta,
+			queroLabel:  "C.S.I. NY",
+			queroMesmaK: "/media/gdrive-media/Videos/Series/C.S.I. NY/Temporada 02/CSI NY - S02E01 - Outro.mkv",
+		},
+		{
 			nome:        "filme (pasta da obra)",
 			tipo:        "movie",
 			caminho:     "/media/gdrive-media/Videos/Filmes/Familia Addams 3 (2025)/filme.mkv",
@@ -65,9 +76,11 @@ func TestGrupoDeRevisaoPorTipo(t *testing.T) {
 		})
 	}
 
+	// No file is not a case of the queue anymore (ListarRevisao requires a file): the empty
+	// path is only the defensive branch, and it must not invent a kind of its own.
 	semArquivo := grupoDeRevisao("movie", "", raizes)
-	if semArquivo.Kind != grupoRevisaoSemArquivo {
-		t.Errorf("entity sem arquivo: kind = %q, quero %q", semArquivo.Kind, grupoRevisaoSemArquivo)
+	if semArquivo.Kind != grupoRevisaoPasta {
+		t.Errorf("entity sem arquivo: kind = %q, quero %q", semArquivo.Kind, grupoRevisaoPasta)
 	}
 }
 

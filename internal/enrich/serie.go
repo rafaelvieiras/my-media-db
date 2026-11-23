@@ -63,6 +63,9 @@ const (
 	relacaoEpisodio  = "tv_episode"
 	// nsTV is the extension_data namespace of the series vertical (core.tv@1).
 	nsTV = "core.tv@1"
+	// statusRascunho is the entity.status of an unidentified item -- the state the scanner
+	// gives a PROVISIONAL episode built from the file name (see provisorioDaTemporada).
+	statusRascunho = "draft"
 )
 
 // arvoreDaSerie validates the provider capability and fetches the raw tree (seasons +
@@ -1048,12 +1051,57 @@ func camposTemporada(t provider.TemporadaExterna, langs []string) (title string,
 // Phase 3 (proxy/cache on demand), together with the season artwork. Here we only
 // persist the episode and the ordered relation.
 func (s *Servico) importarEpisodio(ctx context.Context, tempID, source, defaultType string, ep provider.EpisodioExterno, langs []string) {
-	epID, err := s.acharOuCriarEpisodio(ctx, source, ep, langs)
+	numero := ep.Numbering[defaultType].Number
+	// The identity arrived LATER than the files: the season may already hold a PROVISIONAL
+	// episode of that number, created by the scan from the file name. It is adopted instead
+	// of duplicated -- without this the climb left the provisional twin next to the
+	// provider's episode (5 episodes in a 3-episode season, measured in the reconciliation
+	// journey).
+	reuso := s.provisorioDaTemporada(ctx, tempID, numero)
+	epID, err := s.acharOuCriarEpisodio(ctx, source, ep, langs, reuso)
 	if err != nil {
 		log.Printf("enrich: episodio %s falhou (segue): %v", ep.SourceID, err)
 		return
 	}
-	s.ligarFilho(ctx, tempID, epID, relacaoEpisodio, ep.Numbering[defaultType].Number)
+	if reuso != "" {
+		// The provisional one was born a draft: it leaves the review queue the moment it
+		// gains an identity (idempotent, draft-only).
+		if err := s.escrita().PromoverDeDraft(ctx, epID); err != nil {
+			log.Printf("enrich: promover episodio provisorio %s falhou (segue): %v", epID, err)
+		}
+	}
+	s.ligarFilho(ctx, tempID, epID, relacaoEpisodio, numero)
+}
+
+// provisorioDaTemporada returns the id of the PROVISIONAL episode of `numero` inside the
+// season, or "" when there is none. Provisional = a draft child of the season, with the
+// marker the scanner writes in the extension_data (`provisorio`) and no external id yet:
+// a draft that the owner created by hand is not touched.
+func (s *Servico) provisorioDaTemporada(ctx context.Context, tempID string, numero int) string {
+	if tempID == "" {
+		return ""
+	}
+	rels, err := s.leitura().ListarRelacoesFilhas(ctx, tempID)
+	if err != nil {
+		return ""
+	}
+	for _, rel := range rels {
+		if rel.Kind != relacaoEpisodio || !rel.SortIndex.Valid || int(rel.SortIndex.Int64) != numero {
+			continue
+		}
+		e, err := s.leitura().ObterEntity(ctx, rel.ChildID)
+		if err != nil || e.Type != tipoEpisodio || e.Status != statusRascunho {
+			continue
+		}
+		if !strings.Contains(e.ExtensionDataJson.String, `"provisorio"`) {
+			continue
+		}
+		if strings.TrimSpace(e.ExternalIdsJson.String) != "" && e.ExternalIdsJson.String != "{}" {
+			continue
+		}
+		return rel.ChildID
+	}
+	return ""
 }
 
 // acharOuCriarEpisodio performs the find-or-create of the episode by external id (dedup by
@@ -1061,8 +1109,8 @@ func (s *Servico) importarEpisodio(ctx context.Context, tempID, source, defaultT
 // external base (media_external) with the titles/synopses PER LANGUAGE — the same i18n of
 // the movie applied to the episode. It is idempotent: on reuse the base row is reused and
 // the media_external is REWRITTEN (upsert by (entity_id, source)).
-func (s *Servico) acharOuCriarEpisodio(ctx context.Context, source string, ep provider.EpisodioExterno, langs []string) (string, error) {
-	epID, err := s.idDoEpisodio(ctx, source, ep, langs)
+func (s *Servico) acharOuCriarEpisodio(ctx context.Context, source string, ep provider.EpisodioExterno, langs []string, reuso string) (string, error) {
+	epID, err := s.idDoEpisodio(ctx, source, ep, langs, reuso)
 	if err != nil {
 		return "", err
 	}
@@ -1077,14 +1125,21 @@ func (s *Servico) acharOuCriarEpisodio(ctx context.Context, source string, ep pr
 // default language only; the per-language data lives in media_external): title,
 // description, air date, external_ids ({source: episode.id} + the ones the source brought)
 // and the core.tv@1 namespace (absolute_number + multi-order numbering).
-func (s *Servico) idDoEpisodio(ctx context.Context, source string, ep provider.EpisodioExterno, langs []string) (string, error) {
+func (s *Servico) idDoEpisodio(ctx context.Context, source string, ep provider.EpisodioExterno, langs []string, reuso string) (string, error) {
 	campos, err := montarCamposEpisodio(source, ep, langs)
 	if err != nil {
 		return "", err
 	}
-	if existente, ok, err := s.acharPorIDExterno(ctx, source, ep.SourceID, tipoEpisodio); err != nil {
-		return "", err
-	} else if ok {
+	// `reuso` is a PROVISIONAL episode of the same number already in the season: it takes
+	// the provider data through the same reuse branch, so it stops being provisional.
+	existente := reuso
+	ok := reuso != ""
+	if !ok {
+		if existente, ok, err = s.acharPorIDExterno(ctx, source, ep.SourceID, tipoEpisodio); err != nil {
+			return "", err
+		}
+	}
+	if ok {
 		// Reuse: REWRITES the base with the current provider data — in
 		// particular still_url/numbering (extension_data), which only the create used to write.
 		// It does not touch status/tags/original_title/media_override: the owner's override

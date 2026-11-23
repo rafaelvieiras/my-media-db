@@ -309,14 +309,21 @@ func TestScanSerieAmbiguaVaiParaRevisao(t *testing.T) {
 	if err := scanSync(t, m, src); err != nil {
 		t.Fatalf("scan: %v", err)
 	}
-	if n := contarVinculos(t, d); n != 0 {
-		t.Errorf("vínculos = %d, quero 0 (revisão)", n)
+	// The series has no identity yet, but the folders and the file names DO say the shape:
+	// the provisional tree is built from them (season 01, episode 01) and the file is
+	// linked to that episode. Before, the file hung flat on the draft series and the screen
+	// had no season to open -- 785 files of 16 series measured in production.
+	if n := contarVinculos(t, d); n != 1 {
+		t.Errorf("vínculos = %d, quero 1 (provisório da revisão)", n)
 	}
 	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='tv' AND status='draft'"); n != 1 {
 		t.Errorf("série rascunho = %d, quero 1", n)
 	}
-	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='episode'"); n != 0 {
-		t.Errorf("episódios = %d, quero 0 (sem fantasma)", n)
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='season'"); n != 1 {
+		t.Errorf("temporadas = %d, quero 1 (provisória)", n)
+	}
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='episode' AND status='draft'"); n != 1 {
+		t.Errorf("episódios rascunho = %d, quero 1 (provisório da revisão)", n)
 	}
 	var conf float64
 	if err := d.Read.QueryRowContext(context.Background(),
@@ -815,5 +822,89 @@ func TestScanSerieSemIDNaPastaSeguiePeloNome(t *testing.T) {
 	}
 	if stub.nomeChamou != 1 {
 		t.Errorf("busca por nome rodou %d vez(es), quero 1", stub.nomeChamou)
+	}
+}
+
+// TestScanSerieSemIdentidadeMontaArvoreProvisoria covers the shape the owner expects from
+// a series that did not match any provider: the folders and the file names already state
+// the tree, so the scan builds it. Season 01 from the folder, episode from SxxEyy, the
+// file linked to the episode -- and the series stays draft (the identity is still missing).
+func TestScanSerieSemIdentidadeMontaArvoreProvisoria(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	escrever(t, filepath.Join(root, "Some Show", "Temporada 01", "Some Show - S01E01.mkv"))
+	escrever(t, filepath.Join(root, "Some Show", "Temporada 01", "Some Show - S01E02.mkv"))
+	escrever(t, filepath.Join(root, "Some Show", "Temporada 02", "Some Show - S02E01.mkv"))
+
+	m := managerFake(t, d)
+	m.ConfigurarSeries(importerStub{err: enrich.ErrSerieNaoEncontrada}, nil)
+	src := criarSourceSerie(t, d, root)
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='season'"); n != 2 {
+		t.Errorf("temporadas = %d, quero 2", n)
+	}
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='episode'"); n != 3 {
+		t.Errorf("episódios = %d, quero 3", n)
+	}
+	if n := contarVinculos(t, d); n != 3 {
+		t.Errorf("vínculos arquivo-episódio = %d, quero 3", n)
+	}
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='tv' AND status='draft'"); n != 1 {
+		t.Errorf("série rascunho = %d, quero 1", n)
+	}
+	// Re-scan is idempotent: the provisional tree is found, never duplicated.
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("re-scan: %v", err)
+	}
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='episode'"); n != 3 {
+		t.Errorf("episódios após re-scan = %d, quero 3 (sem duplicar)", n)
+	}
+}
+
+// TestScanPastaEspeciaisViraTemporadaZero covers the specials folder with the word in front
+// ("Temporada Specials"): it is season 0 of the series, never a series of its own. The
+// files without SxxEyy still become provisional episodes of that season.
+func TestScanPastaEspeciaisViraTemporadaZero(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	escrever(t, filepath.Join(root, "Some Show", "Temporada Specials", "Making of.mkv"))
+	escrever(t, filepath.Join(root, "Some Show", "Temporada 01", "Some Show S01E01.mkv"))
+
+	m := managerFake(t, d)
+	m.ConfigurarSeries(importerStub{err: enrich.ErrSerieNaoEncontrada}, nil)
+	if err := scanSync(t, m, criarSourceSerie(t, d, root)); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='tv'"); n != 1 {
+		t.Errorf("séries = %d, quero 1 (a pasta de especiais NÃO é série)", n)
+	}
+	if n := contar(t, d, "SELECT count(*) FROM entity_relation WHERE kind='tv_season' AND sort_index=0"); n != 1 {
+		t.Errorf("temporadas 0 = %d, quero 1", n)
+	}
+}
+
+// TestScanProvisorioNaoDuplicaComAmpersand is the regression of a duplication measured in
+// production: the dedupe of a provisional episode compared the RAW extension_data against the
+// file name, and json.Marshal escapes "&" as \u0026 -- so every re-scan of a file called
+// "Beavis & Butt-Head ..." created ANOTHER provisional episode (10 copies of one title, 213
+// duplicates in the database). The key is now the DECODED file name.
+func TestScanProvisorioNaoDuplicaComAmpersand(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	// A specials file: no SxxEyy, so the key of the provisional episode is the file name.
+	escrever(t, filepath.Join(root, "Some Show", "Temporada Specials", "Making & Of.mkv"))
+
+	m := managerFake(t, d)
+	m.ConfigurarSeries(importerStub{err: enrich.ErrSerieNaoEncontrada}, nil)
+	src := criarSourceSerie(t, d, root)
+	for i := 0; i < 3; i++ {
+		if err := scanSync(t, m, src); err != nil {
+			t.Fatalf("scan %d: %v", i, err)
+		}
+	}
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='episode'"); n != 1 {
+		t.Errorf("episódios provisórios = %d, quero 1 (o mesmo arquivo, três scans)", n)
 	}
 }

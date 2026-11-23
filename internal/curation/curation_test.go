@@ -61,9 +61,15 @@ func TestContarRevisaoEOrfas(t *testing.T) {
 	s := New(d)
 	ctx := context.Background()
 
-	// e-draft: not identified -> goes into review.
+	// e-draft: not identified, WITH a file -> goes into review.
 	semearEntity(t, d, "e-draft", "movie", "Draft")
 	definirStatus(t, d, "e-draft", "draft")
+	semearFile(t, d, "f-draft", "e-draft", "/x/draft.mkv", "missing", 0)
+
+	// e-draft-sem-arquivo: not identified, WITHOUT any file -> it goes into NEITHER queue:
+	// it is a hole in the collection, not a decision (review requires a file).
+	semearEntity(t, d, "e-draft-sem-arquivo", "episode", "Draft Sem Arquivo")
+	definirStatus(t, d, "e-draft-sem-arquivo", "draft")
 
 	// e-baixa: present with confidence 40 (< 70) -> goes into review.
 	semearEntity(t, d, "e-baixa", "movie", "Baixa Confianca")

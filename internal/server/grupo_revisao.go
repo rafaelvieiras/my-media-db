@@ -18,10 +18,9 @@ import (
 
 // Review group kinds (they mirror the ReviewGroup.kind enum of openapi.yaml).
 const (
-	grupoRevisaoAlbum      = "album"
-	grupoRevisaoSerie      = "serie"
-	grupoRevisaoPasta      = "pasta"
-	grupoRevisaoSemArquivo = "sem_arquivo"
+	grupoRevisaoAlbum = "album"
+	grupoRevisaoSerie = "serie"
+	grupoRevisaoPasta = "pasta"
 )
 
 // reviewGroupDTO is the group annotated on each item of GET /api/v1/review.
@@ -65,10 +64,12 @@ func anotarGruposRevisao(items []entityCardDTO, caminhos []string, raizes []stri
 }
 
 // grupoDeRevisao returns the group of ONE item: kind+key+label from the type and the file
-// path. An item without a file falls into a single "Sem arquivo" group.
+// path. Every item of the queue has a file -- ListarRevisao requires one -- so the empty
+// path is a defensive branch, not a case of the product: it falls back to the "pasta" kind
+// without a label instead of inventing a "no file" group that would mean nothing.
 func grupoDeRevisao(tipo, caminho string, raizes []string) *reviewGroupDTO {
 	if caminho == "" {
-		return &reviewGroupDTO{Kind: grupoRevisaoSemArquivo, Key: grupoRevisaoSemArquivo, Label: "Sem arquivo"}
+		return &reviewGroupDTO{Kind: grupoRevisaoPasta, Key: grupoRevisaoPasta}
 	}
 	rel := relativizar(caminho, raizes)
 	dir := path.Dir(rel)
@@ -89,10 +90,15 @@ func grupoDeRevisao(tipo, caminho string, raizes []string) *reviewGroupDTO {
 			Label: rotuloDe(dirSerie, 1),
 		}
 	default:
+		// A series (or any other top-level entity) holding the files that could not be
+		// linked yet: the season segment says nothing about the GROUP -- it would name the
+		// section "Temporada 01" and make the season look like an item waiting for a series
+		// of its own. The group is the folder ABOVE it.
+		dirSerie := semSegmento(dir, segmentosDeTemporada)
 		return &reviewGroupDTO{
 			Kind:  grupoRevisaoPasta,
-			Key:   grupoRevisaoPasta + ":" + dir,
-			Label: rotuloDe(dir, 1),
+			Key:   grupoRevisaoPasta + ":" + dirSerie,
+			Label: rotuloDe(dirSerie, 1),
 		}
 	}
 }

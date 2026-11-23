@@ -10,15 +10,48 @@ import (
 // came from internal/scanner together with the rule (ADR-0021).
 func TestEhPastaTemporada(t *testing.T) {
 	for _, s := range []string{"Season 01", "Temporada 1", "S01", "specials", "Especiais",
+		// the specials folder with the word in front of it, and the bare "Extras"
+		"Temporada Specials", "Temporada Especiais", "Season Extras", "extras", "Temporada 00",
 		// ordinal form and the year used as the season number (TVDB)
 		"1\u00aa Temporada", "2a Temporada", "3\u00ba Temporada", "1931", "2024"} {
 		if !EhPastaTemporada(s) {
 			t.Errorf("%q deveria ser pasta de temporada", s)
 		}
 	}
-	for _, s := range []string{"Springfield Tales", "extras", "", "1 Temporada Completa", "199"} {
+	for _, s := range []string{"Springfield Tales", "", "1 Temporada Completa", "199", "Specials Brasil"} {
 		if EhPastaTemporada(s) {
 			t.Errorf("%q NAO deveria ser pasta de temporada", s)
+		}
+	}
+}
+
+// TestNumeroDaPastaTemporada covers the season number the folder declares. The
+// specials folder is season 0 -- the same number the codebase already uses for
+// "Specials"/"Especiais" and for the E00 of a file name -- and a year is a season
+// number on the shows TVDB numbers by year.
+func TestNumeroDaPastaTemporada(t *testing.T) {
+	casos := []struct {
+		pasta  string
+		numero int
+		ok     bool
+	}{
+		{"Temporada 01", 1, true},
+		{"Season 3", 3, true},
+		{"S02", 2, true},
+		{"3\u00aa Temporada", 3, true},
+		{"Temporada 1940", 1940, true},
+		{"Specials", 0, true},
+		{"Especiais", 0, true},
+		{"Temporada Specials", 0, true},
+		{"Temporada 00", 0, true},
+		{"Extras", 0, true},
+		{"Springfield Tales", 0, false},
+		{"", 0, false},
+	}
+	for _, c := range casos {
+		n, ok := NumeroDaPastaTemporada(c.pasta)
+		if ok != c.ok || (ok && n != c.numero) {
+			t.Errorf("NumeroDaPastaTemporada(%q) = %d/%v, quero %d/%v", c.pasta, n, ok, c.numero, c.ok)
 		}
 	}
 }
