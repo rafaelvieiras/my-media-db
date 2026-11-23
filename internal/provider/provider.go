@@ -356,6 +356,27 @@ type ArteInventario struct {
 // SerieArvore is the canonical hierarchy of a series: the default ordering, the list of
 // orderings the series uses, and the seasons ONLY of the default ordering. Each episode
 // (fine-grained, anchored on the id of the source) carries the numbering of ALL orders.
+// EpisodeGroup is one ALTERNATIVE ORDERING the provider published for a series, as seen
+// by the import: where it came from, how many episodes it carries and how many of them
+// could be anchored to the tree. The record exists so that "the source has no group" and
+// "the group was fetched but anchored nothing" stop looking the same -- the second one is
+// a fact about OUR tree, the first is a fact about the source.
+type EpisodeGroup struct {
+	// SourceID is the id of the group in the source.
+	SourceID string
+	// Name is the displayable name its author gave it ("Blu-ray Order").
+	Name string
+	// Kind is the type the source attributes to the group, as a string. It is
+	// source-specific and only a hint for the import priority, never a meaning.
+	Kind string
+	// Episodes is how many items the group carries.
+	Episodes int
+	// Mapped is how many of those items were anchored to an episode of the tree.
+	Mapped int
+	// Note explains a group that anchored nothing (empty when Mapped > 0).
+	Note string
+}
+
 type SerieArvore struct {
 	// DefaultSeasonType is the default ordering of the series (e.g. "official"); it is the
 	// only one materialized in Temporadas.
@@ -365,6 +386,10 @@ type SerieArvore struct {
 	// Temporadas are the seasons ONLY of the default ordering (ADR-0021: the alternatives do
 	// not become a season -- only numbering in the episodes).
 	Temporadas []TemporadaExterna
+	// Groups is EVERY alternative ordering the source published for this series, mapped
+	// or not (an empty slice means the source published none). It is what makes a partial
+	// import countable instead of silent.
+	Groups []EpisodeGroup
 }
 
 // TemporadaExterna is a canonical season of the default ordering, with its episodes.

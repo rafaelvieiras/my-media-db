@@ -18,12 +18,12 @@ Related: [ADR-0021](adr/0021-series-model-hierarchy-orderings-and-file-link.md) 
 
 **Status (19/nov/2026)** — all three problems have a home in the code:
 
-| problem | where | shipped |
-|---|---|---|
-| 1. reorder by the provider | TMDB **episode groups** imported as alternate orderings (`internal/provider/tmdb/tmdb_grupos.go`); TheTVDB reads every `seasonType` when a key exists (`internal/provider/tvdb/tvdb_serie.go`) | v0.4.0 (TMDB groups) |
-| 2. one file, several episodes | N links in `media_file_entity` with `ordinal` | before v0.4.0 |
-| 3. one numbered unit merging N aired episodes (**release units**) | owner order: units of `(season, number)` holding 1..N episode ids, stored in the override layer (`media_override`), tried first by the matcher (`internal/tvext/ordem_dono.go`, `internal/tvmatch/ordem_dono.go`), edited in the series screen | v0.5.0 |
-| 4. a file that only carries the **absolute** position | the series' orderings are flattened in `(season, number)` order and the Nth episode answers for absolute N, with the folder's season as the tie-break ([ADR-0045](adr/0045-an-absolute-number-is-resolved-through-the-series-ordering.md)) | v0.15.17 |
+| problem                                                           | where                                                                                                                                                                                                                                          | shipped              |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| 1. reorder by the provider                                        | TMDB **episode groups** imported as alternate orderings (`internal/provider/tmdb/tmdb_grupos.go`); TheTVDB reads every `seasonType` when a key exists (`internal/provider/tvdb/tvdb_serie.go`)                                                 | v0.4.0 (TMDB groups) |
+| 2. one file, several episodes                                     | N links in `media_file_entity` with `ordinal`                                                                                                                                                                                                  | before v0.4.0        |
+| 3. one numbered unit merging N aired episodes (**release units**) | owner order: units of `(season, number)` holding 1..N episode ids, stored in the override layer (`media_override`), tried first by the matcher (`internal/tvext/ordem_dono.go`, `internal/tvmatch/ordem_dono.go`), edited in the series screen | v0.5.0               |
+| 4. a file that only carries the **absolute** position             | the series' orderings are flattened in `(season, number)` order and the Nth episode answers for absolute N, with the folder's season as the tie-break ([ADR-0045](adr/0045-an-absolute-number-is-resolved-through-the-series-ordering.md))     | v0.15.17             |
 
 What is **not** done: TheTVDB stays off (no key in production, so every series in the
 catalog is `official`-only in practice), and a file whose name carries no `(season, number)`
@@ -36,14 +36,14 @@ not wired into `ParseEpisode`.
 
 Two endpoints: `GET /tv/{id}/episode_groups` (list) and `GET /tv/episode_group/{id}` (items).
 
-Measured on **2316** (*The Office*, US): **10 groups**.
+Measured on **2316** (_The Office_, US): **10 groups**.
 
-| Group | Type | Episodes |
-| --- | --- | --- |
-| Alternate Order | 1 | 243 |
-| Italian DVD | 2 | 186 |
-| iTunes France | 2 | 201 |
-| Blu-ray Order | 3 | 281 |
+| Group           | Type | Episodes |
+| --------------- | ---- | -------- |
+| Alternate Order | 1    | 243      |
+| Italian DVD     | 2    | 186      |
+| iTunes France   | 2    | 201      |
+| Blu-ray Order   | 3    | 281      |
 
 The payload has `groups[]` (sub-groups — volumes or seasons) with a 1-based `order` and an
 `episodes[]` inside. **Inside a sub-group the `order` restarts at 0**, and each entry also
@@ -53,13 +53,12 @@ Limits, measured:
 
 - **One entry = exactly one episode.** No field attaches two or more episodes to one entry:
   no `combined`, no `parent_episode`, no `sub_episodes`. Confirmed on the case that matters
-  most here — *Beavis and Butt-Head*, group "The Mike Judge Collection" (type 3): **141
+  most here — _Beavis and Butt-Head_, group "The Mike Judge Collection" (type 3): **141
   entries for 141 distinct episodes**, even though that collection merged many two-minute
   shorts into longer units.
-- No duplicates inside a group: 277 entries / 277 distinct episodes in the Blu-ray order of
-  2316.
-- Groups are **community data and often absent**: **4549** (*Comedians in Cars Getting
-  Coffee*) returned **0 groups**. An order may simply not exist for a given series.
+- No duplicates inside a group: 277 entries / 277 distinct episodes in the Blu-ray order of 2316.
+- Groups are **community data and often absent**: **4549** (_Comedians in Cars Getting
+  Coffee_) returned **0 groups**. An order may simply not exist for a given series.
 
 ### TheTVDB — season types
 
@@ -85,8 +84,8 @@ Two facts worth knowing before betting on it:
 ### Conclusion for both
 
 Reorder is provider data — rich in TheTVDB, partial in TMDB. **Merge is impossible in both.**
-This is the second time we measure it: ADR-0021 reached the same conclusion on *Looney
-Tunes* and *One Piece* (no `combined`/`parentEpisode`/`subEpisodes` in either API). It is not
+This is the second time we measure it: ADR-0021 reached the same conclusion on _Looney
+Tunes_ and _One Piece_ (no `combined`/`parentEpisode`/`subEpisodes` in either API). It is not
 a gap we can wait out.
 
 ## What this project already has
@@ -101,22 +100,33 @@ a gap we can wait out.
   them into `Numbering` (`internal/provider/tvdb/tvdb_serie.go`), with pagination and
   per-language titles.
 - The TMDB adapter consumes **episode groups** (v0.4.0): each group becomes an entry in
-  `numbering`, keyed by the group NAME, capped at 8 groups, best-effort
+  `numbering`, keyed by the group NAME, best-effort
   (`internal/provider/tmdb/tmdb_grupos.go`). The default ordering stays `official`.
+  **There is no cap** (v0.19.0, issue #113): every group the source publishes is imported, so a
+  popular series no longer loses orders to an arbitrary limit of 8. The cost is one request per
+  group, and only on the import of the tree.
+- **Every group is recorded, mapped or not.** The series' `extension_data` carries
+  `episode_groups: [{id, name, kind, episodes, mapped, note}]`. A group that anchored no episode
+  keeps `mapped: 0` and a note (`tree has no episode ids` when the tree has no provider ids at
+  all, `no item of the group is in the tree` when it has them and the group's episodes are not
+  there). Before that, a dropped group and an absent group looked the same. The import
+  deliberately does **not** fall back to the official `(season, episode)` a group item also
+  carries: on a provisional tree those numbers came from file names, so anchoring by them would
+  stamp an alternative ordering onto an episode that may be a different one.
 - Production today has **no TheTVDB key** (`MYMEDIADB_TTDB_API_KEY` is not set), so in practice
   every series in the catalog is `official`-only. That is why the numbering of a DVD box set
   never matches.
 
 ## The gap, precisely
 
-| Problem | Provider | This project today |
-| --- | --- | --- |
+| Problem                                     | Provider                                              | This project today                               |
+| ------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------ |
 | Reorder (aired / DVD / absolute / regional) | TMDB: only if a group exists. TheTVDB: yes, all types | Model ready, **TheTVDB off, TMDB groups unused** |
-| File with several episodes | n/a | **Solved**: N links with `ordinal` |
-| One numbered unit merging N episodes | **nobody** | **No place to store it** |
+| File with several episodes                  | n/a                                                   | **Solved**: N links with `ordinal`               |
+| One numbered unit merging N episodes        | **nobody**                                            | **No place to store it**                         |
 
 `numbering` is per episode, 1:1. There is no object whose identity is "unit 5 of season 5 of
-*my* order, containing aired episodes 13, 14 and 15". So the owner has no way to say it, and
+_my_ order, containing aired episodes 13, 14 and 15". So the owner has no way to say it, and
 the scanner has no way to honour it.
 
 ## Proposal — the owner order, as one more ordering
@@ -182,7 +192,7 @@ as episodes 13–15), which is exactly what Jellyfin/Plex/Kodi cannot do for the
    `alternate`, `regional`, `altdvd`, `alttwo` for essentially every series, with zero code.
    Cheapest real win, and it answers "TheTVDB is more flexible" for the majority of the catalog.
 2. **Consume TMDB episode groups** (one request per group, cached). Fills the gap for series
-   where TheTVDB has no entry, and lets the owner *see* the orders before creating one.
+   where TheTVDB has no entry, and lets the owner _see_ the orders before creating one.
 3. **Owner order** — the only thing that solves the merge case. Extension data first, editor
    last, per series.
 

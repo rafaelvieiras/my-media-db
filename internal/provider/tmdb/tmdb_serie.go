@@ -61,12 +61,16 @@ func (c *Client) BuscarSerieArvore(ctx context.Context, sourceID string, langs [
 	// Alternative orderings (TMDB episode groups) are merged into the numbering of
 	// the episodes already built: the tree stays anchored on the official structure
 	// and each group adds one more entry in `numbering` (tmdb_grupos.go).
+	// EVERY group the source publishes is imported (no cap) and every one of them comes
+	// back as a record, mapped or not (ADR-0033).
 	ordens := []string{ordemOficial}
-	ordens = append(ordens, c.mesclarGruposTMDB(ctx, sourceID, temporadas)...)
+	extraOrders, groups := c.mergeEpisodeGroups(ctx, sourceID, temporadas)
+	ordens = append(ordens, extraOrders...)
 	return provider.SerieArvore{
 		DefaultSeasonType: ordemOficial,
 		SeasonTypes:       ordens,
 		Temporadas:        temporadas,
+		Groups:            groups,
 	}, nil
 }
 
