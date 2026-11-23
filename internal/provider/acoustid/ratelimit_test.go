@@ -35,7 +35,7 @@ func TestLimitador_SegundaChamadaEsperaOIntervalo(t *testing.T) {
 		dormir:    func(d time.Duration) { dorm = append(dorm, d); rel.avancar(d) },
 	}
 	lim.esperar() // t=0, sem espera
-	lim.esperar() // precisa esperar o intervalo inteiro
+	lim.esperar() // it has to wait the whole interval
 
 	if len(dorm) != 1 {
 		t.Fatalf("esperava 1 espera, houve %d", len(dorm))
@@ -72,7 +72,7 @@ func TestLimitador_TresChamadasRespeitamTresPorSegundo(t *testing.T) {
 func TestNovoLimitador_UsaRelogioReal(t *testing.T) {
 	lim := novoLimitador(intervaloRateLimit)
 	inicio := time.Now()
-	lim.esperar() // primeira chamada: nunca dorme
+	lim.esperar() // first call: it never sleeps
 	if time.Since(inicio) > 100*time.Millisecond {
 		t.Fatalf("primeira chamada nao deveria demorar, levou %v", time.Since(inicio))
 	}

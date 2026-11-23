@@ -2,7 +2,7 @@
 // query title/year and a candidate title/year, it decides the final score (0-100) and
 // whether the candidate must be discarded for a year mismatch. It is a LEAF package (it
 // only depends on internal/textsim) so that it can be consumed both by internal/server
-// (Revisão queue, auto-match endpoints) and by internal/enrich (name matching on manual
+// (review queue, auto-match endpoints) and by internal/enrich (name matching on manual
 // import) without creating an import cycle between the two.
 package matching
 
@@ -16,7 +16,7 @@ import (
 
 // LimiarAutoMatch is the score cut (0-100 scale, the same as match_confidence) above
 // which the auto-match applies the candidate ON ITS OWN.
-// Deliberately well above the low-confidence threshold of the Revisão queue
+// Deliberately well above the low-confidence threshold of the review queue
 // (70, internal/server/review.go): the cost of a false positive (it silently contaminates the
 // catalog) is much higher than that of a false negative (an item that was already
 // visible in the queue/orphans stays there).

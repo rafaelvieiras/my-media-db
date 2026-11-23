@@ -6,7 +6,7 @@ package enrich
 //
 // It never applies anything. The owner's decision (21/nov/2026) was to keep the hint model of
 // ADR-0038 and give the alert a real candidate: the item screen shows
-// "suggested: O Clube do Terror (1992), score 100, fits 78/78" and one click applies it through
+// "suggested: <name> (1992), score 100, fits 78/78" and one click applies it through
 // the existing confirm-candidate.
 
 import (

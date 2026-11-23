@@ -130,7 +130,7 @@ func TestDescartarSugestaoEntityInexistente(t *testing.T) {
 }
 
 // TestPodeSugerirCobreFilme: the hint used to be series-only, which left a movie with a
-// distorted folder title (the measured "101 Dálmatas O Filme") with no search result AND no
+// distorted folder title (measured in a real folder) with no search result AND no
 // hint. It now covers movies too, and still refuses everything else: a resolved item needs no
 // hint, an episode is not a work, and a server without a source has nothing to ask.
 func TestPodeSugerirCobreFilme(t *testing.T) {

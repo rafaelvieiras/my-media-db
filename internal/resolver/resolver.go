@@ -66,7 +66,7 @@ type Camadas struct {
 	// behavior).
 	LangPedido string
 	// Cadeia is the fallback order already derived from the settings (ADR-0019):
-	// `[pedido, fallback, original_language?]` deduplicated, ending IMPLICITLY at
+	// `[requested, fallback, original_language?]` deduplicated, ending IMPLICITLY at
 	// the neutral base (file) — the engine falls back to the file when no language
 	// in the chain has a value. EMPTY = no language context: translatable fields
 	// compose as in the pre-multilanguage model (without consulting the chain).
@@ -840,7 +840,7 @@ func creditosParaAny(itens []map[string]any) []any {
 // ── Per-language composition (translatables) ────────────────────────────────
 
 // comporTraduzivel composes a TRANSLATABLE field in the language × layer
-// dimension (ADR-0019). It walks the `cadeia` (`pedido → fallback → original → …`);
+// dimension (ADR-0019). It walks the `cadeia` (`requested → fallback → original → …`);
 // for each language it tries `override[campo][idioma]` (presence decides; `null`
 // erases AND INTERRUPTS the fallback — R6 per language) and otherwise
 // `externo[campo][idioma]` (first source with a value); the FIRST step with

@@ -195,7 +195,7 @@ type BlocoUsuarioNFO struct {
 // multi-episode file has several, concatenated after one XML header (see
 // MontarNFOEpisodios). It exists so a rewrite preserves the watched/rating state of EACH
 // episode of the file instead of only the first one: the caller matches the blocks by
-// (temporada, episodio). Best-effort, like ExtrairCamposUsuario: a corrupted file yields
+// (Temporada, Episodio). Best-effort, like ExtrairCamposUsuario: a corrupted file yields
 // whatever was readable before the defect, never an error -- writing an NFO must never fail
 // because of the previous one.
 func ExtrairBlocosDeEpisodio(existente []byte) []BlocoUsuarioNFO {

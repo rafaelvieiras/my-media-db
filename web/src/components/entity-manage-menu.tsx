@@ -572,7 +572,7 @@ export function EntityManageMenu({
             </DropdownMenuItem>
           ) : null}
           {/* 3 ALWAYS VISIBLE actions — they do not depend on
-              `catalog_completeness`, diferente dos 2 itens condicionais acima. */}
+              `catalog_completeness`, unlike the 2 conditional items above. */}
           <DropdownMenuSeparator />
           {/* "Marcar como assistido"/"não assistido": also
               always visible — it creates/deletes the history event directly, without

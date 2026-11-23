@@ -30,10 +30,10 @@ func externoMapa(campo string, porIdioma map[string]any) []CamadaExterna {
 	return []CamadaExterna{{Fonte: "tmdb", Campos: map[string]any{campo: porIdioma}}}
 }
 
-// TestCadeiaFallbackOrdem covers §5: pedido → fallback → original → arquivo, in
+// TestCadeiaFallbackOrdem covers §5: requested → fallback → original → arquivo, in
 // order, choosing the FIRST step with a value and recording the provenance.
 func TestCadeiaFallbackOrdem(t *testing.T) {
-	cadeia := []string{"pt-BR", "en", "ja"} // pedido, fallback, original
+	cadeia := []string{"pt-BR", "en", "ja"} // requested, fallback, original
 
 	// (1) the requested one has a value → wins.
 	got := Resolver(Camadas{

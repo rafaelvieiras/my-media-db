@@ -207,7 +207,7 @@ func TestPosScanPulaItemTentadoRecentemente(t *testing.T) {
 	}
 }
 
-// ── Alertas de match (ADR-0038) ──────────────────────────────────────────────
+// ── Match alerts (ADR-0038) ──────────────────────────────────────────────
 
 // TestPosScanSinalizaArvoreIncompativel covers the 'tree_mismatch' signal: the post-scan
 // census (ListarSeriesComArvoreIncompativel) selects the series whose tree does not fit the
@@ -232,7 +232,7 @@ func TestPosScanSinalizaArvoreIncompativel(t *testing.T) {
 	}
 	s := New("v-teste", database, WithSearchProvider(fake.New("")), WithAssetsDir(t.TempDir()))
 
-	// Série com árvore incompatível: 6 provisórios, 0 casados (o caso Batman/Aladdin).
+	// Series with an incompatible tree: 6 provisional, 0 matched (the case measured in the library).
 	semearEntity(t, database, "s1", "tv", "Batman")
 	if _, err := database.Write.ExecContext(ctx,
 		`UPDATE entity SET external_ids_json = ? WHERE id = ?`, `{"tmdb":"2022"}`, "s1"); err != nil {
@@ -249,8 +249,8 @@ func TestPosScanSinalizaArvoreIncompativel(t *testing.T) {
 		vincularArquivo(t, database, "f"+id, id)
 	}
 
-	// Série com a MESMA contagem de rascunhos, mas SEM arquivo: é o caso Toonsylvania medido em
-	// produção (21 rascunhos vazios, 21 episódios com arquivo) -- nada aqui acusa o match.
+	// Series with the SAME draft count, but WITHOUT a file: the case measured in
+	// production (21 empty drafts, 21 episodes with a file) -- nothing here flags the match.
 	semearEntity(t, database, "s3", "tv", "Toonsylvania")
 	if _, err := database.Write.ExecContext(ctx,
 		`UPDATE entity SET external_ids_json = ? WHERE id = ?`, `{"tmdb":"10361"}`, "s3"); err != nil {
@@ -272,7 +272,7 @@ func TestPosScanSinalizaArvoreIncompativel(t *testing.T) {
 		ligarFilhoOrdenado(t, database, "r-"+id, "se3", id, "tv_episode", int64(i))
 	}
 
-	// Série saudável: 12 casados + 2 provisórios (especiais) -- não pode entrar na lista.
+	// Healthy series: 12 matched + 2 provisional (specials) -- it cannot enter the list.
 	semearEntity(t, database, "s2", "tv", "Beavis & Butt-Head")
 	if _, err := database.Write.ExecContext(ctx,
 		`UPDATE entity SET external_ids_json = ? WHERE id = ?`, `{"tmdb":"13943"}`, "s2"); err != nil {
@@ -310,12 +310,12 @@ func TestPosScanSinalizaArvoreIncompativel(t *testing.T) {
 		t.Errorf("censo = %d/%d, quero 6/6", alerta.FilesUnmatched, alerta.FilesTotal)
 	}
 
-	// A série saudável não ganha linha nenhuma.
+	// The healthy series gets no row at all.
 	if _, err := s.leitura().ObterMatchSuggestion(ctx, "s2"); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("série saudável ganhou alerta (err = %v): a régua está frouxa", err)
 	}
 
-	// Rodar de novo não duplica nem reescreve: a linha existente tira a série do censo.
+	// Running it again neither duplicates nor rewrites: the existing row removes the series from the census.
 	if n := s.sinalizarArvoresIncompativeis(ctx); n != 0 {
 		t.Errorf("segunda passada escreveu %d alertas, quero 0 (idempotente)", n)
 	}
@@ -355,7 +355,7 @@ func TestPosScanRemoveAlertaDeArvoreObsoleto(t *testing.T) {
 	}
 	s := New("v-teste", database, WithSearchProvider(fake.New("")), WithAssetsDir(t.TempDir()))
 
-	// Série saudável, com um alerta antigo pendurado: 3 episódios casados com arquivo.
+	// Healthy series, with an old alert hanging: 3 episodes matched with a file.
 	semearEntity(t, database, "s1", "tv", "Toonsylvania")
 	if _, err := database.Write.ExecContext(ctx,
 		`UPDATE entity SET external_ids_json = ? WHERE id = ?`, `{"tmdb":"10361"}`, "s1"); err != nil {
@@ -372,7 +372,7 @@ func TestPosScanRemoveAlertaDeArvoreObsoleto(t *testing.T) {
 	}
 	gravarSugestaoComMotivo(t, database.Write, "s1", "10361", enrich.MotivoArvoreIncompativel)
 
-	// Série com o sintoma de verdade: 6 rascunhos segurando arquivo, alerta DISPENSADO pelo dono.
+	// Series with the real symptom: 6 drafts holding a file, alert DISMISSED by the owner.
 	semearEntity(t, database, "s2", "tv", "Aladdin")
 	if _, err := database.Write.ExecContext(ctx,
 		`UPDATE entity SET external_ids_json = ? WHERE id = ?`, `{"tmdb":"13943"}`, "s2"); err != nil {
@@ -396,7 +396,7 @@ func TestPosScanRemoveAlertaDeArvoreObsoleto(t *testing.T) {
 
 	s.sinalizarArvoresIncompativeis(ctx)
 
-	// O alerta sem sintoma sai; o dispensado fica.
+	// The alert without a symptom leaves; the dismissed one stays.
 	if _, err := s.leitura().ObterMatchSuggestion(ctx, "s1"); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("alerta obsoleto sobreviveu (err = %v): o sintoma sumiu, a linha tinha de sair", err)
 	}

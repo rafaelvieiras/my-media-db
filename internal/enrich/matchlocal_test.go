@@ -10,7 +10,7 @@ import (
 )
 
 // This file covers the name matching on manual import:
-// TestImportarCasaComDraftLocalPorNome reproduces the reported bug ("O Foragido")
+// TestImportarCasaComDraftLocalPorNome reproduces the reported bug (a movie title)
 // -- a draft with a file, without external_ids + the import of the same title/year by a
 // different external id must enrich THE SAME draft, never create a second
 // entity. The other tests cover the 3 "does not match" cases of the acceptance criteria.

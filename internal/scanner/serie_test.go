@@ -762,7 +762,7 @@ func TestScanSerieImportaPeloIDDaPasta(t *testing.T) {
 	stub := &importerPorIDStub{}
 	m := managerFake(t, d)
 	m.ConfigurarSeries(stub, func(context.Context) []string { return []string{"en"} })
-	// O import por id devolve uma série que já existe: o arquivo é vinculado a ela.
+	// The import by id returns a series that already exists: the file is linked to it.
 	criarSerieResolvida(t, d, "serie-do-id", "2 Broke Girls")
 
 	if err := scanSync(t, m, criarSourceSerie(t, d, root)); err != nil {

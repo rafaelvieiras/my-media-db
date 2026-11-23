@@ -596,8 +596,8 @@ func TestVariantesBuscaRetroativo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("variantesBuscaRetroativo(aligator): %v", err)
 	}
-	// A PASTA vem primeiro (é ela que carrega a obra na convenção Kodi), depois a pasta sem o
-	// subtítulo depois do hífen, e só então o nome do arquivo.
+	// The FOLDER comes first (it carries the work in the Kodi convention), then the folder
+	// without the subtitle after the hyphen, and only then the file name.
 	if len(variantes) != 3 {
 		t.Fatalf("variantes = %+v, quero 3 (pasta + pasta sem subtítulo + nome do arquivo)", variantes)
 	}

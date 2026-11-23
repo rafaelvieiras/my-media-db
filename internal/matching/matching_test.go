@@ -16,7 +16,7 @@ func TestPontuar_AnosIguaisSomamBonus(t *testing.T) {
 	if descartado {
 		t.Fatal("não deveria descartar (anos iguais)")
 	}
-	if score != 100 { // 100 (identico) + 5, com cap em 100
+	if score != 100 { // 100 (identical) + 5, capped at 100
 		t.Errorf("score = %v, quero 100 (cap)", score)
 	}
 }
@@ -233,7 +233,7 @@ func TestArtigoNaoEOutroTitulo(t *testing.T) {
 	if descartado || score < LimiarAutoMatch {
 		t.Fatalf("score = %.2f (descartado=%v), quero >= %.0f: o artigo não é parte do nome", score, descartado, LimiarAutoMatch)
 	}
-	// O artigo não salva um título DIFERENTE.
+	// The article does not save a DIFFERENT title.
 	if score, _, _ := PontuarComAlternativosTolerancia("Clube do Terror", 0, "O Clube das Bruxas", nil, 0, ToleranciaAnoSerie); score >= LimiarAutoMatch {
 		t.Fatalf("score = %.2f para outro nome: o artigo está engolindo a diferença", score)
 	}
@@ -242,14 +242,14 @@ func TestArtigoNaoEOutroTitulo(t *testing.T) {
 // TestToleranciaDeAnoDaSerie: the 2-year slack of a series absorbs an imprecise folder year and
 // still keeps a remake out; the movie slack stays at 1.
 func TestToleranciaDeAnoDaSerie(t *testing.T) {
-	// Clube do Terror (1990) vs the 1992 show: passa na série, cai no filme.
+	// Clube do Terror (1990) vs the 1992 show: it passes for the series, it fails for the movie.
 	if _, _, descartado := PontuarComAlternativosTolerancia("Clube do Terror", 1990, "O Clube do Terror", nil, 1992, ToleranciaAnoSerie); descartado {
 		t.Fatal("2 anos de diferença descartou o candidato da série")
 	}
 	if _, _, descartado := PontuarComAlternativos("Clube do Terror", 1990, "O Clube do Terror", nil, 1992); !descartado {
 		t.Fatal("o filme perdeu a tolerância de 1 ano")
 	}
-	// O remake, 29 anos depois, cai nas duas.
+	// The remake, 29 years later, fails for both.
 	if _, _, descartado := PontuarComAlternativosTolerancia("Clube do Terror", 1990, "Clube do Terror", nil, 2019, ToleranciaAnoSerie); !descartado {
 		t.Fatal("o reboot de 2019 sobreviveu à tolerância da série")
 	}

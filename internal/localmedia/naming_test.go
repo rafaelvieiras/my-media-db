@@ -475,7 +475,7 @@ func TestCaminhoNFODeVideo(t *testing.T) {
 			t.Errorf("CaminhoNFODeVideo(%q) = %q, quero %q", c.entrada, got, c.quero)
 		}
 	}
-	// sem extensao informada, o kind decide a padrao (poster -> .jpg)
+	// without an informed extension, the kind decides the default (poster -> .jpg)
 	if got := NomeArquivoArteMusica(KindPoster, true, 0, ""); got != "folder.jpg" {
 		t.Errorf("NomeArquivoArteMusica sem extensao = %q, quero folder.jpg", got)
 	}

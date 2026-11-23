@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	_ "modernc.org/sqlite" // registra o driver "sqlite" (sem CGO)
+	_ "modernc.org/sqlite" // registers the "sqlite" driver (without CGO)
 )
 
 // abrirBancoTeste creates a test sqlite with a table/row (so VACUUM INTO

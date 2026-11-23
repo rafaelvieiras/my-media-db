@@ -336,13 +336,12 @@ type consultaTituloAno struct {
 //
 // A movie is searched TWICE: first with the CATALOG title (entity.title, the folder
 // name the owner curated), then with the one derived from the file name (the release
-// name). The scan gives a movie two very different strings -- the folder
-// ("Alligator 2 A Mutação") and the file ("Alligator2.91.BD1080p.MemoriadaTV.Maior") --
-// and the provider only recognizes the first one. Measured on a production library:
-// of 25 random movies without any external id, 21 reach LimiarAutoMatch when searched by
-// the catalog title, against ~0 when searched by the release name (the release name
-// "Alligator2 91 BD1080p MemoriadaTV Maior" returns ZERO candidates, while "Alligator 2
-// A Mutação" returns the right movie as the first result with score 100).
+// name). The scan gives a movie two very different strings -- the folder ("A Clean Title")
+// and the file ("ACleanTitle.91.BD1080p.SomeGROUP") -- and the provider only recognizes the
+// first one. Measured on a production library: of 25 random movies without any external id,
+// 21 reach LimiarAutoMatch when searched by the catalog title, against ~0 when searched by
+// the release name (a compressed release name returns ZERO candidates, while the clean
+// title returns the right movie as the first result with score 100).
 //
 // The other types keep the single term they always had: a series already prefers its
 // FOLDER (tituloAnoDaPastaDaSerie, with the entity title as fallback) and never had the
@@ -434,7 +433,7 @@ func comVariantesSemEnfeite(consultas []consultaTituloAno) []consultaTituloAno {
 }
 
 // dedupeConsultas drops the attempts whose title repeats a previous one once normalized
-// ("Alligator 2: A Mutação" and "Alligator 2 A Mutação" are the SAME search): the
+// ("A Title: Subtitle" and "A Title Subtitle" are the SAME search): the
 // second attempt would spend a provider call to score the same candidate list against
 // the same title. An attempt with an empty normalized title is dropped as well -- there
 // is nothing to search.

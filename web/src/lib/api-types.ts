@@ -1607,7 +1607,7 @@ export interface components {
   schemas: {
     Error: {
       error: {
-        /** @description Slug estável (não localizado) para o cliente ramificar. */
+        /** @description Stable slug (not localized) for the client to branch on. */
         code: string
         /** @description Texto humano (pt-BR). */
         message: string
@@ -1641,7 +1641,7 @@ export interface components {
       media_files: components['schemas']['MediaFilesUsage']
       /** @description COUNT(*) de library_source cadastradas. */
       library_sources: number
-      /** @description Tamanho da fila de revisão (mesma contagem de GET /review). */
+      /** @description Review queue size (same count as GET /review). */
       review_queue_size: number
       /** @description Tamanho da fila de órfãs (mesma contagem de GET /orphans). */
       orphans_count: number
@@ -1678,7 +1678,7 @@ export interface components {
     SourceStorage: {
       source_id: string
       path: string
-      /** @description SUM(media_file.size) com state='present' daquela fonte — reflete o ÚLTIMO SCAN, não o disco agora-agora. */
+      /** @description SUM(media_file.size) with state=present for that source. It reflects the LAST SCAN, not the disk right now. */
       used_bytes: number
       /** @description null quando offline (Statfs falhou). */
       filesystem: components['schemas']['FilesystemStats'] | null
@@ -1701,23 +1701,23 @@ export interface components {
       /** @description Rótulo pt-BR (UI mono-idioma hoje). */
       label: string
       /**
-       * @description Seção do formulário.
+       * @description Form section.
        * @enum {string}
        */
       group: 'traduzivel' | 'neutro'
       /**
-       * @description Widget de renderização do input.
+       * @description Input render widget.
        * @enum {string}
        */
       widget: 'text' | 'textarea' | 'number' | 'date' | 'tags'
       /** @description Se o campo compõe por idioma (= registroOrigem[campo].traduzivel). */
       translatable: boolean
       /**
-       * @description Classe de composição pública do resolver (extensao fica de fora do formulário).
+       * @description Public composition class of the resolver (extensao stays out of the form).
        * @enum {string}
        */
       kind: 'escalar' | 'lista' | 'numero'
-      /** @description Ordem estável de renderização. */
+      /** @description Stable render order. */
       order: number
       /** @description Aparece no formulário de CRIAR item (subconjunto plano). */
       creatable: boolean
@@ -1768,9 +1768,9 @@ export interface components {
       owned: boolean
       /** Format: int64 */
       file_count: number
-      /** @description Maior confiança de match entre os arquivos (badge de revisão). */
+      /** @description Highest match confidence among the files (review badge). */
       match_confidence: number | null
-      /** @description Rota do pôster local, ou null quando não há arte. */
+      /** @description Local poster route, or null when there is no artwork. */
       poster_url: string | null
       /** @description Posse AGREGADA do card na árvore de séries (0036): episódios possuídos sobre o total. OPCIONAL — presente só nos cards `season` (e opcionalmente `tv`) de GET /entities/{id}/members; ausente/`null` para movie/episode/ collection (que usam a posse simples de `owned`). Anotado no server pós-listagem, sem mudar a query do card. */
       ownership?: components['schemas']['OwnershipInfo'] | null
@@ -1786,7 +1786,7 @@ export interface components {
     }
     /** @description Resultado da avaliação de completude de CATALOGAÇÃO (0058) de um item contra a régua por tipo configurada em 0057 — distinto da completude de POSSE (`EntityCard.owned`/`OwnershipInfo`). Reusado em `EntityCard.catalog_completeness` e `ResolvedEntity.catalog_completeness`. */
     CatalogCompletenessResult: {
-      /** @description true quando o item atende a régua inteira, ou quando o tipo não tem entrada na config (tipo sem régua nunca é incompleto). */
+      /** @description true when the item satisfies the whole ruler, or when the type has no entry in the config (a type without a ruler is never incomplete). */
       complete: boolean
       /** @description Chaves ESTÁVEIS do que falta, em ordem fixa (description, runtime, certification, keywords, cast, media_file, artwork:<kind>...). String livre (não é um enum fechado aqui): os valores possíveis hoje são `description`, `runtime`, `certification`, `keywords`, `cast`, `media_file`, ou `artwork:<kind>` (um item por kind de arte AUSENTE da lista configurada, ex. `artwork:poster`, `artwork:fanart`). `[]` quando `complete` é true. */
       missing: string[]
@@ -1799,14 +1799,14 @@ export interface components {
       absolute_number?: number
       /** @description Presente e > 1 quando este número é COMPARTILHADO por vários episódios porque a ORDEM DO DONO declara uma unidade que os funde (ADR-0033). Nenhuma ordem de provider produz isso. */
       merged_episodes?: number
-      /** @description Posição (1-based) deste episódio dentro da unidade mesclada. */
+      /** @description Position (1-based) of this episode inside the merged unit. */
       merged_ordinal?: number
     }
     /** @description Ordem do dono (ADR-0033): a numeração declarada pelo dono, ancorada em IDS de episódio (nunca em números) para sobreviver a um re-scrape. `units` vazio significa "não declarada". */
     OwnerOrder: {
       /** @description Rótulo livre da ordem (ex. "HBO 2004"). */
       name?: string
-      /** @description Ordem do provider em que ela se baseia, para comparação (ex. "official"). */
+      /** @description Provider ordering it is based on, for comparison (e.g. official). */
       based_on?: string
       units: components['schemas']['OwnerOrderUnit'][]
     }
@@ -1816,7 +1816,7 @@ export interface components {
       number: number
       /** @description Título livre da unidade (opcional). */
       title?: string
-      /** @description Ids dos episódios da unidade, na ordem do lançamento. */
+      /** @description Ids of the unit episodes, in release order. */
       episodes: string[]
     }
     EntityList: {
@@ -1844,7 +1844,7 @@ export interface components {
       overview: string | null
       /** @description URL direta da arte na fonte (o proxy/cache é do 0015). */
       poster_url: string | null
-      /** @description Sempre false na busca (resultado externo não é entidade). */
+      /** @description Always false in search (an external result is not an entity). */
       saved: boolean
       /** @description Id da entity interna quando este resultado externo JÁ foi importado (interno-first, 0027); null caso contrário. A UI mostra "na biblioteca" e linka ao interno em vez de reimportar. */
       internal_id?: string | null
@@ -1853,7 +1853,7 @@ export interface components {
       query: string
       /** @description Cards do catálogo (mesmo shape da lista). */
       local: components['schemas']['EntityCard'][]
-      /** @description Resultados "não salvos" da fonte externa (vazio quando indisponível). */
+      /** @description Results not saved from the external source (empty when unavailable). */
       external: components['schemas']['ExternalResult'][]
       /** @description false quando não há credencial/provider ou a fonte falhou — distingue "fonte indisponível" de "zero resultados". */
       external_available: boolean
@@ -1874,7 +1874,7 @@ export interface components {
       /** @description Rota que serve o binário deste asset. */
       url: string
     }
-    /** @description Galeria de arte da entity (vazia quando não há arte). */
+    /** @description Artwork gallery of the entity (empty when there is no artwork). */
     AssetList: components['schemas']['Asset'][]
     /** @description Corpo de POST .../historico (briefing 0092). `kind`/`status` são TEXT livre (ex.: kind="assistir", status="started"|"paused"|"stopped"| "completed") — vocabulário sugerido, não travado no schema. */
     CreateHistoricoEvento: {
@@ -1884,7 +1884,7 @@ export interface components {
       status: string
       /** @description Progresso em [0, 100]. Fora do intervalo → 422. */
       progress_percent?: number | null
-      /** @description Posição de reprodução em segundos, quando aplicável. */
+      /** @description Playback position in seconds, when applicable. */
       position_seconds?: number | null
       /** @description Instante do evento (RFC3339). Ausente → timestamp do servidor no momento da chamada. */
       occurred_at?: string
@@ -1934,14 +1934,14 @@ export interface components {
       source: string
       raw_title?: string | null
       raw_year?: string | null
-      /** @description IDs externos brutos do payload, por fonte. Ausente = não informado pelo evento. */
+      /** @description Raw external IDs of the payload, per source. Absent means the event did not report them. */
       raw_external_ids: {
         tmdb?: string
         imdb?: string
         tvdb?: string
       }
     }
-    /** @description Resposta de GET /historico/orfaos — mesmo envelope de paginação de GET /entities. */
+    /** @description Response of GET /historico/orfaos, same pagination envelope as GET /entities. */
     HistoricoEventoOrfaoList: {
       items: components['schemas']['HistoricoEventoOrfao'][]
       /** Format: int64 */
@@ -1967,9 +1967,9 @@ export interface components {
       disc_type?: string
       /** @description Número do disco; só no kind disc. */
       disc?: number
-      /** @description Temporada da arte (número, `all` ou `0`); só em artes de temporada. */
+      /** @description Season of the artwork (a number, all or 0); only on season artwork. */
       season?: string
-      /** @description Escolha do dono (só para asset local). */
+      /** @description Owner choice (only for a local asset). */
       is_preferred: boolean
       /** @description Asset materializado, servido do disco. */
       is_local: boolean
@@ -2047,9 +2047,9 @@ export interface components {
     }
     /** @description Corpo de POST /collections (0025 Fase B) — cria uma coleção LOCAL manual. Só o título é obrigatório; a descrição é opcional. */
     CreateCollection: {
-      /** @description Nome da coleção (obrigatório, não pode ser vazio). */
+      /** @description Collection name (required, cannot be empty). */
       title: string
-      /** @description Descrição livre da coleção (opcional). */
+      /** @description Free-form collection description (optional). */
       description?: string
     }
     /** @description Corpo de POST /entities/{id}/members (0025 Fase B) — o item a ligar à coleção. */
@@ -2060,11 +2060,11 @@ export interface components {
     /** @description Corpo de POST /entities (0027) — cria um ITEM LOCAL manual (movie|tv) SEM fonte externa. type e title são obrigatórios; os demais campos base são opcionais. */
     CreateItem: {
       /**
-       * @description Tipo do item (movie ou tv; coleção usa POST /collections).
+       * @description Item type (movie or tv; a collection uses POST /collections).
        * @enum {string}
        */
       type: 'movie' | 'tv'
-      /** @description Título do item (obrigatório, não pode ser vazio). */
+      /** @description Item title (required, cannot be empty). */
       title: string
       /** @description Título original (opcional). */
       original_title?: string
@@ -2089,7 +2089,7 @@ export interface components {
     }
     /** @description Corpo de POST /entities/purge — os ids a purgar em lote. */
     PurgeBatchRequest: {
-      /** @description Ids das entities a purgar (ids ausentes são ignorados). */
+      /** @description Ids of the entities to purge (missing ids are ignored). */
       ids: string[]
     }
     /** @description Resultado da purga individual (DELETE /entities/{id}). */
@@ -2106,7 +2106,7 @@ export interface components {
     AutoMatchTarget: {
       id: string
       title: string
-      /** @description Ano do candidato aplicado; null quando a fonte não informa. */
+      /** @description Year of the applied candidate; null when the source does not report it. */
       year: number | null
     }
     /** @description Resposta de POST /entities/{id}/auto-match. `target` é null quando `resolved` é false (nenhum candidato bateu `LimiarAutoMatch`). */
@@ -2147,7 +2147,7 @@ export interface components {
     /** @description O candidato mostrado pela prévia de match (briefing 0060) — local ou externo, sem aplicar nada. Quando veio do catálogo local, `local_id` é o id da entity já catalogada e `source`/`source_id` são null; quando veio da fonte externa, `local_id` é null e `source`/ `source_id` vêm preenchidos. `poster_url`: para local, a rota do proxy da própria entity (mesma que `EntityCard.poster_url`); para externo, a URL CRUA do provider (o front roteia via `arteSrc`). */
     MatchPreviewTarget: {
       title: string
-      /** @description Ano do candidato; null quando a fonte não informa. */
+      /** @description Year of the candidate; null when the source does not report it. */
       year: number | null
       poster_url: string | null
       /** @description Id da entity local candidata; null quando method=external. */
@@ -2205,7 +2205,7 @@ export interface components {
     DownloadMissingArtworkResult: {
       /** @description Kinds de arte que ganharam um asset novo nesta chamada. */
       downloaded: string[]
-      /** @description Kinds que estavam faltando mas sem opção em nenhum provider. */
+      /** @description Kinds that were missing but had no option in any provider. */
       unavailable: string[]
     }
     /** @description Resposta de POST /entities/{id}/force-reconcile (briefing 0122) — `linked=true` quando a entity foi religada contra o pai nesta chamada; `linked=false` quando não havia candidato, o tipo não é aplicável (nem `faixa` nem `tv`) ou não há scanner configurado. */
@@ -2238,7 +2238,7 @@ export interface components {
     }
     /** @description Resposta de POST /entities/{id}/nfo (briefing 0062) — espelha as duas colunas novas de `entity` que a escrita atualiza. `nfo_path` é o caminho absoluto do `.nfo` gravado (`<vídeo>.nfo` para filme/episódio, `tvshow.nfo` na raiz da pasta da série); `nfo_written_at` é o timestamp ISO desta escrita (muda a cada chamada, mesmo idempotente em conteúdo). */
     NfoWriteResult: {
-      /** @description Caminho absoluto do .nfo gravado na pasta real da biblioteca. */
+      /** @description Absolute path of the .nfo written in the real library folder. */
       nfo_path: string
       /** @description Timestamp ISO da última escrita (entity.nfo_written_at). */
       nfo_written_at: string
@@ -2252,7 +2252,7 @@ export interface components {
     }
     /** @description Resposta de sucesso de POST /entities/{id}/trailer/download (briefing 0102). */
     TrailerDownloadResult: {
-      /** @description Caminho absoluto do trailer gravado na pasta real da biblioteca. */
+      /** @description Absolute path of the trailer written in the real library folder. */
       local_path: string
     }
     /** @description Resposta de GET /entities/{id}/theme/candidato (briefing 0103, ADR-0025). */
@@ -2264,7 +2264,7 @@ export interface components {
     }
     /** @description Resposta de sucesso de POST /entities/{id}/theme/download (briefing 0103). */
     ThemeDownloadResult: {
-      /** @description Caminho absoluto do tema musical gravado na pasta real da biblioteca. */
+      /** @description Absolute path of the theme song written in the real library folder. */
       local_path: string
     }
     /** @description Something the backend refuses to decide alone, kept for the owner to accept or ignore (migrations 0028 and 0029). Three reasons share the shape: `name` (a cheaper variant of the name on disk found this candidate), `empty_tree` (the source answered the current match with zero episodes, so no file can ever be placed) and `tree_mismatch` (the tree exists but does not fit the files). For `name` and `empty_tree` `source`/`source_id` identify a REAL candidate; for `tree_mismatch` they carry the CURRENT identity, which is the thing under suspicion -- that is what `can_apply` is for. */
@@ -2341,9 +2341,9 @@ export interface components {
       tagline: string | null
       /** @description Palavras-chave traduzíveis (distintas dos gêneros/tags). `[]` quando ausentes. */
       keywords: string[]
-      /** @description Duração em minutos, ou null. */
+      /** @description Duration in minutes, or null. */
       runtime: number | null
-      /** @description Classificação indicativa da região do idioma ativo (fallback US), ou null. */
+      /** @description Content rating of the active-language region (US fallback), or null. */
       certification: string | null
       /** @description SITUAÇÃO de exibição de uma SÉRIE (0045): string CRUA da fonte, exposta VERBATIM (TMDB: "Returning Series"|"Ended"|"Canceled"|"In Production"| "Planned"; TVDB: status.name) — a UI traduz o rótulo p/ pt-BR. Neutra e read-only. OPCIONAL: presente só quando a fonte a informa; AUSENTE para filme e série só-TVDB sem match. */
       airing_status?: string | null
@@ -2357,7 +2357,7 @@ export interface components {
       backdrop_url: string | null
       /** @description Vídeos (trailer/clip) da fonte. `[]` quando ausentes. */
       videos: components['schemas']['ExternalVideo'][]
-      /** @description Coleção a que o item pertence, ou null. */
+      /** @description Collection the item belongs to, or null. */
       collection: components['schemas']['ExternalCollection'] | null
       /** @description Itens similares. `[]` quando ausentes. */
       similar: components['schemas']['ExternalSimilar'][]
@@ -2403,9 +2403,9 @@ export interface components {
     }
     /** @description Um grupo de episódios (temporada da ORDEM pedida) com o rótulo NÃO-navegável do cabeçalho e os cards de episódio já com `numbering` projetado naquela ordem. No `absolute` há um grupo único corrido (`season` 0, label "Episódios"); episódios sem numeração naquela ordem caem num grupo "Sem numeração" (`season` 0) ao fim. */
     EpisodeGroup: {
-      /** @description Número da temporada da ordem (0 no grupo absoluto / sem numeração). */
+      /** @description Season number in the ordering (0 in the absolute group, or without numbering). */
       season: number
-      /** @description Rótulo do cabeçalho, não-navegável (ex.: Temporada 1, Episódios). */
+      /** @description Header label, not navigable (e.g. Season 1, Episodes). */
       label: string
       episodes: components['schemas']['EntityCard'][]
     }
@@ -2429,7 +2429,7 @@ export interface components {
       nome: string
       /** @description Texto curto de apoio. */
       descricao: string
-      /** @description Se a integração está operante com os valores efetivos atuais. */
+      /** @description Whether the integration operates with the current effective values. */
       configurada: boolean
     }
     /** @description Corpo de GET /integrations. */
@@ -2448,7 +2448,7 @@ export interface components {
       /** @description Rótulo amigável para a UI. */
       label: string
       /**
-       * @description Hint de apresentação para a UI — não afeta a resolução de valor.
+       * @description Presentation hint for the UI; it does not affect value resolution.
        * @enum {string}
        */
       tipo: 'text' | 'secret' | 'bool' | 'number' | 'select'
@@ -2535,7 +2535,7 @@ export interface components {
     TypeCompletenessConfig: {
       /** @description Exige sinopse preenchida (espelha Entidade.Description). */
       description: boolean
-      /** @description Exige duração preenchida (espelha Entidade.Runtime). */
+      /** @description Requires a filled duration (mirrors Entidade.Runtime). */
       runtime: boolean
       /** @description Exige classificação indicativa preenchida (espelha Entidade.Certification). */
       certification: boolean
@@ -2596,7 +2596,7 @@ export interface components {
     OverridePatch: {
       [key: string]: unknown
     }
-    /** @description Fatos técnicos extraídos do arquivo (ffprobe). */
+    /** @description Technical facts extracted from the file (ffprobe). */
     MediaInfo: {
       general?: {
         format?: string
@@ -2665,7 +2665,7 @@ export interface components {
        * @enum {string}
        */
       content_type?: 'movie' | 'series'
-      /** @description Idioma preferido de busca/exibição desta biblioteca (briefing 0084). */
+      /** @description Preferred search/display language of this library (briefing 0084). */
       preferred_language?: string
       /** @description Override, em dias, do throttle de enriquecimento retroativo desta biblioteca (briefing 0085). Opcional; ausente = sem override, usa o valor global. */
       retroactive_enrichment_days?: number
@@ -2719,15 +2719,15 @@ export interface components {
     }
     /** @description Um job conhecido pelo sistema (briefing 0052): config dinâmica (habilitado/agendamento) + o espelho da última execução + `running` (estado em memória, efêmero). */
     Job: {
-      /** @description Slug estável (ex. "backup_vacuum"), não um uuid. */
+      /** @description Stable slug (e.g. backup_vacuum), not a uuid. */
       id: string
       nome: string
       descricao: string | null
-      /** @description Só gate do disparo AUTOMÁTICO; execução manual funciona independente. */
+      /** @description Gates the AUTOMATIC trigger only; a manual run works regardless. */
       enabled: boolean
-      /** @description Expressão cron de 5 campos; null = job só-manual (sem agendamento). */
+      /** @description 5-field cron expression; null means a manual-only job (no schedule). */
       schedule_cron: string | null
-      /** @description Próxima execução prevista; null quando desabilitado ou sem agendamento. */
+      /** @description Next scheduled run; null when disabled or without a schedule. */
       next_run_at: string | null
       last_run_at: string | null
       /** @enum {string|null} */
@@ -2752,7 +2752,7 @@ export interface components {
     RunJob: {
       execution_id: string
     }
-    /** @description Uma execução no histórico de um job (briefing 0052) — genérico para QUALQUER tipo de job. */
+    /** @description One execution in a job history (briefing 0052); generic for ANY job type. */
     JobExecution: {
       id: string
       job_id: string
@@ -2764,13 +2764,13 @@ export interface components {
       finished_at: string | null
       /** @description Resultado curto (sucesso) ou erro (falha), sem stack trace. */
       message: string | null
-      /** @description Tempo esperando na fila (enqueued_at -> started_at). null quando ainda não começou. */
+      /** @description Time waiting in the queue (enqueued_at to started_at). null when it has not started yet. */
       wait_ms?: number | null
-      /** @description Tempo executando (started_at -> finished_at). null enquanto não terminou. */
+      /** @description Time running (started_at to finished_at). null while it has not finished. */
       duration_ms?: number | null
-      /** @description Quantos itens a execução reportou como concluídos (ADR-0040). */
+      /** @description How many items the execution reported as done (ADR-0040). */
       ok: number
-      /** @description Quantos itens a execução reportou como falhos (ADR-0040). */
+      /** @description How many items the execution reported as failed (ADR-0040). */
       failed: number
     }
     /** @description Um item da fila de execução (ADR-0028/ADR-0040): scan ou job, com os tempos derivados e o rótulo legível da referência. */
@@ -2780,15 +2780,15 @@ export interface components {
       kind: 'scan' | 'job'
       /** @description library_source.id (kind=scan) ou job_definition.id (kind=job). */
       ref_id: string
-      /** @description Nome legível da referência (nome do job, caminho da fonte); null se a referência já não existe. */
+      /** @description Human-readable name of the reference (job name, source path); null if the reference no longer exists. */
       ref_label?: string | null
       /** @enum {string} */
       trigger: 'manual' | 'schedule' | 'watch'
       /** @enum {string} */
       status: 'queued' | 'running' | 'success' | 'error'
-      /** @description Resultado final (sucesso) ou erro da execução. */
+      /** @description Final result (success) or error of the execution. */
       message?: string | null
-      /** @description Posição na fila (1 = o próximo a rodar). Ausente no item em execução e nos finalizados. */
+      /** @description Queue position (1 means the next to run). Absent on the running item and on finished ones. */
       position?: number | null
       step_label?: string | null
       step_index: number
@@ -2826,7 +2826,7 @@ export interface components {
       item: components['schemas']['QueueItem']
       events: components['schemas']['QueueEvent'][]
     }
-    /** @description Progresso ao vivo de UMA execução de job (o mesmo número que a tela de fila mostra). */
+    /** @description Live progress of ONE job execution (the same number the queue screen shows). */
     JobProgress: {
       /** @enum {string} */
       status: 'queued' | 'running' | 'success' | 'error'
@@ -2834,13 +2834,13 @@ export interface components {
       step_label?: string | null
       step_index: number
       step_total: number
-      /** @description O que está sendo processado agora (arquivo, título, fonte). */
+      /** @description What is being processed now (file, title, source). */
       current_item?: string | null
       done: number
       total: number
       ok: number
       failed: number
-      /** @description Tempo decorrido desde o início; null quando não está rodando. */
+      /** @description Time elapsed since the start; null when it is not running. */
       elapsed_ms?: number | null
     }
     JobExecutionList: {
@@ -2859,10 +2859,10 @@ export interface components {
       source_id: string
       name: string
       poster_url: string | null
-      /** @description id da entity coleção interna quando ja importada (0026); null caso contrario. */
+      /** @description id of the internal collection entity when already imported (0026); null otherwise. */
       internal_id?: string | null
     }
-    /** @description Item (parte) de uma coleção; mesmo shape enxuto de um resultado de busca. */
+    /** @description Item (part) of a collection; same lean shape as a search result. */
     ExternalCollectionPart: {
       source_id: string
       type: string
@@ -2881,7 +2881,7 @@ export interface components {
       overview: string | null
       poster_url: string | null
       backdrop_url: string | null
-      /** @description id da entity coleção interna quando esta coleção ja foi importada (0025/0026); null caso contrario. */
+      /** @description id of the internal collection entity when this collection was already imported (0025/0026); null otherwise. */
       internal_id?: string | null
       parts: components['schemas']['ExternalCollectionPart'][]
     }
@@ -2924,7 +2924,7 @@ export interface components {
       order: number
       /** @description Foto (proxyada) ou null. */
       profile_url?: string | null
-      /** @description Nº de episódios do papel (só série); null em filme. */
+      /** @description Number of episodes in the role (series only); null for a movie. */
       episode_count?: number | null
       /** @description Id da pessoa NO NOSSO catálogo (interno-first, 0029 Fase D), presente quando essa pessoa já foi persistida por algum import. Quando presente, a UI linka para a página da pessoa (GET /person/{id}); null = sem destino interno (degrada para não-clicável). */
       person_id?: string | null
@@ -2933,7 +2933,7 @@ export interface components {
     CreditCrew: {
       source_id: string
       name: string
-      /** @description Direção/Roteiro/Fotografia… */
+      /** @description Directing/Screenplay/Cinematography… */
       department: string
       job: string
       profile_url?: string | null
@@ -2953,7 +2953,7 @@ export interface components {
     Person: {
       /** @description Id da pessoa no nosso catálogo (person.id). */
       id: string
-      /** @description Nome (neutro, não se traduz). */
+      /** @description Name (neutral, not translated). */
       name: string
       /** @description Foto (proxyada) ou null. */
       profile_url?: string | null
@@ -3351,7 +3351,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Toggle de materialização automática de artes. */
+      /** @description Automatic artwork materialization toggle. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3486,7 +3486,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Config de completude de catalogação. */
+      /** @description Catalog completeness config. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3532,7 +3532,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Integrações registradas. */
+      /** @description Registered integrations. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3555,7 +3555,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Detalhe da integração. */
+      /** @description Integration detail. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3583,7 +3583,7 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Detalhe da integração após a gravação (mesmo shape do GET). */
+      /** @description Integration detail after the write (same shape as GET). */
       200: {
         headers: {
           [name: string]: unknown
@@ -3775,7 +3775,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Ordem do dono (vazia quando não declarada). */
+      /** @description Owner ordering (empty when not declared). */
       200: {
         headers: {
           [name: string]: unknown
@@ -3881,7 +3881,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Lista de arquivos. */
+      /** @description File list. */
       200: {
         headers: {
           [name: string]: unknown
@@ -4042,7 +4042,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Lista de assets (vazia quando não há arte). */
+      /** @description Asset list (empty when there is no artwork). */
       200: {
         headers: {
           [name: string]: unknown
@@ -4193,7 +4193,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Asset materializado na pasta real (local_path preenchido). */
+      /** @description Asset materialized in the real folder (local_path filled). */
       200: {
         headers: {
           [name: string]: unknown
@@ -4344,7 +4344,7 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Coleção criada, resolvida. */
+      /** @description Created collection, resolved. */
       201: {
         headers: {
           [name: string]: unknown
@@ -4403,14 +4403,14 @@ export interface operations {
       path: {
         /** @description Fonte externa (ex.: tmdb). */
         source: string
-        /** @description Id da coleção NA FONTE (source_id). */
+        /** @description Collection id AT THE SOURCE (source_id). */
         id: string
       }
       cookie?: never
     }
     requestBody?: never
     responses: {
-      /** @description Coleção externa, resolvida no idioma ativo. */
+      /** @description External collection, resolved in the active language. */
       200: {
         headers: {
           [name: string]: unknown
@@ -4516,7 +4516,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Cards da fila de revisão (array, possivelmente vazio). */
+      /** @description Review queue cards (array, possibly empty). */
       200: {
         headers: {
           [name: string]: unknown
@@ -4638,7 +4638,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Resultado do auto-match (resolvido ou não). */
+      /** @description Auto-match result (resolved or not). */
       200: {
         headers: {
           [name: string]: unknown
@@ -4766,7 +4766,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Kinds que ganharam arte nova e kinds que faltavam sem opção disponível. */
+      /** @description Kinds that got new artwork, and kinds that were missing with no option available. */
       200: {
         headers: {
           [name: string]: unknown
@@ -4791,7 +4791,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Resultado da reconciliação forçada (religou ou não). */
+      /** @description Forced reconciliation result (relinked or not). */
       200: {
         headers: {
           [name: string]: unknown
@@ -4941,7 +4941,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Disponibilidade do candidato e do arquivo local. */
+      /** @description Availability of the candidate and of the local file. */
       200: {
         headers: {
           [name: string]: unknown
@@ -5057,7 +5057,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Histórico de eventos (vazio quando não há nenhum). */
+      /** @description Event history (empty when there is none). */
       200: {
         headers: {
           [name: string]: unknown
@@ -5457,7 +5457,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Execução aceita. */
+      /** @description Execution accepted. */
       202: {
         headers: {
           [name: string]: unknown
@@ -5488,7 +5488,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Página de execuções. */
+      /** @description Execution page. */
       200: {
         headers: {
           [name: string]: unknown

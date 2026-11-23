@@ -19,7 +19,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// comParametroID injeta o {id} da rota chi no request (the handlers read it with
+// comParametroID injects the route {id} of chi into the request (the handlers read it with
 // chi.URLParam, so the test must build the same context the router would).
 func comParametroID(r *http.Request, id string) *http.Request {
 	rctx := chi.NewRouteContext()

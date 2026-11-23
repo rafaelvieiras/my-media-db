@@ -848,7 +848,7 @@ func TestExecutarStorageMantemUltimoValorDeFonteOffline(t *testing.T) {
 // TestExecutarNarraAsEtapasFinais: steps 5 to 8 iterate real items (art inventory, local
 // music artwork, orphan children, completeness) and used to receive no registrar at all, so
 // the queue screen showed no progress bar and the item of the previous step -- measured in
-// production as "step 6/8: discovering local music artwork · now: X-Men 76 Dia de Formatura"
+// production as "step 6/8: discovering local music artwork · now: <file name of an episode>"
 // (a file name from the scan). They must receive the registrar of the RUN.
 func TestExecutarNarraAsEtapasFinais(t *testing.T) {
 	lib := &libraryFake{sources: []library.Source{{ID: "src-1", Path: "/media/videos"}}}

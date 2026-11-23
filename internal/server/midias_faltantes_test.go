@@ -1259,7 +1259,7 @@ func TestPastaDeMusicaSemFaixaNaoTemDestino(t *testing.T) {
 			t.Errorf("pastaDeMusica(%s) = (%q, %q, true), quero ok=false", id, dir, faixa)
 		}
 	}
-	// e a entity fora da vertical de musica tambem nao tem pasta por aqui
+	// and an entity outside the music vertical has no folder here either
 	ent, err := srv.leitura().ObterEntity(ctx, "albVazio")
 	if err != nil {
 		t.Fatalf("ObterEntity: %v", err)
@@ -1307,15 +1307,15 @@ func TestMaterializarMidiasFaltantesNFOCompartilhadoPreservaCamposPorEpisodio(t 
 	if len(partes) != 3 {
 		t.Fatalf("esperava 2 blocos, achei %d:\n%s", len(partes)-1, corpo)
 	}
-	// O dono editou o NFO a mao: sobrou so o bloco do SEGUNDO episodio, com um playcount.
+	// The owner edited the NFO by hand: only the block of the SECOND episode is left, with a playcount.
 	soSegundo := partes[0] + "<episodedetails>" + partes[2]
 	soSegundo = strings.Replace(soSegundo, "</episodedetails>", "  <playcount>7</playcount>\n</episodedetails>", 1)
 	if err := localmedia.EscreverArquivoAtomico(nfoPath, []byte(soSegundo)); err != nil {
 		t.Fatalf("escrever editado: %v", err)
 	}
 
-	// O documento do ARQUIVO tem 2 blocos: o editado nao converge e e reescrito, preservando o
-	// playcount no episodio a que ele pertencia.
+	// The document of the FILE has 2 blocks: the edited one does not converge and is rewritten, preserving the
+	// playcount on the episode it belonged to.
 	_, nfoGravado, err := srv.MaterializarMidiasFaltantes(ctx, "e1")
 	if err != nil {
 		t.Fatalf("2a chamada: %v", err)
@@ -1508,16 +1508,16 @@ func semearEpisodioSemNumero(t *testing.T, d *db.DB) (video string) {
 	return video
 }
 
-// TestMaterializarMidiasFaltantesEpisodioSemNumeroMantemONumeroDoArquivo cobre a regra de
-// numeracao do bloco: quando a arvore NAO sabe a temporada/episodio (ambos 0), vale o numero que
-// o arquivo ja declara. O contrario -- omitir a tag porque o modelo nao sabe -- faz o arquivo
-// divergir do documento em TODA execucao: o job reescreveria 360 arquivos por run para nao dizer
-// nada de novo, e o numero que o Kodi le desapareceria.
-// TestMaterializarMidiasFaltantesEpisodioComNumeroParcialCompletaPeloNome cobre o caso que
-// aparece na biblioteca: o NFO danificado ainda declara <season>, mas perdeu <episode>. Uma
-// numeracao PARCIAL nao pode ser autoritativa (era exatamente essa a forma do dano da v0.15.4),
-// e completar metade com o arquivo e metade com o nome daria um par que nunca existiu: o par
-// inteiro vem do nome.
+// TestMaterializarMidiasFaltantesEpisodioSemNumeroMantemONumeroDoArquivo covers the numbering
+// rule of the block: when the tree does NOT know the season/episode (both 0), the number that the
+// file already declares wins. The opposite -- omitting the tag because the model does not know it -- makes the file
+// diverge from the document on EVERY run: the job would rewrite 360 files per run to say
+// nothing new, and the number that Kodi reads would disappear.
+// TestMaterializarMidiasFaltantesEpisodioComNumeroParcialCompletaPeloNome covers the case that
+// appears in the library: the damaged NFO still declares <season>, but lost <episode>. A
+// PARTIAL numbering cannot be authoritative (that was exactly the shape of the damage of v0.15.4),
+// and completing half from the file and half from the name would give a pair that never existed: the
+// whole pair comes from the name.
 func TestMaterializarMidiasFaltantesEpisodioComNumeroParcialCompletaPeloNome(t *testing.T) {
 	srv, _, d := setupMidiasFaltantesServer(t)
 	semearEntity(t, d, "s1", "tv", "Serie")
@@ -1535,7 +1535,7 @@ func TestMaterializarMidiasFaltantesEpisodioComNumeroParcialCompletaPeloNome(t *
 	if err := os.MkdirAll(filepath.Dir(video), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	// Dano real medido: sobrou <season>4</season> e o <episode> sumiu.
+	// Real damage measured: <season>4</season> was left and the <episode> is gone.
 	danificado := `<?xml version="1.0" encoding="UTF-8"?>
 <episodedetails>
   <title>Episodio 7</title>
@@ -1565,10 +1565,10 @@ func TestMaterializarMidiasFaltantesEpisodioComNumeroParcialCompletaPeloNome(t *
 	}
 }
 
-// TestMaterializarMidiasFaltantesEpisodioSemNumeroRecuperaDoNomeDoArquivo cobre a TERCEIRA
-// camada da numeracao: a arvore nao sabe (0/0) e o arquivo (dano de uma execucao anterior) nao
-// declara nada, mas o NOME do video diz SxxEyy. Sem essa camada o documento e o arquivo danificado
-// concordam em "sem numero", o arquivo converge e o dano fica permanente.
+// TestMaterializarMidiasFaltantesEpisodioSemNumeroRecuperaDoNomeDoArquivo covers the THIRD
+// layer of the numbering: the tree does not know (0/0) and the file (damage from a previous run) does
+// not declare anything, but the NAME of the video says SxxEyy. Without this layer the document and the damaged file
+// agree on "no number", the file converges and the damage stays permanent.
 func TestMaterializarMidiasFaltantesEpisodioSemNumeroRecuperaDoNomeDoArquivo(t *testing.T) {
 	srv, _, d := setupMidiasFaltantesServer(t)
 	semearEntity(t, d, "s1", "tv", "Serie")
@@ -1584,7 +1584,7 @@ func TestMaterializarMidiasFaltantesEpisodioSemNumeroRecuperaDoNomeDoArquivo(t *
 	}
 	nfoPath := localmedia.CaminhoNFODeVideo(video)
 
-	// O dano: um NFO escrito pela versao que omitia a numeracao que o modelo nao tinha.
+	// The damage: an NFO written by the version that omitted the numbering the model did not have.
 	if err := os.MkdirAll(filepath.Dir(video), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -1629,7 +1629,7 @@ func TestMaterializarMidiasFaltantesEpisodioSemNumeroMantemONumeroDoArquivo(t *t
 	if strings.Contains(string(corpo), "<episode>") {
 		t.Fatalf("sem numero na arvore e sem arquivo previo, nao quero <episode> no documento:\n%s", corpo)
 	}
-	// O arquivo ganha a numeracao que o gerenciador anterior tinha (o caso real da biblioteca).
+	// The file gets the numbering that the previous manager had (the real case of the library).
 	editado := strings.Replace(string(corpo), "</episodedetails>",
 		"  <season>4</season>\n  <episode>11</episode>\n</episodedetails>", 1)
 	if err := localmedia.EscreverArquivoAtomico(nfoPath, []byte(editado)); err != nil {

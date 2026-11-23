@@ -56,8 +56,8 @@ export function JobCard({ job }: { job: JobDefinition }) {
     salvarCron.error instanceof ApiError ? salvarCron.error.message : null
   const erroExecutar =
     executar.error instanceof ApiError ? executar.error.message : null
-  // Duração da última execução e o progresso da execução ativa (ADR-0040): as
-  // duas coisas que faltavam para saber "quanto demorou" e "em que pé está".
+  // Duration of the last execution and the progress of the active execution (ADR-0040): the
+  // two things that were missing to know "how long it took" and "where it stands".
   const levou = formatarDuracaoMS(job.last_duration_ms)
   const progresso = job.progress
   const corrido = formatarDuracaoMS(progresso?.elapsed_ms)

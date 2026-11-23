@@ -31,8 +31,8 @@ type colecaoExternaDTO struct {
 	PosterURL   *string `json:"poster_url"`
 	BackdropURL *string `json:"backdrop_url"`
 	// InternalID is the id of the internal collection entity when this collection was
-	// ALREADY imported; nil otherwise. The UI then swaps "Importar coleção" for
-	// "Ver coleção" (a link to the internal destination).
+	// ALREADY imported; nil otherwise. The UI then swaps "Import collection" for
+	// "View collection" (a link to the internal destination).
 	InternalID *string           `json:"internal_id"`
 	Parts      []parteColecaoDTO `json:"parts"`
 }

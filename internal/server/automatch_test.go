@@ -615,7 +615,7 @@ func TestAutoMatchDeFilmeAindaTentaNomeDoArquivo(t *testing.T) {
 	semearSource(t, d, "src-filmes", "/lib/Filmes")
 	semearEntity(t, d, "e-dune", "movie", "Draft")
 	definirStatus(t, d, "e-dune", "draft")
-	// Pasta sem nada aproveitável ("zzz"): só o nome do arquivo serve.
+	// The folder has nothing usable ("zzz"): only the file name is of use.
 	semearFileComFonte(t, d, "f-dune", "e-dune",
 		"/lib/Filmes/zzz/Dune (2021).mkv", "present", 0, "src-filmes")
 
@@ -681,7 +681,7 @@ func TestMelhorCandidatoExternoUsaTituloOriginal(t *testing.T) {
 func TestVariantesSemEnfeite(t *testing.T) {
 	entrada := []consultaTituloAno{
 		{Titulo: "101 Dálmatas O Filme", Ano: 1996},
-		{Titulo: "101 Dálmatas", Ano: 1996}, // já sem enfeite: não duplica
+		{Titulo: "101 Dálmatas", Ano: 1996}, // already without filler: it does not duplicate
 	}
 	got := comVariantesSemEnfeite(entrada)
 	if len(got) != 3 {
@@ -696,7 +696,7 @@ func TestVariantesSemEnfeite(t *testing.T) {
 	if got[2].Titulo != "101 Dálmatas" {
 		t.Errorf("terceira variante = %q, quero a original limpa", got[2].Titulo)
 	}
-	// A deduplicação roda depois e derruba a repetição: o provedor é consultado uma vez só.
+	// The dedupe runs afterwards and drops the repetition: the provider is queried only once.
 	if dedup := dedupeConsultas(got); len(dedup) != 2 {
 		t.Errorf("depois do dedupe = %+v, quero 2 consultas distintas", dedup)
 	}
@@ -730,11 +730,11 @@ func TestVariantesDaPastaDoFilme(t *testing.T) {
 	if len(got) == 0 || got[0].Titulo != "101 Dálmatas O Filme" {
 		t.Fatalf("variantes = %v, quero a pasta primeiro", titulos)
 	}
-	// A segunda é a pasta SEM o subtítulo -- a tentativa que o TMDb responde.
+	// The second one is the folder WITHOUT the subtitle -- the attempt TMDb answers.
 	if got[1].Titulo != "101 Dálmatas" || got[1].Ano != 1996 {
 		t.Errorf("segunda variante = %+v, quero \"101 Dálmatas\" com o ano da pasta", got[1])
 	}
-	// O nome do release do arquivo NÃO pode vir antes da pasta.
+	// The release name of the file must NOT come before the folder.
 	for i, c := range got {
 		if strings.HasPrefix(c.Titulo, "101 Dálmatas 1996") || strings.Contains(c.Titulo, "WEB") {
 			if i < 2 {
@@ -752,7 +752,7 @@ func TestVariantesDaPastaNaoUsaRaizDaBiblioteca(t *testing.T) {
 	ctx := context.Background()
 	semearEntityComAno(t, database, "filme-1", "movie", "Toy Story", "1995-01-01")
 	semearFile(t, database, "arq-1", "filme-1", "/media/filmes/Toy.Story.1995.1080p.mkv", "present", 70, "")
-	// A biblioteca é /media/filmes, e o arquivo está solto nela.
+	// The library is /media/filmes, and the file sits loose in it.
 	if _, err := escrita(t, database).CriarLibrarySource(ctx, sqlcgen.CriarLibrarySourceParams{
 		ID: "src-1", Path: "/media/filmes", ContentType: "movie",
 	}); err != nil {

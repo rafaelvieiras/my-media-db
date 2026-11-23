@@ -222,7 +222,7 @@ func TestListarEObterComStateReavaliado(t *testing.T) {
 		t.Fatalf("lista = %d, quero 2", len(lista))
 	}
 
-	// Obter reavalia o state: o dir removido volta offline.
+	// Obter re-evaluates the state: the removed dir comes back offline.
 	got, err := s.Obter(ctx, removido.ID)
 	if err != nil {
 		t.Fatalf("Obter: %v", err)
@@ -613,7 +613,7 @@ func TestAtualizarPathErrosDeValidacao(t *testing.T) {
 	}
 }
 
-// TestAtualizarPathSemPermissao cobre o 422 path_unreadable.
+// TestAtualizarPathSemPermissao covers the 422 path_unreadable.
 func TestAtualizarPathSemPermissao(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root: chmod 0000 não impede leitura; caso não aplicável")
@@ -640,7 +640,7 @@ func TestAtualizarPathSemPermissao(t *testing.T) {
 	}
 }
 
-// TestAtualizarPathIdInexistente cobre o 404.
+// TestAtualizarPathIdInexistente covers the 404.
 func TestAtualizarPathIdInexistente(t *testing.T) {
 	s := novoServico(t)
 	_, err := s.AtualizarPath(context.Background(), "nao-existe", t.TempDir())

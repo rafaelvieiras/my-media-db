@@ -195,7 +195,7 @@ func TestExecutarJobNaoEncontrado(t *testing.T) {
 }
 
 func TestExecutarJobDesconhecido(t *testing.T) {
-	m := setupManager(t) // backup_vacuum existe no banco (seed), mas nenhum handler registrado
+	m := setupManager(t) // backup_vacuum exists in the database (seed), but no handler is registered
 	if _, err := m.Executar(context.Background(), "backup_vacuum", "manual"); !errors.Is(err, ErrJobDesconhecido) {
 		t.Fatalf("err = %v, quero ErrJobDesconhecido", err)
 	}

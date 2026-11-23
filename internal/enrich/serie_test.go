@@ -450,8 +450,8 @@ type provedorVariante struct {
 func (provedorVariante) Nome() string { return "tmdb" }
 
 func (p provedorVariante) Buscar(_ context.Context, q, tipo, _ string) ([]provider.ResultadoExterno, error) {
-	// A fonte de teste responde pelo tipo do candidato que ela carrega: uma série para os
-	// casos de série, um filme para os de filme.
+	// The test source answers by the type of the candidate it carries: a series for the
+	// series cases, a movie for the movie ones.
 	if q == p.variante && (tipo == "" || tipo == p.achado.Type) {
 		return []provider.ResultadoExterno{p.achado}, nil
 	}
@@ -546,7 +546,7 @@ func TestVariantesDeNome(t *testing.T) {
 		t.Errorf("variantes = %v, quero o corte 2 Brok (o unico que o TMDb responde)", got)
 	}
 
-	// Um token nao tem o que descartar nem o que cortar: nenhuma variante, nenhuma request.
+	// A single token has nothing to drop and nothing to cut: no variant, no request.
 	if v := variantesDeNome("Broken"); v != nil {
 		t.Errorf("variantes de um token = %v, quero nil", v)
 	}
@@ -584,9 +584,9 @@ func TestSugerirFilmeAchaPelaVariante(t *testing.T) {
 	}
 }
 
-// provedorPrefixo simula a busca LITERAL do TMDb como ela é: casa por PREFIXO do título, que
-// é a premissa documentada da escada de variantes (cortar até virar prefixo do título real,
-// não remover token solto).
+// provedorPrefixo simulates the LITERAL search of TMDb as it is: it matches by PREFIX of the
+// title, which is the documented premise of the variant ladder (cut until it becomes a prefix
+// of the real title, do not drop a loose token).
 type provedorPrefixo struct{ achado provider.ResultadoExterno }
 
 func (provedorPrefixo) Nome() string { return "tmdb" }
@@ -609,8 +609,8 @@ func (provedorPrefixo) MapearDetalhe(json.RawMessage) (map[string]any, error) {
 	return map[string]any{}, nil
 }
 
-// TestSugerirFilmeNaoAceitaSerie garante o filtro por tipo: um resultado de série nunca vira
-// sugestão de filme (é o mesmo cuidado de escopo de tipo do resto do matching).
+// TestSugerirFilmeNaoAceitaSerie ensures the filter by type: a series result never becomes a
+// movie suggestion (it is the same type-scope care as the rest of the matching).
 func TestSugerirFilmeNaoAceitaSerie(t *testing.T) {
 	database := setupDB(t)
 	serie := serieBrokeGirls() // Type: "tv"
@@ -731,7 +731,7 @@ func TestSerieCasaPeloTituloOriginal(t *testing.T) {
 
 // TestSerieAnoDaPastaDesempataRemake: two shows with the same name, 29 years apart. The folder
 // states the year, so the remake must be discarded and the old one taken -- the exact defect
-// reported by the owner ("Clube do Terror" 1990 matching the 2019 reboot).
+// reported by the owner (a 1990 folder matching the 2019 reboot).
 func TestSerieAnoDaPastaDesempataRemake(t *testing.T) {
 	prov := stubSerieIdentidade{
 		resultados: []provider.ResultadoExterno{
@@ -756,8 +756,8 @@ func TestSerieAnoDaPastaDesempataRemake(t *testing.T) {
 	}
 }
 
-// TestSerieAnoImprecisoAindaCasa: the year a folder states is often approximate ("Clube do
-// Terror (1990)" is the 1992 show). The series slack is 2 years, so the right candidate is not
+// TestSerieAnoImprecisoAindaCasa: the year a folder states is often approximate (1990
+// stated for the 1992 show). The series slack is 2 years, so the right candidate is not
 // discarded -- while the remake (29 years away) still is.
 func TestSerieAnoImprecisoAindaCasa(t *testing.T) {
 	prov := stubSerieIdentidade{
@@ -773,7 +773,7 @@ func TestSerieAnoImprecisoAindaCasa(t *testing.T) {
 }
 
 // TestSerieEntradaQueNaoComportaAPasta: the name matches, the tree cannot host the folder --
-// 3 episodes for a folder with 26 files (the measured "Arrow"). The identity must be refused
+// 3 episodes for a folder with 26 files (a measured case). The identity must be refused
 // instead of cataloged, and nothing may be written.
 func TestSerieEntradaQueNaoComportaAPasta(t *testing.T) {
 	prov := stubSerieIdentidade{
@@ -793,9 +793,9 @@ func TestSerieEntradaQueNaoComportaAPasta(t *testing.T) {
 	}
 }
 
-// TestSerieEntradaSemEpisodioNuncaEntra: an entry with ZERO episodes (the measured "Aladdin",
-// TMDb 14383, and "Esquadrilha Aérea", 5565) is refused in the import-by-name path too -- not
-// only in the scan path that checks ErrArvoreVazia.
+// TestSerieEntradaSemEpisodioNuncaEntra: an entry with ZERO episodes (the measured cases:
+// TMDb 14383 and TMDb 5565) is refused in the import-by-name path too -- not only in the
+// scan path that checks ErrArvoreVazia.
 func TestSerieEntradaSemEpisodioNuncaEntra(t *testing.T) {
 	prov := stubSerieIdentidade{
 		resultados: []provider.ResultadoExterno{{
