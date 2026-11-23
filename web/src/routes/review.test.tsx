@@ -31,6 +31,10 @@ const CHAVES_REVISAO = ['["review"]', '["entities"]', '["entity","e-baixa"]']
 // does not break when that extraction lands.
 const RESULTADO_USAR = /Usar este|Use this/
 const RESULTADO_NA_BIBLIOTECA = /Na biblioteca|In the library/
+// Empty candidate preview ("no external metadata"): the message the card shows. It is
+// the starting point of the preview cases and of the "Keep as is" dialog cases.
+const SEM_CANDIDATO =
+  'no candidate found — neither in the local catalog nor in the external source'
 
 vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/link-mock')).LinkMock as typeof LinkMock,
@@ -297,6 +301,39 @@ async function renderBaixa(opts: Opcoes = { fila: [baixaCard] }) {
   return { user, ...r }
 }
 
+// Same base scenario with the default empty preview, waiting for the card to state that
+// there is no candidate — the state that enables "Keep as is".
+async function renderBaixaSemCandidato() {
+  const r = await renderBaixa({ fila: [baixaCard], preview: previewVazia })
+  await waitFor(() =>
+    expect(screen.getByText(SEM_CANDIDATO)).toBeInTheDocument(),
+  )
+  return r
+}
+
+// "Keep as is" over the empty preview: clicks the action that opens the dialog, which
+// lives above the row. The confirm and cancel cases differ only in what they do inside
+// the dialog.
+async function abrirManterComoEsta() {
+  const r = await renderBaixaSemCandidato()
+  await r.user.click(
+    screen.getByRole('button', { name: 'Keep as is (no external metadata)' }),
+  )
+  return r
+}
+
+// Confirmation of the auto-match (batch or group): the dialog states how many items are
+// evaluated, nothing is sent before the "yes", and the action that sends it is the same.
+async function confirmarAutoMatch(
+  user: ReturnType<typeof userEvent.setup>,
+  espioes: Espioes,
+  mensagem: string,
+) {
+  expect(screen.getByText(mensagem)).toBeInTheDocument()
+  expect(espioes.onAutoMatchLote).not.toHaveBeenCalled()
+  await user.click(screen.getByRole('button', { name: 'Sync candidates' }))
+}
+
 afterEach(() => {
   vi.restoreAllMocks()
 })
@@ -361,22 +398,7 @@ describe('ReviewScreen — review queue (0018)', () => {
   })
 
   it('"Keep as is" (no candidate in the preview) asks for confirmation, then calls confirmMatch, invalidates and announces the decision (§5: the old "Confirm" behavior)', async () => {
-    const { user, espioes, invalidateSpy } = await renderBaixa({
-      fila: [baixaCard],
-      preview: previewVazia,
-    })
-    await waitFor(() =>
-      expect(
-        screen.getByText(
-          'no candidate found — neither in the local catalog nor in the external source',
-        ),
-      ).toBeInTheDocument(),
-    )
-    await user.click(
-      screen.getByRole('button', {
-        name: 'Keep as is (no external metadata)',
-      }),
-    )
+    const { user, espioes, invalidateSpy } = await abrirManterComoEsta()
 
     // "Keep as is" writes the identity: the dialog states it and the verb is on the action.
     expect(screen.getByText('Keep as is?')).toBeInTheDocument()
@@ -404,22 +426,7 @@ describe('ReviewScreen — review queue (0018)', () => {
   })
 
   it('cancelling "Keep as is" does not write anything', async () => {
-    const { user, espioes } = await renderBaixa({
-      fila: [baixaCard],
-      preview: previewVazia,
-    })
-    await waitFor(() =>
-      expect(
-        screen.getByText(
-          'no candidate found — neither in the local catalog nor in the external source',
-        ),
-      ).toBeInTheDocument(),
-    )
-    await user.click(
-      screen.getByRole('button', {
-        name: 'Keep as is (no external metadata)',
-      }),
-    )
+    const { user, espioes } = await abrirManterComoEsta()
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
 
     expect(espioes.onConfirm).not.toHaveBeenCalled()
@@ -537,15 +544,8 @@ describe('ReviewScreen — candidate preview (0060)', () => {
   })
 
   it('a preview without a candidate renders the empty message and the "Keep as is" button (0060)', async () => {
-    await renderBaixa({ fila: [baixaCard], preview: previewVazia })
+    await renderBaixaSemCandidato()
 
-    await waitFor(() =>
-      expect(
-        screen.getByText(
-          'no candidate found — neither in the local catalog nor in the external source',
-        ),
-      ).toBeInTheDocument(),
-    )
     expect(
       screen.getByRole('button', {
         name: 'Keep as is (no external metadata)',
@@ -648,14 +648,11 @@ describe('ReviewScreen — batch auto-match (0050)', () => {
     expect(
       screen.getByText('Sync the eligible candidates?'),
     ).toBeInTheDocument()
-    expect(
-      screen.getByText(
-        'This evaluates 1 item of the queue and re-enriches the ones that match.',
-      ),
-    ).toBeInTheDocument()
-    expect(espioes.onAutoMatchLote).not.toHaveBeenCalled()
-
-    await user.click(screen.getByRole('button', { name: 'Sync candidates' }))
+    await confirmarAutoMatch(
+      user,
+      espioes,
+      'This evaluates 1 item of the queue and re-enriches the ones that match.',
+    )
 
     await waitFor(() => expect(espioes.onAutoMatchLote).toHaveBeenCalled())
     await waitFor(() =>
@@ -686,13 +683,11 @@ describe('ReviewScreen — group auto-match (0137)', () => {
     await user.click(
       screen.getByRole('button', { name: /Auto-sync this group/ }),
     )
-    expect(
-      screen.getByText(
-        'This evaluates 2 items of this group and re-enriches the ones that match.',
-      ),
-    ).toBeInTheDocument()
-    expect(espioes.onAutoMatchLote).not.toHaveBeenCalled()
-    await user.click(screen.getByRole('button', { name: 'Sync candidates' }))
+    await confirmarAutoMatch(
+      user,
+      espioes,
+      'This evaluates 2 items of this group and re-enriches the ones that match.',
+    )
 
     await waitFor(() =>
       expect(espioes.onAutoMatchLote).toHaveBeenCalledWith({
