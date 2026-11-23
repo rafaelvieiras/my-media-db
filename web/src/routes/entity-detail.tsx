@@ -34,11 +34,7 @@ import {
 import { TracklistAlbum } from '@/components/tracklist-album'
 import { HistoricoSection } from '@/components/historico-section'
 import { MediaInfoTable } from '@/components/media-info-table'
-import {
-  ErrorState,
-  LoadingState,
-  VoltarBiblioteca,
-} from '@/components/query-states'
+import { DetalheEstadoCarga, VoltarBiblioteca } from '@/components/query-states'
 import { Migalhas } from '@/components/migalhas'
 import { RichDetailView } from '@/components/rich-detail-view'
 import { deResolvedEntity } from '@/lib/rich-detail'
@@ -274,23 +270,16 @@ export function EntityDetailScreen() {
 
   const voltar = <VoltarBiblioteca />
 
-  if (isPending) {
+  if (isPending || isError) {
     return (
-      <main className="mx-auto max-w-4xl px-4 py-6">
-        {voltar}
-        <LoadingState label={t('entity.detail.loading')} />
-      </main>
-    )
-  }
-  if (isError) {
-    return (
-      <main className="mx-auto max-w-4xl px-4 py-6">
-        {voltar}
-        <ErrorState
-          title={t('entity.detail.error')}
-          message={error instanceof Error ? error.message : undefined}
-        />
-      </main>
+      <DetalheEstadoCarga
+        carregando={isPending}
+        textoCarregando={t('entity.detail.loading')}
+        erro={{
+          title: t('entity.detail.error'),
+          message: error instanceof Error ? error.message : undefined,
+        }}
+      />
     )
   }
 

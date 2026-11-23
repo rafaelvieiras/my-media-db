@@ -120,6 +120,31 @@ export function FormSaveFooter({
   )
 }
 
+// DetalheEstadoCarga is the loading/error scaffold common to the detail screens
+// (`/entities/$id` and `/person/$personId`): the same <main>, the "back" link always
+// visible and the spinner or the error in place of the content. Extracted so the two
+// screens do not duplicate the wrapper while the query runs or fails (jscpd).
+export function DetalheEstadoCarga({
+  carregando,
+  textoCarregando,
+  erro,
+}: {
+  carregando: boolean
+  textoCarregando: string
+  erro: { title: string; message?: string }
+}) {
+  return (
+    <main className="mx-auto max-w-4xl px-4 py-6">
+      <VoltarBiblioteca />
+      {carregando ? (
+        <LoadingState label={textoCarregando} />
+      ) : (
+        <ErrorState title={erro.title} message={erro.message} />
+      )}
+    </main>
+  )
+}
+
 // EntityEditEstadoCarga is the loading/error state common to the 3 item
 // edit subroutes (entity-edit-basico/-ids/-creditos.tsx) —
 // extracted so the three do not duplicate the same wrapper (jscpd).
