@@ -180,6 +180,10 @@ export const entity = defineDomain({
           'This removes every external ID of this entity. It may stop matching webhook events and external integrations until it is linked again. Continue?',
         mergeNotice:
           'Duplicate merged automatically — the item already imported was combined with this one.',
+        confirmRemoveAllTitle: 'Remove every external ID?',
+        confirmRemoveAllAction: 'Remove the IDs',
+        saveHint:
+          '"Save IDs" only writes the identity. "Save and re-enrich" writes it and then fetches the source data again with the new id.',
       },
       credits: {
         title: 'Credits',
@@ -215,6 +219,11 @@ export const entity = defineDomain({
         clearAll: 'Clear all credits',
         save: 'Save credits',
         saveError: 'Could not save the credits.',
+        position: 'Position',
+        clearAllTitle: 'Clear all credits?',
+        clearAllDescription:
+          'This deletes every cast, crew and production company saved for this item — the list goes back to what the sources provide. There is no undo.',
+        clearAllConfirm: 'Clear credits',
       },
       ownerOrder: {
         trigger: 'Episode order',
@@ -323,6 +332,10 @@ export const entity = defineDomain({
           history: 'Could not update the history.',
         },
       },
+      // Messages of the descriptor-driven form (see components/schema-form.tsx).
+      requiredSummary: 'Fill in the required fields before continuing:',
+      invalidDate: 'Enter a valid date (YYYY-MM-DD).',
+      requiredField: '{field} is required.',
     },
   },
   'pt-BR': {
@@ -497,6 +510,10 @@ export const entity = defineDomain({
           'Isso vai remover todos os IDs externos desta entity. Ela pode parar de casar com eventos de webhook e integrações externas até ser re-vinculada. Continuar?',
         mergeNotice:
           'Duplicata mesclada automaticamente — o item já importado foi combinado com este.',
+        confirmRemoveAllTitle: 'Remover todos os IDs externos?',
+        confirmRemoveAllAction: 'Remover os IDs',
+        saveHint:
+          '"Salvar IDs" só grava a identidade. "Salvar e re-enriquecer" grava e depois busca os dados da fonte de novo com o novo id.',
       },
       credits: {
         title: 'Créditos',
@@ -532,6 +549,11 @@ export const entity = defineDomain({
         clearAll: 'Limpar todos os créditos',
         save: 'Salvar créditos',
         saveError: 'Não foi possível salvar os créditos.',
+        position: 'Posição',
+        clearAllTitle: 'Limpar todos os créditos?',
+        clearAllDescription:
+          'Isso apaga elenco, equipe e produtoras salvos para este item — a lista volta a ser a das fontes. Não há como desfazer.',
+        clearAllConfirm: 'Limpar créditos',
       },
       ownerOrder: {
         trigger: 'Ordem dos episódios',
@@ -640,6 +662,10 @@ export const entity = defineDomain({
           history: 'Não foi possível atualizar o histórico.',
         },
       },
+      // Mensagens do formulário dirigido por descritores (components/schema-form.tsx).
+      requiredSummary: 'Preencha os campos obrigatórios para continuar:',
+      invalidDate: 'Informe uma data válida (AAAA-MM-DD).',
+      requiredField: '{field} é obrigatório.',
     },
   },
   es: {
@@ -814,6 +840,10 @@ export const entity = defineDomain({
           'Esto quitará todos los IDs externos de esta entidad. Puede dejar de coincidir con eventos de webhook e integraciones externas hasta que se vuelva a vincular. ¿Continuar?',
         mergeNotice:
           'Duplicado fusionado automáticamente: el elemento ya importado se combinó con este.',
+        confirmRemoveAllTitle: '¿Eliminar todos los IDs externos?',
+        confirmRemoveAllAction: 'Eliminar los IDs',
+        saveHint:
+          '"Guardar IDs" solo escribe la identidad. "Guardar y volver a enriquecer" la escribe y luego vuelve a buscar los datos de la fuente con el nuevo id.',
       },
       credits: {
         title: 'Créditos',
@@ -849,6 +879,11 @@ export const entity = defineDomain({
         clearAll: 'Limpiar todos los créditos',
         save: 'Guardar créditos',
         saveError: 'No se pudieron guardar los créditos.',
+        position: 'Posición',
+        clearAllTitle: '¿Limpiar todos los créditos?',
+        clearAllDescription:
+          'Esto borra el reparto, el equipo y las productoras guardados para este elemento — la lista vuelve a la de las fuentes. No se puede deshacer.',
+        clearAllConfirm: 'Limpiar créditos',
       },
       ownerOrder: {
         trigger: 'Orden de los episodios',
@@ -959,6 +994,10 @@ export const entity = defineDomain({
           history: 'No se pudo actualizar el historial.',
         },
       },
+      // Mensajes del formulario dirigido por descriptores (components/schema-form.tsx).
+      requiredSummary: 'Completa los campos obligatorios para continuar:',
+      invalidDate: 'Introduce una fecha válida (AAAA-MM-DD).',
+      requiredField: '{field} es obligatorio.',
     },
   },
 })

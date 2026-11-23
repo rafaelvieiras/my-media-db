@@ -34,6 +34,19 @@ async function salvarECorpo(m: ReturnType<typeof vi.fn>) {
     .external_ids
 }
 
+// The two save buttons are disabled while nothing changed (a write with no change
+// is noise): the tests that only want the PUT start by editing an id.
+function editarId(valor: string) {
+  fireEvent.change(screen.getByLabelText('Id in the source tmdb'), {
+    target: { value: valor },
+  })
+}
+
+// confirmarDialogo clicks the destructive action of the "empty map" AlertDialog.
+function confirmarDialogo(rotulo = 'Remove the IDs') {
+  fireEvent.click(screen.getByRole('button', { name: rotulo }))
+}
+
 afterEach(() => vi.restoreAllMocks())
 
 describe('ExternalIdsEditor', () => {
@@ -57,7 +70,21 @@ describe('ExternalIdsEditor', () => {
     renderWithClient(
       <ExternalIdsEditor id="e1" externalIds={{ tmdb: '603' }} />,
     )
-    expect(await salvarECorpo(m)).toEqual({ tmdb: '603' })
+    editarId('604')
+    expect(await salvarECorpo(m)).toEqual({ tmdb: '604' })
+  })
+
+  it('disables both save buttons while nothing changed', () => {
+    putIds(() => okJson({}, 200))
+    renderWithClient(
+      <ExternalIdsEditor id="e1" externalIds={{ tmdb: '603' }} />,
+    )
+    expect(screen.getByRole('button', { name: 'Save IDs' })).toBeDisabled()
+    expect(
+      screen.getByRole('button', { name: 'Save and re-enrich' }),
+    ).toBeDisabled()
+    editarId('604')
+    expect(screen.getByRole('button', { name: 'Save IDs' })).toBeEnabled()
   })
 
   it('adds a new source and includes it in the saved map', async () => {
@@ -75,12 +102,18 @@ describe('ExternalIdsEditor', () => {
 
   it('removing leaves the map without the source', async () => {
     const m = putIds(() => okJson({ id: 'e1' }, 200))
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     renderWithClient(
       <ExternalIdsEditor id="e1" externalIds={{ tmdb: '603' }} />,
     )
     fireEvent.click(screen.getByLabelText('Remove tmdb'))
-    expect(await salvarECorpo(m)).toEqual({})
+    fireEvent.click(screen.getByText('Save IDs'))
+    // Net removal of everything: the AlertDialog confirms before the PUT.
+    confirmarDialogo()
+    await vi.waitFor(() => expect(m).toHaveBeenCalled())
+    expect(
+      (corpoEnviado(m) as { external_ids: Record<string, string> })
+        .external_ids,
+    ).toEqual({})
   })
 
   it('shows an inline error when the PUT fails', async () => {
@@ -88,6 +121,7 @@ describe('ExternalIdsEditor', () => {
     renderWithClient(
       <ExternalIdsEditor id="e1" externalIds={{ tmdb: '603' }} />,
     )
+    editarId('604')
     fireEvent.click(screen.getByText('Save IDs'))
     expect(await screen.findByText('entidade nao encontrada')).toBeTruthy()
   })
@@ -100,6 +134,7 @@ describe('ExternalIdsEditor', () => {
     renderWithClient(
       <ExternalIdsEditor id="e1" externalIds={{ tmdb: '603' }} />,
     )
+    editarId('604')
     fireEvent.click(screen.getByText('Save and re-enrich'))
     await vi.waitFor(() => expect(m).toHaveBeenCalledTimes(2))
     // Order: first the PUT of the ids, then the POST of the enrich (the enrich reads the saved id).
@@ -115,6 +150,7 @@ describe('ExternalIdsEditor', () => {
     renderWithClient(
       <ExternalIdsEditor id="e1" externalIds={{ tmdb: '603' }} />,
     )
+    editarId('604')
     fireEvent.click(screen.getByText('Save and re-enrich'))
     expect(await screen.findByText('a fonte externa falhou')).toBeTruthy()
   })
@@ -167,7 +203,6 @@ describe('ExternalIdsEditor — onDirtyChange (0073)', () => {
 
   it('goes back to false after a successful "Save IDs"', async () => {
     const m = putIds(() => okJson({ id: 'e1' }, 200))
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     const onDirtyChange = vi.fn()
     renderWithClient(
       <ExternalIdsEditor
@@ -179,6 +214,7 @@ describe('ExternalIdsEditor — onDirtyChange (0073)', () => {
     fireEvent.click(screen.getByLabelText('Remove tmdb'))
     expect(onDirtyChange).toHaveBeenLastCalledWith(true)
     fireEvent.click(screen.getByText('Save IDs'))
+    confirmarDialogo()
     await vi.waitFor(() => expect(m).toHaveBeenCalled())
     await vi.waitFor(() =>
       expect(onDirtyChange).toHaveBeenLastCalledWith(false),
@@ -189,26 +225,33 @@ describe('ExternalIdsEditor — onDirtyChange (0073)', () => {
 // "Empty it by accident" guard: saving an empty map is a full-replace
 // PUT that wipes the identity of the entity — it should only confirm when it is
 // a net removal (there was something saved before).
-describe('ExternalIdsEditor — empty map guard (0098)', () => {
+describe('ExternalIdsEditor — empty map guard (0098, now AlertDialog)', () => {
   it('asks for confirmation when the only source is removed and saved', async () => {
     const m = putIds(() => okJson({ id: 'e1' }, 200))
-    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    renderWithClient(
-      <ExternalIdsEditor id="e1" externalIds={{ tmdb: '603' }} />,
-    )
-    fireEvent.click(screen.getByLabelText('Remove tmdb'))
-    expect(await salvarECorpo(m)).toEqual({})
-    expect(confirmar).toHaveBeenCalledTimes(1)
-  })
-
-  it('cancelling the confirmation does not send the PUT', () => {
-    const m = putIds(() => okJson({ id: 'e1' }, 200))
-    vi.spyOn(window, 'confirm').mockReturnValue(false)
     renderWithClient(
       <ExternalIdsEditor id="e1" externalIds={{ tmdb: '603' }} />,
     )
     fireEvent.click(screen.getByLabelText('Remove tmdb'))
     fireEvent.click(screen.getByText('Save IDs'))
+    // Nothing left the screen before the confirmation.
+    expect(m).not.toHaveBeenCalled()
+    expect(screen.getByRole('alertdialog')).toBeTruthy()
+    confirmarDialogo()
+    await vi.waitFor(() => expect(m).toHaveBeenCalled())
+    expect(
+      (corpoEnviado(m) as { external_ids: Record<string, string> })
+        .external_ids,
+    ).toEqual({})
+  })
+
+  it('cancelling the confirmation does not send the PUT', () => {
+    const m = putIds(() => okJson({ id: 'e1' }, 200))
+    renderWithClient(
+      <ExternalIdsEditor id="e1" externalIds={{ tmdb: '603' }} />,
+    )
+    fireEvent.click(screen.getByLabelText('Remove tmdb'))
+    fireEvent.click(screen.getByText('Save IDs'))
+    confirmarDialogo('Cancel')
     expect(m).not.toHaveBeenCalled()
   })
 
@@ -217,30 +260,29 @@ describe('ExternalIdsEditor — empty map guard (0098)', () => {
       () => okJson({ id: 'e1' }, 200),
       () => okJson({ id: 'e1' }, 200),
     )
-    vi.spyOn(window, 'confirm').mockReturnValue(false)
     renderWithClient(
       <ExternalIdsEditor id="e1" externalIds={{ tmdb: '603' }} />,
     )
     fireEvent.click(screen.getByLabelText('Remove tmdb'))
     fireEvent.click(screen.getByText('Save and re-enrich'))
+    confirmarDialogo('Cancel')
     expect(m).not.toHaveBeenCalled()
   })
 
   it('saving a non-empty map does not ask for confirmation', async () => {
     const m = putIds(() => okJson({ id: 'e1' }, 200))
-    const confirmar = vi.spyOn(window, 'confirm')
     renderWithClient(
       <ExternalIdsEditor id="e1" externalIds={{ tmdb: '603' }} />,
     )
-    expect(await salvarECorpo(m)).toEqual({ tmdb: '603' })
-    expect(confirmar).not.toHaveBeenCalled()
+    editarId('604')
+    expect(await salvarECorpo(m)).toEqual({ tmdb: '604' })
+    expect(screen.queryByRole('alertdialog')).toBeNull()
   })
 
-  it('item without ids from the start: saving empty does not ask for confirmation', async () => {
-    const m = putIds(() => okJson({ id: 'e1' }, 200))
-    const confirmar = vi.spyOn(window, 'confirm')
+  it('item without ids from the start: there is nothing to save yet', () => {
+    putIds(() => okJson({ id: 'e1' }, 200))
     renderWithClient(<ExternalIdsEditor id="e1" externalIds={{}} />)
-    expect(await salvarECorpo(m)).toEqual({})
-    expect(confirmar).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Save IDs' })).toBeDisabled()
+    expect(screen.queryByRole('alertdialog')).toBeNull()
   })
 })

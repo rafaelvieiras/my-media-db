@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Select } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
@@ -32,6 +32,7 @@ import {
 } from '@/lib/api'
 import { IDIOMAS_DISPONIVEIS, rotuloIdioma } from '@/lib/languages'
 import { useT } from '@/lib/i18n'
+import { useUnsavedGuard } from '@/lib/use-unsaved-guard'
 import { CatalogCompletenessForm } from '@/components/catalog-completeness-form'
 import { ScreenHeader } from '@/components/screen-header'
 
@@ -51,6 +52,17 @@ export function SettingsScreen() {
   )
   const ytdlp = useQuery(ytdlpSettingsQueryOptions)
 
+  // "Leave without saving" guard: the screen used to navigate away with a section
+  // half edited — the manual sections report their dirty state up.
+  const [sujos, setSujos] = useState<Record<string, boolean>>({})
+  useUnsavedGuard(Object.values(sujos).some(Boolean))
+
+  function reportarSujo(secao: string, sujo: boolean) {
+    setSujos((prev) =>
+      prev[secao] === sujo ? prev : { ...prev, [secao]: sujo },
+    )
+  }
+
   return (
     <main className="mx-auto max-w-2xl px-4 py-6">
       <section className="mb-10">
@@ -69,7 +81,12 @@ export function SettingsScreen() {
             loadError: t('settings.screen.loadFailed'),
           }}
         >
-          {(dados) => <LanguageSettingsForm inicial={dados} />}
+          {(dados) => (
+            <LanguageSettingsForm
+              inicial={dados}
+              onDirtyChange={(sujo) => reportarSujo('languages', sujo)}
+            />
+          )}
         </CorpoComCarga>
       </section>
 
@@ -84,7 +101,7 @@ export function SettingsScreen() {
         </div>
 
         {retroativo.isPending ? (
-          <LoadingState label={t('settings.screen.loading')} />
+          <LoadingState label={t('settings.retroactive.loading')} />
         ) : retroativo.isError ? (
           <ErrorState
             title={t('settings.screen.loadFailed')}
@@ -93,9 +110,13 @@ export function SettingsScreen() {
                 ? retroativo.error.message
                 : undefined
             }
+            onRetry={() => void retroativo.refetch()}
           />
         ) : (
-          <RetroactiveEnrichmentSettingsForm inicial={retroativo.data} />
+          <RetroactiveEnrichmentSettingsForm
+            inicial={retroativo.data}
+            onDirtyChange={(sujo) => reportarSujo('retroactive', sujo)}
+          />
         )}
       </section>
 
@@ -110,7 +131,7 @@ export function SettingsScreen() {
         </div>
 
         {autoMaterializar.isPending ? (
-          <LoadingState label={t('settings.screen.loading')} />
+          <LoadingState label={t('settings.artwork.loading')} />
         ) : autoMaterializar.isError ? (
           <ErrorState
             title={t('settings.screen.loadFailed')}
@@ -119,6 +140,7 @@ export function SettingsScreen() {
                 ? autoMaterializar.error.message
                 : undefined
             }
+            onRetry={() => void autoMaterializar.refetch()}
           />
         ) : (
           <AutoMaterializeArtworkSwitch inicial={autoMaterializar.data} />
@@ -136,7 +158,7 @@ export function SettingsScreen() {
         </div>
 
         {autoDownloadTrailerTema.isPending ? (
-          <LoadingState label={t('settings.screen.loading')} />
+          <LoadingState label={t('settings.trailerTheme.loading')} />
         ) : autoDownloadTrailerTema.isError ? (
           <ErrorState
             title={t('settings.screen.loadFailed')}
@@ -145,6 +167,7 @@ export function SettingsScreen() {
                 ? autoDownloadTrailerTema.error.message
                 : undefined
             }
+            onRetry={() => void autoDownloadTrailerTema.refetch()}
           />
         ) : (
           <AutoDownloadTrailerTemaSwitch
@@ -182,9 +205,13 @@ export function SettingsScreen() {
             message={
               ytdlp.error instanceof Error ? ytdlp.error.message : undefined
             }
+            onRetry={() => void ytdlp.refetch()}
           />
         ) : (
-          <YtdlpSettingsForm inicial={ytdlp.data} />
+          <YtdlpSettingsForm
+            inicial={ytdlp.data}
+            onDirtyChange={(sujo) => reportarSujo('ytdlp', sujo)}
+          />
         )}
       </section>
     </main>
@@ -192,14 +219,32 @@ export function SettingsScreen() {
 }
 
 // Form seeded with the current config. It receives `inicial` already resolved to
-// seed the state a single time (no synchronization useEffect).
-function LanguageSettingsForm({ inicial }: { inicial: LanguageSettings }) {
+// seed the state a single time (no synchronization useEffect). `onDirtyChange`
+// feeds the leave guard of the route, and the button only enables with a change.
+function LanguageSettingsForm({
+  inicial,
+  onDirtyChange,
+}: {
+  inicial: LanguageSettings
+  onDirtyChange?: (sujo: boolean) => void
+}) {
   const t = useT()
   const queryClient = useQueryClient()
   const [primary, setPrimary] = useState(inicial.primary)
   const [fallback, setFallback] = useState(inicial.fallback)
   const [allowed, setAllowed] = useState<string[]>(inicial.allowed)
   const [erroValidacao, setErroValidacao] = useState<string | null>(null)
+
+  // The same set, in any order, is not a change worth a PUT.
+  const sujo =
+    primary !== inicial.primary ||
+    fallback !== inicial.fallback ||
+    allowed.length !== inicial.allowed.length ||
+    allowed.some((codigo) => !inicial.allowed.includes(codigo))
+
+  useEffect(() => {
+    onDirtyChange?.(sujo)
+  }, [sujo, onDirtyChange])
 
   // Candidates of the multi-select: the known ones + the already allowed ones (so as not to
   // lose an exotic code that is already saved). It also feeds the primary/fallback
@@ -315,6 +360,7 @@ function LanguageSettingsForm({ inicial }: { inicial: LanguageSettings }) {
         sucesso={mutation.isSuccess}
         mensagemSucesso={t('settings.form.saved')}
         salvando={mutation.isPending}
+        desabilitado={!sujo}
       />
     </form>
   )
@@ -325,13 +371,21 @@ function LanguageSettingsForm({ inicial }: { inicial: LanguageSettings }) {
 // backend ([1, 365]) and PUT via TanStack Query.
 function RetroactiveEnrichmentSettingsForm({
   inicial,
+  onDirtyChange,
 }: {
   inicial: RetroactiveEnrichmentSettings
+  onDirtyChange?: (sujo: boolean) => void
 }) {
   const t = useT()
   const queryClient = useQueryClient()
   const [retryDays, setRetryDays] = useState(String(inicial.retry_days))
   const [erroValidacao, setErroValidacao] = useState<string | null>(null)
+
+  const sujo = retryDays !== String(inicial.retry_days)
+
+  useEffect(() => {
+    onDirtyChange?.(sujo)
+  }, [sujo, onDirtyChange])
 
   const mutation = useMutation({
     mutationFn: (body: RetroactiveEnrichmentSettings) =>
@@ -395,6 +449,7 @@ function RetroactiveEnrichmentSettingsForm({
         sucesso={mutation.isSuccess}
         mensagemSucesso={t('settings.form.saved')}
         salvando={mutation.isPending}
+        desabilitado={!sujo}
       />
     </form>
   )
@@ -443,6 +498,9 @@ function SwitchAutomatico<T extends { enabled: boolean }>({
         }
         aria-label={texto.toggle}
         aria-invalid={mensagemErro !== null || undefined}
+        // The off track (--input: oklch 0.922) is nearly invisible against the
+        // card: the extra contrast makes "off" readable as a state.
+        className="data-unchecked:bg-foreground/35"
       />
       <span className="flex flex-col gap-0.5">
         <span>{texto.toggle}</span>
@@ -501,10 +559,22 @@ function AutoDownloadTrailerTemaSwitch({
 // on purpose — the download is lazy, triggered by the first real use in
 // trailer/theme; this card only reflects and configures, it never
 // triggers a download.
-function YtdlpSettingsForm({ inicial }: { inicial: YtdlpSettings }) {
+function YtdlpSettingsForm({
+  inicial,
+  onDirtyChange,
+}: {
+  inicial: YtdlpSettings
+  onDirtyChange?: (sujo: boolean) => void
+}) {
   const t = useT()
   const queryClient = useQueryClient()
   const [customPath, setCustomPath] = useState(inicial.custom_binary_path ?? '')
+
+  const sujo = customPath !== (inicial.custom_binary_path ?? '')
+
+  useEffect(() => {
+    onDirtyChange?.(sujo)
+  }, [sujo, onDirtyChange])
 
   const mutation = useMutation({
     mutationFn: (path: string) =>
@@ -556,6 +626,7 @@ function YtdlpSettingsForm({ inicial }: { inicial: YtdlpSettings }) {
           sucesso={mutation.isSuccess}
           mensagemSucesso={t('settings.form.saved')}
           salvando={mutation.isPending}
+          desabilitado={!sujo}
         />
       </form>
     </div>

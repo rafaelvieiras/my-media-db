@@ -1,11 +1,14 @@
+import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { FolderPlus } from 'lucide-react'
 import { SchemaForm } from '@/components/schema-form'
 import { NewEntityPage } from '@/components/new-entity-page'
 import { createCollection, type FieldDescriptor } from '@/lib/api'
 import { useCriarEntidade } from '@/lib/use-criar-entidade'
+import { useUnsavedGuard } from '@/lib/use-unsaved-guard'
 import { useT } from '@/lib/i18n'
 import {
+  OBRIGATORIO_NA_CRIACAO,
   schemaZod,
   valoresDeCriacao,
   type ValoresForm,
@@ -35,21 +38,33 @@ function CollectionNewForm({ fields }: { fields: FieldDescriptor[] }) {
     createCollection,
     t('collections.create.failed'),
   )
+  // "Leave without saving" guard, same as the item creation.
+  const [sujo, setSujo] = useState(false)
+  // Same guard wiring as the item creation: off while the write is in flight, back
+  // when it fails (the success redirect is not a "leave without saving").
+  const [criando, setCriando] = useState(false)
+  useUnsavedGuard(sujo && !criando)
 
-  function onSubmit(valores: ValoresForm) {
-    const title = String(valores.title ?? '').trim()
-    if (!title) {
-      return
-    }
+  async function onSubmit(valores: ValoresForm) {
+    // An empty title is refused by the form validation (inline error + summary),
+    // never by a silent `return`.
+    setCriando(true)
     const description = String(valores.description ?? '').trim()
-    mutation.mutate({ title, description: description || undefined })
+    try {
+      await mutation.mutateAsync({
+        title: String(valores.title ?? '').trim(),
+        description: description || undefined,
+      })
+    } catch {
+      setCriando(false)
+    }
   }
 
   return (
     <SchemaForm
       fields={camposColecao}
       defaultValues={valoresDeCriacao(camposColecao)}
-      schema={schemaZod(camposColecao, 'criacao')}
+      schema={schemaZod(camposColecao, 'criacao', t)}
       onSubmit={onSubmit}
       onCancel={() => navigate({ to: '/' })}
       submitLabel={t('collections.create.submit')}
@@ -57,6 +72,8 @@ function CollectionNewForm({ fields }: { fields: FieldDescriptor[] }) {
       submitIcon={<FolderPlus aria-hidden />}
       isPending={mutation.isPending}
       mensagemErro={mensagemErro}
+      obrigatorios={OBRIGATORIO_NA_CRIACAO}
+      onDirtyChange={setSujo}
     />
   )
 }

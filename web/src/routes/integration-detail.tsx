@@ -14,7 +14,7 @@ import { ScreenHeader } from '@/components/screen-header'
 export function IntegrationDetailScreen() {
   const t = useT()
   const { slug } = useParams({ from: '/dashboard/integrations/$slug' })
-  const { data, isPending, isError, error } = useQuery(
+  const { data, isPending, isError, error, refetch } = useQuery(
     integrationDetailQueryOptions(slug),
   )
 
@@ -34,6 +34,7 @@ export function IntegrationDetailScreen() {
         <ErrorState
           title={t('settings.integration.loadFailed')}
           message={error instanceof Error ? error.message : undefined}
+          onRetry={() => void refetch()}
         />
       ) : (
         <>

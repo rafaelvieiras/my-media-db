@@ -3,6 +3,16 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { KeyRound, Plus, RefreshCw, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { ApiError, enrichEntity, updateExternalIds } from '@/lib/api'
 import { useT } from '@/lib/i18n'
 
@@ -71,6 +81,11 @@ export function ExternalIdsEditor({
   // — the entity without investment from the owner disappears on its own, without the owner having to
   // hunt for it in the library.
   const [avisoFusao, setAvisoFusao] = useState(false)
+  // Saving an empty map is a full-replace PUT that WIPES the identity: it asks for
+  // confirmation in an AlertDialog (never `window.confirm`).
+  const [confirmarVazio, setConfirmarVazio] = useState<
+    'salvar' | 'sincronizar' | null
+  >(null)
 
   const sujo = useMemo(
     () => mapaChave(mapaDe(linhas)) !== mapaChave(salvo),
@@ -136,11 +151,24 @@ export function ExternalIdsEditor({
   // identity of the entity. It only asks for confirmation when it is a NET REMOVAL
   // (there was something saved before) — an item that never had any id can save
   // empty without warning, it is not a removal.
-  function confirmarSeVazio(mapaNovo: Record<string, string>): boolean {
+  function disparar(acao: 'salvar' | 'sincronizar') {
+    const mapa = mapaDe(linhas)
+    if (acao === 'salvar') {
+      mutation.mutate(mapa)
+    } else {
+      sincronizar.mutate(mapa)
+    }
+  }
+
+  function pedir(acao: 'salvar' | 'sincronizar') {
+    const mapa = mapaDe(linhas)
     const removendoTudo =
-      Object.keys(mapaNovo).length === 0 && Object.keys(salvo).length > 0
-    if (!removendoTudo) return true
-    return window.confirm(t('entity.edit.ids.confirmRemoveAll'))
+      Object.keys(mapa).length === 0 && Object.keys(salvo).length > 0
+    if (removendoTudo) {
+      setConfirmarVazio(acao)
+      return
+    }
+    disparar(acao)
   }
 
   const erroAtivo = sincronizar.error ?? mutation.error
@@ -213,6 +241,12 @@ export function ExternalIdsEditor({
         </p>
       ) : null}
 
+      {/* One line explaining the difference between the two writes before the
+          buttons, and both disabled while nothing changed. */}
+      <p className="text-xs text-muted-foreground">
+        {t('entity.edit.ids.saveHint')}
+      </p>
+
       <div className="flex flex-wrap items-center gap-2">
         <Button type="button" variant="outline" size="sm" onClick={adicionar}>
           <Plus aria-hidden />
@@ -222,11 +256,9 @@ export function ExternalIdsEditor({
           type="button"
           variant="outline"
           size="sm"
-          disabled={salvando}
-          onClick={() => {
-            const mapa = mapaDe(linhas)
-            if (confirmarSeVazio(mapa)) mutation.mutate(mapa)
-          }}
+          // Saving without a change rewrites the same identity for nothing.
+          disabled={salvando || !sujo}
+          onClick={() => pedir('salvar')}
         >
           {mutation.isPending
             ? t('common.action.saving')
@@ -235,11 +267,8 @@ export function ExternalIdsEditor({
         <Button
           type="button"
           size="sm"
-          disabled={salvando}
-          onClick={() => {
-            const mapa = mapaDe(linhas)
-            if (confirmarSeVazio(mapa)) sincronizar.mutate(mapa)
-          }}
+          disabled={salvando || !sujo}
+          onClick={() => pedir('sincronizar')}
         >
           <RefreshCw
             className={sincronizar.isPending ? 'animate-spin' : undefined}
@@ -250,6 +279,36 @@ export function ExternalIdsEditor({
             : t('entity.edit.ids.saveAndReenrich')}
         </Button>
       </div>
+
+      <AlertDialog
+        open={confirmarVazio !== null}
+        onOpenChange={(aberto) => {
+          if (!aberto) setConfirmarVazio(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('entity.edit.ids.confirmRemoveAllTitle')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('entity.edit.ids.confirmRemoveAll')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.action.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const acao = confirmarVazio
+                setConfirmarVazio(null)
+                if (acao) disparar(acao)
+              }}
+            >
+              {t('entity.edit.ids.confirmRemoveAllAction')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   )
 }

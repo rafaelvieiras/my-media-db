@@ -196,14 +196,48 @@ describe('CreditsEditor', () => {
     expect(m).not.toHaveBeenCalled()
   })
 
-  it('clearing all credits calls DELETE /override/credits', async () => {
+  it('clearing all credits asks for confirmation and calls DELETE /override/credits', async () => {
     const m = stubRota(
       (p, method) => /\/override\/credits$/.test(p) && method === 'DELETE',
       () => okJson({ id: 'e1' }, 200),
     )
     renderEditor({ cast: [cast({ source_id: '1', name: 'Ana' })] })
+    // The destructive action is only enabled with a pending change (UX audit,
+    // finding 1) and asks for confirmation before the DELETE.
+    fireEvent.change(screen.getByLabelText('Character of Ana'), {
+      target: { value: 'Outra' },
+    })
     fireEvent.click(screen.getByText('Clear all credits'))
+    expect(m).not.toHaveBeenCalled()
+    expect(screen.getByRole('alertdialog')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Clear credits' }))
     await vi.waitFor(() => expect(m).toHaveBeenCalled())
+  })
+
+  it('labels every editable field of a row (no placeholder-only field)', () => {
+    patchOverrideRota(() => okJson({}, 200))
+    renderEditor({ crew: [crew()] })
+    // Visible labels above the inputs: "Department", "Job" and the row position.
+    expect(screen.getAllByText('Department').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Job').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Position').length).toBeGreaterThan(0)
+  })
+
+  it('keeps the actions in a sticky bar at the bottom', () => {
+    patchOverrideRota(() => okJson({}, 200))
+    renderEditor({ cast: [cast()] })
+    const barra = screen.getByRole('button', {
+      name: 'Save credits',
+    }).parentElement
+    expect(barra?.className).toContain('sticky')
+    expect(barra?.className).toContain('bottom-0')
+  })
+
+  it('"Clear all credits" is disabled while nothing changed', () => {
+    renderEditor({ cast: [cast({ source_id: '1', name: 'Ana' })] })
+    expect(
+      screen.getByRole('button', { name: 'Clear all credits' }),
+    ).toBeDisabled()
   })
 
   it('reordering the crew sends reorder in the patch (source_id|job key)', async () => {

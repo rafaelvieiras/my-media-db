@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import type { FieldDescriptor } from '@/lib/api'
 import { SchemaForm } from '@/components/schema-form'
 import {
+  OBRIGATORIO_NA_CRIACAO,
   schemaZod,
   valoresDeCriacao,
   valoresDeEdicao,
@@ -114,9 +115,51 @@ describe('SchemaForm — interactions', () => {
     )
   })
 
-  it('does not submit with the required field empty (button disabled)', () => {
+  it('keeps the submit enabled with the form empty and teaches what is missing', async () => {
+    const user = userEvent.setup()
+    const { onSubmit } = renderCriacao(
+      descritoresPadrao.filter((d) => d.creatable),
+      { obrigatorios: OBRIGATORIO_NA_CRIACAO },
+    )
+    // A disabled primary action with no explanation is a dead end (UX audit).
+    const botao = screen.getByRole('button', { name: 'Save' })
+    expect(botao).toBeEnabled()
+
+    await user.click(botao)
+
+    const resumo = await screen.findByText(
+      'Fill in the required fields before continuing:',
+    )
+    expect(resumo.closest('[role="alert"]')).toBeTruthy()
+    const titulo = screen.getByLabelText('Título')
+    expect(titulo).toHaveAttribute('aria-invalid', 'true')
+    expect(titulo).toHaveAttribute('aria-required', 'true')
+    expect(titulo).toHaveAttribute('aria-describedby', 'campo-title-erro')
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('marks only the required fields with the asterisk and aria-required', () => {
+    renderCriacao(
+      descritoresPadrao.filter((d) => d.creatable),
+      {
+        obrigatorios: OBRIGATORIO_NA_CRIACAO,
+      },
+    )
+    expect(screen.getByLabelText('Título')).toHaveAttribute(
+      'aria-required',
+      'true',
+    )
+    expect(screen.getByLabelText('Sinopse')).not.toHaveAttribute(
+      'aria-required',
+    )
+  })
+
+  it('renders the date widget as a real date input', () => {
     renderCriacao(descritoresPadrao.filter((d) => d.creatable))
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(screen.getByLabelText('Data de lançamento')).toHaveAttribute(
+      'type',
+      'date',
+    )
   })
 
   it('the tags widget adds chips (edit)', async () => {

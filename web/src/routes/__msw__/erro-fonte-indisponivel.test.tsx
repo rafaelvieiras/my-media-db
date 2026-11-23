@@ -48,6 +48,11 @@ describe('error: source unavailable while re-enriching (Phase 3)', () => {
 
     await screen.findByText('Save and re-enrich')
 
+    // Both save buttons only enable with a change (UX audit): the journey edits
+    // the id before re-enriching.
+    fireEvent.change(screen.getByLabelText('Id in the source tmdb'), {
+      target: { value: '329866' },
+    })
     fireEvent.click(screen.getByText('Save and re-enrich'))
 
     // Inline error, not a lost navigation: the edit screen stays mounted.

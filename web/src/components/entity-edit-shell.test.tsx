@@ -3,15 +3,14 @@ import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { EntityEditShell } from '@/components/entity-edit-shell'
 import { LanguageProvider } from '@/lib/language-context'
+import { useUnsavedGuard } from '@/lib/use-unsaved-guard'
 import { renderWithClient } from '@/test/render'
 import { baseEntity, okJson, settingsPadrao } from '@/test/entity-fixtures'
 
-// EntityEditShell: the "chrome" shared by the 3 edit subroutes —
-// header (poster+title+language), navigation sidebar with the active section
-// highlighted, and the "leave without saving" guard reapplied to the 3 links
-// of the sidebar + "Back to the item", now over the "dirty" state received via prop (only from the
-// current section — each subroute mounts a single block).
-const spies = vi.hoisted(() => ({ navigate: vi.fn() }))
+// The "leave without saving" guard is the router blocker: outside a
+// RouterProvider it cannot run, so it is mocked here (the hook has its own test and
+// each screen asserts the argument it passes).
+vi.mock('@/lib/use-unsaved-guard', () => ({ useUnsavedGuard: vi.fn() }))
 
 // DYNAMIC import of the Link mock (`@/test/router-mock`): the factory of
 // `vi.mock` runs hoisted to the top of the file, BEFORE the static imports
@@ -20,14 +19,18 @@ const spies = vi.hoisted(() => ({ navigate: vi.fn() }))
 // until the factory actually executes.
 vi.mock('@tanstack/react-router', async () => {
   const { LinkMock } = await import('@/test/router-mock')
-  return {
-    useNavigate: () => spies.navigate,
-    Link: LinkMock,
-  }
+  return { Link: LinkMock }
 })
+
+// EntityEditShell: the "chrome" shared by the 3 edit subroutes —
+// header (poster+title+language), navigation sidebar with the active section
+// highlighted and the tabs WRAPPING on mobile (no clipped third tab). The
+// "leave without saving" guard lives in `lib/use-unsaved-guard` (the router
+// blocker) and only receives the dirty state from here.
 
 beforeEach(() => {
   localStorage.clear()
+  vi.mocked(useUnsavedGuard).mockClear()
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string) => {
@@ -43,7 +46,6 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
-  spies.navigate.mockReset()
 })
 
 function renderShell({
@@ -90,67 +92,28 @@ describe('EntityEditShell', () => {
     ).not.toHaveAttribute('aria-current')
   })
 
-  it('without changes, navigating to another section does not confirm', async () => {
-    const confirmar = vi.fn()
-    vi.stubGlobal('confirm', confirmar)
-    const user = userEvent.setup()
+  it('wraps the section tabs instead of scrolling them out of view', () => {
+    renderShell()
+    const nav = screen.getByRole('navigation', { name: 'Edit sections' })
+    expect(nav.className).toContain('flex-wrap')
+    expect(nav.className).not.toContain('overflow-x-auto')
+  })
+
+  it('hands a pristine section to the guard (no confirmation to ask)', () => {
     renderShell({ sujo: false })
-    await user.click(screen.getByRole('link', { name: 'Cast and crew' }))
-    expect(confirmar).not.toHaveBeenCalled()
-    expect(spies.navigate).not.toHaveBeenCalled()
+    expect(useUnsavedGuard).toHaveBeenLastCalledWith(false)
   })
 
-  it('with changes, navigating to another section confirms before navigating', async () => {
-    const confirmar = vi.fn(() => true)
-    vi.stubGlobal('confirm', confirmar)
-    const user = userEvent.setup()
-    renderShell({ sujo: true, secaoAtiva: 'basico' })
-    await user.click(screen.getByRole('link', { name: 'Cast and crew' }))
-    expect(confirmar).toHaveBeenCalledTimes(1)
-    expect(spies.navigate).toHaveBeenCalledWith({
-      to: '/entities/$id/edit/creditos',
-      params: { id: 'e1' },
-    })
-  })
-
-  it('with changes, cancelling the confirmation does not navigate', async () => {
-    vi.stubGlobal(
-      'confirm',
-      vi.fn(() => false),
-    )
+  it('hands a dirty section to the guard (leave asks for confirmation)', async () => {
     const user = userEvent.setup()
     renderShell({ sujo: true })
-    await user.click(screen.getByRole('link', { name: 'External IDs' }))
-    expect(spies.navigate).not.toHaveBeenCalled()
-  })
-
-  it('with changes, "Back to the item" confirms before navigating', async () => {
-    vi.stubGlobal(
-      'confirm',
-      vi.fn(() => true),
-    )
-    const user = userEvent.setup()
-    renderShell({ sujo: true })
-    await user.click(screen.getByRole('link', { name: /Back to the item/ }))
-    expect(spies.navigate).toHaveBeenCalledWith({
-      to: '/entities/$id',
-      params: { id: 'e1' },
-    })
-  })
-
-  it('without changes, beforeunload is not intercepted', () => {
-    renderShell({ sujo: false })
-    const evento = new Event('beforeunload', { cancelable: true })
-    const preventDefault = vi.spyOn(evento, 'preventDefault')
-    window.dispatchEvent(evento)
-    expect(preventDefault).not.toHaveBeenCalled()
-  })
-
-  it('with changes, it fires the native warning (beforeunload)', () => {
-    renderShell({ sujo: true })
-    const evento = new Event('beforeunload', { cancelable: true })
-    const preventDefault = vi.spyOn(evento, 'preventDefault')
-    window.dispatchEvent(evento)
-    expect(preventDefault).toHaveBeenCalled()
+    expect(useUnsavedGuard).toHaveBeenLastCalledWith(true)
+    // The links are plain navigation now: the router blocker intercepts them, so
+    // the shell does not prevent the click by itself.
+    const link = screen.getByRole('link', { name: 'Cast and crew' })
+    const evento = new MouseEvent('click', { bubbles: true, cancelable: true })
+    link.dispatchEvent(evento)
+    expect(evento.defaultPrevented).toBe(false)
+    await user.click(link)
   })
 })

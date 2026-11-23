@@ -86,16 +86,20 @@ export function ErrorState({
 // save button. Extracted so LanguageSettingsForm/CompletenessSettingsForm
 // (settings.tsx, catalog-completeness-form.tsx) do not duplicate the same markup
 // (jscpd).
+// `desabilitado` lets a form keep the button visible but inert while nothing changed
+// (the settings sections that save manually), instead of hiding the action.
 export function FormSaveFooter({
   erro,
   sucesso,
   mensagemSucesso,
   salvando,
+  desabilitado,
 }: {
   erro: string | null
   sucesso: boolean
   mensagemSucesso?: string
   salvando: boolean
+  desabilitado?: boolean
 }) {
   const t = useT()
   return (
@@ -112,7 +116,7 @@ export function FormSaveFooter({
       ) : null}
 
       <div>
-        <Button type="submit" disabled={salvando}>
+        <Button type="submit" disabled={salvando || desabilitado}>
           {salvando ? t('common.action.saving') : t('common.action.save')}
         </Button>
       </div>

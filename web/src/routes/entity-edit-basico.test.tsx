@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { EntityEditBasicoScreen } from '@/routes/entity-edit-basico'
+import { useUnsavedGuard } from '@/lib/use-unsaved-guard'
 import { LanguageProvider } from '@/lib/language-context'
 import type { OverrideBlob, ResolvedEntity } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
@@ -11,6 +12,11 @@ import {
   okJson,
   settingsPadrao,
 } from '@/test/entity-fixtures'
+
+// The "leave without saving" guard is the router blocker: outside a
+// RouterProvider it cannot run, so it is mocked here (the hook has its own test and
+// each screen asserts the argument it passes).
+vi.mock('@/lib/use-unsaved-guard', () => ({ useUnsavedGuard: vi.fn() }))
 
 // Route `/entities/$id/edit` (split into subroutes later): the
 // "Basic information" section — the form driven by descriptors. It covers the
@@ -297,8 +303,8 @@ describe('EntityEditBasicoScreen — per-language editing', () => {
 const ESTADO_ERRO = /Não foi possível carregar o item|Could not load the item/
 
 // "Leave without saving" guard, now local to the section: only the "dirty" state of the
-// SchemaForm — the EntityEditShell intercepts the "Voltar ao item" link + the links
-// of the sidebar + the native beforeunload.
+// SchemaForm reaches it — the guard itself (router blocker + beforeunload) lives in
+// `lib/use-unsaved-guard`, covered by its own test.
 describe('EntityEditBasicoScreen — leave without saving guard (0073/0080)', () => {
   function linkVoltar() {
     return screen.getByRole('link', { name: /Back to the item/ })
@@ -308,63 +314,22 @@ describe('EntityEditBasicoScreen — leave without saving guard (0073/0080)', ()
     vi.unstubAllGlobals()
   })
 
-  it('with no changes, "Back to the item" navigates straight away without confirmation', async () => {
-    const confirmar = vi.fn()
-    vi.stubGlobal('confirm', confirmar)
+  it('with no changes, the guard is told the section is pristine', async () => {
     const { user } = await editar()
-    // Without dirt, the guard does not intercept the click — the navigation follows the
-    // default behavior of the Link (not simulated by the mock of this file).
+    expect(useUnsavedGuard).toHaveBeenLastCalledWith(false)
     await user.click(linkVoltar())
-    expect(confirmar).not.toHaveBeenCalled()
+    // The link is plain navigation now: intercepting it is the blocker's job.
     expect(spies.navigate).not.toHaveBeenCalled()
   })
 
-  it('editing the Title fires the confirmation (Back and sidebar); cancelling keeps the edit', async () => {
-    const confirmar = vi.fn(() => false)
-    vi.stubGlobal('confirm', confirmar)
+  it('editing the Title marks the section dirty, and Cancel still works', async () => {
     const { user } = await editar()
     await user.type(screen.getByLabelText('Título'), 'Duna')
-    await user.click(linkVoltar())
-    expect(confirmar).toHaveBeenCalledTimes(1)
-    expect(spies.navigate).not.toHaveBeenCalled()
+    await waitFor(() => expect(useUnsavedGuard).toHaveBeenLastCalledWith(true))
+    // Leaving the section is the blocker's decision (mocked here): the form keeps
+    // the typed value until the route actually changes.
     expect((screen.getByLabelText('Título') as HTMLInputElement).value).toBe(
       'Duna',
     )
-
-    // The same guard also intercepts the click on ANOTHER section of the sidebar,
-    // not only "Voltar ao item".
-    await user.click(screen.getByRole('link', { name: 'External IDs' }))
-    expect(confirmar).toHaveBeenCalledTimes(2)
-    expect(spies.navigate).not.toHaveBeenCalled()
-  })
-
-  it('editing the Title and confirming the exit navigates', async () => {
-    vi.stubGlobal(
-      'confirm',
-      vi.fn(() => true),
-    )
-    const { user } = await editar()
-    await user.type(screen.getByLabelText('Título'), 'Duna')
-    await user.click(linkVoltar())
-    expect(spies.navigate).toHaveBeenCalledWith({
-      to: '/entities/$id',
-      params: { id: 'e1' },
-    })
-  })
-
-  it('fires the native warning (beforeunload) only while there is a pending change', async () => {
-    const { user } = await editar()
-    const evento = new Event('beforeunload', { cancelable: true })
-    const preventDefault = vi.spyOn(evento, 'preventDefault')
-
-    // Pristine: nothing registered, the event is not intercepted.
-    window.dispatchEvent(evento)
-    expect(preventDefault).not.toHaveBeenCalled()
-
-    await user.type(screen.getByLabelText('Título'), 'D')
-    const eventoSujo = new Event('beforeunload', { cancelable: true })
-    const preventDefaultSujo = vi.spyOn(eventoSujo, 'preventDefault')
-    window.dispatchEvent(eventoSujo)
-    expect(preventDefaultSujo).toHaveBeenCalled()
   })
 })

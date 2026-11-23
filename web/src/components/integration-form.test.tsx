@@ -6,6 +6,11 @@ import type { IntegrationField } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 import { erroJson, okJson } from '@/test/detail-harness'
 
+// The "leave without saving" guard is the router blocker: outside a
+// RouterProvider it cannot run, so it is mocked here (the hook has its own test and
+// each screen asserts the argument it passes).
+vi.mock('@/lib/use-unsaved-guard', () => ({ useUnsavedGuard: vi.fn() }))
+
 // IntegrationForm: the new `secret` widget over the vocabulary
 // of `integration.Campo` — it never rehydrates from the server, caption by
 // `origem`, a "Clear" button only when `origem==="banco"`, differential PUT

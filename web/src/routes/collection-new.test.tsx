@@ -3,11 +3,17 @@ import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { CollectionNewScreen } from '@/routes/collection-new'
+import { useUnsavedGuard } from '@/lib/use-unsaved-guard'
 import { I18nProvider } from '@/lib/i18n'
 import { renderWithClient } from '@/test/render'
 import { okJson } from '@/test/entity-fixtures'
 import { stubCriacao } from '@/test/criacao-harness'
 import { erroJson } from '@/test/detail-harness'
+
+// The "leave without saving" guard is the router blocker: outside a
+// RouterProvider it cannot run, so it is mocked here (the hook has its own test and
+// each screen asserts the argument it passes).
+vi.mock('@/lib/use-unsaved-guard', () => ({ useUnsavedGuard: vi.fn() }))
 
 // Route `/new/collection`: creates a LOCAL collection (title + description) and
 // navigates to `/entities/{id}`; the 422 (empty title) appears inline.
@@ -90,5 +96,17 @@ describe('CollectionNewScreen', () => {
     expect(
       screen.getByRole('link', { name: /Voltar à biblioteca/ }),
     ).toBeInTheDocument()
+  })
+  it('tells the leave guard the screen is pristine, then dirty after typing', async () => {
+    fetchRouter(() => okJson({}))
+    renderWithClient(<CollectionNewScreen />)
+    const user = userEvent.setup()
+
+    const titulo = await screen.findByLabelText('Título')
+    expect(useUnsavedGuard).toHaveBeenLastCalledWith(false)
+    await user.type(titulo, 'T')
+    await vi.waitFor(() =>
+      expect(useUnsavedGuard).toHaveBeenLastCalledWith(true),
+    )
   })
 })

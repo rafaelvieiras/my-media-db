@@ -146,13 +146,16 @@ describe('WebhookScreen', () => {
     const user = userEvent.setup()
     const fetchMock = fetchRouter({ tokenInicial: 'abc123token' })
     vi.stubGlobal('fetch', fetchMock)
-    vi.spyOn(window, 'confirm').mockReturnValue(false)
     renderWithClient(<WebhookScreen />)
     await screen.findByLabelText('Webhook token')
 
+    // The confirmation is an AlertDialog (a `window.confirm` can be suppressed by
+    // the browser and was invisible to the screen reader).
     await user.click(screen.getByRole('button', { name: 'Generate new token' }))
+    expect(screen.getByRole('alertdialog')).toBeTruthy()
 
-    expect(window.confirm).toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
     expect(
       fetchMock.mock.calls.some(
         ([url, init]) =>
@@ -169,11 +172,14 @@ describe('WebhookScreen', () => {
       postResposta: { token: 'token-substituto' },
     })
     vi.stubGlobal('fetch', fetchMock)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     renderWithClient(<WebhookScreen />)
     await screen.findByLabelText('Webhook token')
 
     await user.click(screen.getByRole('button', { name: 'Generate new token' }))
+    const dialogo = screen.getByRole('alertdialog')
+    await user.click(
+      within(dialogo).getByRole('button', { name: 'Regenerate token' }),
+    )
 
     await waitFor(() =>
       expect(screen.getByLabelText('Webhook token')).toHaveValue(

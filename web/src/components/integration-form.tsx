@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Eye, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -7,6 +7,7 @@ import { Select } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { FormSaveFooter } from '@/components/query-states'
 import { useT } from '@/lib/i18n'
+import { useUnsavedGuard } from '@/lib/use-unsaved-guard'
 import type { Translate } from '@/lib/i18n/types'
 import { ApiError, putIntegration, type IntegrationField } from '@/lib/api'
 
@@ -94,6 +95,19 @@ export function IntegrationForm({
     Object.fromEntries(camposIniciais.map((c) => [c.nome, estadoInicial(c)])),
   )
 
+  // "Leave without saving" guard: the schema-driven form used to walk away with a
+  // typed key/custom value without a warning.
+  const sujo = useMemo(
+    () =>
+      campos.some((campo) => {
+        const atual = estados[campo.nome]
+        if (!atual) return false
+        return atual.limpar || atual.valor !== estadoInicial(campo).valor
+      }),
+    [campos, estados],
+  )
+  useUnsavedGuard(sujo)
+
   const mutation = useMutation({
     mutationFn: (valores: Record<string, string | null>) =>
       putIntegration(slug, valores),
@@ -166,6 +180,7 @@ export function IntegrationForm({
         sucesso={mutation.isSuccess}
         mensagemSucesso={t('settings.integration.savedRestart')}
         salvando={mutation.isPending}
+        desabilitado={!sujo}
       />
     </form>
   )
@@ -266,6 +281,9 @@ function CampoControle({
         onCheckedChange={(checked) => onChange(checked ? 'true' : 'false')}
         aria-label={campo.label}
         disabled={disabled}
+        // Same contrast fix as the settings switches: the off track must be
+        // readable as a state, not a gap in the card.
+        className="data-unchecked:bg-foreground/35"
       />
     )
   }
