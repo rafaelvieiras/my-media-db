@@ -119,11 +119,13 @@ test("add and remove a datasource", async ({ page }) => {
     page.getByLabel("Datasource enrichment retry (days)"),
   ).toHaveValue("45");
 
+  // The confirmation is the shared `AlertDialog` (2-step): the dialog takes its
+  // accessible name from its title ("Remove datasource", the same verb of the
+  // trigger) and the removal only happens on the action INSIDE it.
   await page.getByRole("button", { name: "Remove datasource" }).click();
-  const dialogo = page.getByRole("alertdialog", {
-    name: "Confirm datasource removal",
-  });
+  const dialogo = page.getByRole("alertdialog", { name: "Remove datasource" });
   await expect(dialogo).toBeVisible();
+  await expect(dialogo).toContainText("Are you sure?");
   await dialogo.getByRole("button", { name: "Confirm removal" }).click();
 
   // Goes back to /dashboard/library; the list is empty again.

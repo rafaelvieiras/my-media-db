@@ -35,7 +35,8 @@ function comContagem(t: Translate, chave: string, n: number): string {
 // stay inline: "Scan" (+ progress) and the watch-for-changes switch.
 export function DatasourceList() {
   const t = useT()
-  const { data, isPending, isError, error } = useQuery(libraryQueryOptions)
+  const { data, isPending, isError, error, refetch } =
+    useQuery(libraryQueryOptions)
 
   return (
     <div className="flex flex-col gap-4">
@@ -54,6 +55,7 @@ export function DatasourceList() {
         <ErrorState
           title={t('settings.datasource.loadFailed')}
           message={error instanceof Error ? error.message : undefined}
+          onRetry={() => void refetch()}
         />
       ) : data.items.length === 0 ? (
         <EmptyState
@@ -134,7 +136,10 @@ function DatasourceRow({ source }: { source: Source }) {
     <li className="flex flex-col gap-2 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="truncate font-medium">{source.path}</span>
+          {/* The path WRAPS instead of being cut: it is the only thing that tells the
+              folders apart ("/mnt/…/Filmes 4K" against "/mnt/…/Filmes"), and the
+              mobile row used to hide exactly that part behind an ellipsis. */}
+          <span className="font-medium break-all">{source.path}</span>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span>
               {source.type === 'tv'

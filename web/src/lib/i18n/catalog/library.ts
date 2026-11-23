@@ -36,6 +36,7 @@ export const library = defineDomain({
       retryDaysAriaLabel: 'Datasource enrichment retry (days)',
       retryDaysPlaceholder: 'Use the global default',
       retryDaysPlaceholderWithDefault: 'Use the global default ({n} days)',
+      pathRequired: 'Enter the folder path.',
     },
     create: {
       title: 'Add datasource',
@@ -55,13 +56,18 @@ export const library = defineDomain({
         title: 'Danger zone',
         description:
           'Removing the datasource does not delete the files on disk, but it stops watching this folder and hides the catalog detected from it.',
-        confirmAriaLabel: 'Confirm datasource removal',
         question:
           'Are you sure? This removes the datasource and cannot be undone.',
         confirm: 'Confirm removal',
         removing: 'Removing…',
         remove: 'Remove datasource',
       },
+    },
+    // Guard of the two form routes: leaving with an edited field.
+    unsaved: {
+      title: 'Discard changes?',
+      confirm: 'Discard and leave',
+      keepEditing: 'Keep editing',
     },
   },
   'pt-BR': {
@@ -92,6 +98,7 @@ export const library = defineDomain({
       retryDaysAriaLabel: 'Reentativa de enriquecimento (dias) do datasource',
       retryDaysPlaceholder: 'Usar padrão global',
       retryDaysPlaceholderWithDefault: 'Usar padrão global ({n} dias)',
+      pathRequired: 'Informe o caminho da pasta.',
     },
     create: {
       title: 'Adicionar datasource',
@@ -111,13 +118,17 @@ export const library = defineDomain({
         title: 'Zona de perigo',
         description:
           'Remover o datasource não apaga os arquivos no disco, mas desliga o acompanhamento desta pasta e some com o catálogo detectado a partir dela.',
-        confirmAriaLabel: 'Confirmar remoção do datasource',
         question:
           'Tem certeza? Isso remove o datasource e não pode ser desfeito.',
         confirm: 'Confirmar remoção',
         removing: 'Removendo…',
         remove: 'Remover datasource',
       },
+    },
+    unsaved: {
+      title: 'Descartar alterações?',
+      confirm: 'Descartar e sair',
+      keepEditing: 'Continuar editando',
     },
   },
   es: {
@@ -149,6 +160,7 @@ export const library = defineDomain({
         'Reintento de enriquecimiento (días) de la fuente de datos',
       retryDaysPlaceholder: 'Usar el valor global',
       retryDaysPlaceholderWithDefault: 'Usar el valor global ({n} días)',
+      pathRequired: 'Indica la ruta de la carpeta.',
     },
     create: {
       title: 'Añadir fuente de datos',
@@ -168,13 +180,17 @@ export const library = defineDomain({
         title: 'Zona de peligro',
         description:
           'Eliminar la fuente de datos no borra los archivos del disco, pero deja de vigilar esta carpeta y oculta el catálogo detectado a partir de ella.',
-        confirmAriaLabel: 'Confirmar la eliminación de la fuente de datos',
         question:
           '¿Seguro? Esto elimina la fuente de datos y no se puede deshacer.',
         confirm: 'Confirmar eliminación',
         removing: 'Eliminando…',
         remove: 'Eliminar fuente de datos',
       },
+    },
+    unsaved: {
+      title: '¿Descartar los cambios?',
+      confirm: 'Descartar y salir',
+      keepEditing: 'Seguir editando',
     },
   },
 })

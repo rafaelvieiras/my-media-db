@@ -6,6 +6,11 @@ import type { Source } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 import { okJson } from '@/test/entity-fixtures'
 import { erroJson } from '@/test/detail-harness'
+import {
+  abrirGuardaDeSaida,
+  descartarESair,
+  enviarFormulario,
+} from '@/test/library-form-harness'
 
 // Route `/library/$id/edit`: it preloads the current path (via
 // `libraryQueryOptions`), saves via PATCH (the path re-basing) and concentrates the
@@ -80,28 +85,37 @@ function chamouDelete(fetchMock: ReturnType<typeof fetchRouter>): boolean {
   )
 }
 
-// Clicks "Save", waits for the success navigation and returns the body (already
-// parsed) of PATCH /library/s1 — the submit tests only vary in what they
-// filled in before and in what they check after this common point.
-async function clicarSalvarEPegarCorpo(
-  user: ReturnType<typeof userEvent.setup>,
-  fetchMock: ReturnType<typeof fetchRouter>,
-) {
-  await user.click(screen.getByRole('button', { name: 'Save' }))
-
-  await waitFor(() =>
-    expect(spies.navigate).toHaveBeenCalledWith({ to: '/dashboard/library' }),
-  )
-  const chamada = fetchMock.mock.calls.find(
+// chamouPatch is the same check for the PATCH of the path (a submit that must not
+// reach the API).
+function chamouPatch(fetchMock: ReturnType<typeof fetchRouter>): boolean {
+  return fetchMock.mock.calls.some(
     ([u, init]) =>
       String(u) === '/api/v1/library/s1' &&
       (init as RequestInit | undefined)?.method === 'PATCH',
   )
-  return JSON.parse(String(chamada?.[1]?.body))
+}
+
+// clicarSalvarEPegarCorpo saves and returns the body (already parsed) of PATCH
+// /library/s1 — the shared submit helper of the two form routes with the verb and the
+// route of this one.
+function clicarSalvarEPegarCorpo(
+  user: ReturnType<typeof userEvent.setup>,
+  fetchMock: ReturnType<typeof fetchRouter>,
+) {
+  return enviarFormulario({
+    user,
+    fetchMock,
+    navigate: spies.navigate,
+    botao: 'Save',
+    rota: '/api/v1/library/s1',
+    metodo: 'PATCH',
+  })
 }
 
 // abrirZonaDePerigo mounts the screen, clicks "Remove datasource" and returns
-// `user`/`fetchMock` for the test to continue (confirm or cancel).
+// `user`/`fetchMock`/`gatilho` for the test to continue (confirm, cancel or Esc). The
+// trigger is captured BEFORE the click: while the dialog is open the rest of the page
+// is `aria-hidden` (focus trap of the shared AlertDialog).
 async function abrirZonaDePerigo() {
   const user = userEvent.setup()
   const fetchMock = fetchRouter({ fonte: source() })
@@ -109,8 +123,9 @@ async function abrirZonaDePerigo() {
   renderWithClient(<LibraryEditScreen />)
 
   await screen.findByLabelText('Datasource path')
-  await user.click(screen.getByRole('button', { name: 'Remove datasource' }))
-  return { user, fetchMock }
+  const gatilho = screen.getByRole('button', { name: 'Remove datasource' })
+  await user.click(gatilho)
+  return { user, fetchMock, gatilho }
 }
 
 describe('LibraryEditScreen', () => {
@@ -225,5 +240,107 @@ describe('LibraryEditScreen', () => {
 
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
     expect(chamouDelete(fetchMock)).toBe(false)
+  })
+
+  it('Esc closes the removal dialog and gives the focus back to the button', async () => {
+    const { user, fetchMock, gatilho } = await abrirZonaDePerigo()
+
+    await user.keyboard('{Escape}')
+
+    await waitFor(() =>
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument(),
+    )
+    expect(gatilho).toHaveFocus()
+    expect(chamouDelete(fetchMock)).toBe(false)
+  })
+
+  it('keeps the removal dialog open and shows the error inside it', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal(
+      'fetch',
+      fetchRouter({
+        fonte: source(),
+        deleteResp: () => erroJson(500, 'internal', 'database is locked'),
+      }),
+    )
+    renderWithClient(<LibraryEditScreen />)
+
+    await screen.findByLabelText('Datasource path')
+    await user.click(screen.getByRole('button', { name: 'Remove datasource' }))
+    await user.click(
+      await screen.findByRole('button', { name: 'Confirm removal' }),
+    )
+
+    expect(
+      (await screen.findAllByText('database is locked')).length,
+    ).toBeGreaterThan(0)
+    // The message appears inside the dialog too: the section that holds the other
+    // copy is `aria-hidden` while the dialog is open.
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+    expect(spies.navigate).not.toHaveBeenCalled()
+  })
+
+  it('an empty submit says what is missing and focuses the path field', async () => {
+    const user = userEvent.setup()
+    const fetchMock = fetchRouter({ fonte: source() })
+    vi.stubGlobal('fetch', fetchMock)
+    renderWithClient(<LibraryEditScreen />)
+
+    const campo = await screen.findByLabelText('Datasource path')
+    await user.clear(campo)
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Enter the folder path.',
+    )
+    expect(campo).toHaveAttribute('aria-invalid', 'true')
+    expect(campo).toHaveFocus()
+    expect(chamouPatch(fetchMock)).toBe(false)
+  })
+
+  it('asks for confirmation before leaving with an unsaved change', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('fetch', fetchRouter({ fonte: source() }))
+    renderWithClient(<LibraryEditScreen />)
+
+    const dialogo = await abrirGuardaDeSaida({
+      user,
+      preencher: async (campo) => {
+        await user.clear(campo)
+        await user.type(campo, '/mnt/novo')
+      },
+    })
+    await descartarESair({ user, navigate: spies.navigate, dialogo })
+  })
+
+  it('offers a retry when the datasource list fails to load', async () => {
+    const user = userEvent.setup()
+    let tentativas = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const u = String(url)
+        if (u === '/api/v1/library' && (init?.method ?? 'GET') === 'GET') {
+          tentativas += 1
+          return tentativas === 1
+            ? erroJson(500, 'internal', 'database is locked')
+            : okJson({ items: [source()] })
+        }
+        if (u === '/api/v1/settings/enrichment-retroativo') {
+          return okJson({ retry_days: 15 })
+        }
+        throw new Error(`unmocked route: ${u}`)
+      }),
+    )
+    renderWithClient(<LibraryEditScreen />)
+
+    expect(await screen.findByText('database is locked')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Try again' }))
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Datasource path')).toHaveValue(
+        '/mnt/atual',
+      ),
+    )
   })
 })

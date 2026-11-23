@@ -1,13 +1,13 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { FolderPlus } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { PathBrowser } from '@/components/path-browser'
 import { LibraryFormHeader } from '@/components/library-form-header'
 import { LibraryLanguageAndRetryFields } from '@/components/library-language-retry-fields'
+import { LibraryPathField } from '@/components/library-path-field'
+import { LibrarySubmitButton } from '@/components/library-submit-button'
 import { useT } from '@/lib/i18n'
 import { ApiError, createLibrary, type CreateSource } from '@/lib/api'
 import {
@@ -32,6 +32,10 @@ export function LibraryNewScreen() {
   const [type, setType] = useState<CreateSource['type']>('movie')
   const [preferredLanguage, setPreferredLanguage] = useState('')
   const [retryDays, setRetryDays] = useState('')
+  // The empty path used to return in silence: the screen looked broken because
+  // nothing happened at all. Now the first submit marks the field and moves the focus.
+  const [tentouEnviar, setTentouEnviar] = useState(false)
+  const campoCaminho = useRef<HTMLInputElement>(null)
 
   const languagesQuery = useQuery(languageSettingsQueryOptions)
   const idiomasPermitidos = languagesQuery.data?.allowed ?? []
@@ -50,6 +54,8 @@ export function LibraryNewScreen() {
     e.preventDefault()
     const limpo = path.trim()
     if (!limpo) {
+      setTentouEnviar(true)
+      campoCaminho.current?.focus()
       return
     }
     // Series (type=tv) marks the library as content_type='series'; Movies stay
@@ -74,26 +80,36 @@ export function LibraryNewScreen() {
         ? t('library.create.failed')
         : null
 
+  // Live on purpose: the message disappears as soon as the owner types, without
+  // another submit to clear the state.
+  const erroCaminho =
+    tentouEnviar && path.trim() === '' ? t('library.form.pathRequired') : null
+  const caminhoInvalido = erroCaminho !== null || mensagemErro !== null
+
   return (
     <main className="mx-auto max-w-2xl px-4 py-6">
-      <LibraryFormHeader titulo={t('library.create.title')} />
+      <LibraryFormHeader
+        titulo={t('library.create.title')}
+        dirty={
+          path !== '' ||
+          type !== 'movie' ||
+          preferredLanguage !== '' ||
+          retryDays !== ''
+        }
+      />
 
       {/* noValidate: the min/max of the retry field is only a native hint;
           the range validation belongs to the backend (422 inline), without depending on the
           native browser balloon blocking the submit before it gets there. */}
       <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-muted-foreground">
-            {t('library.form.path')}
-          </span>
-          <Input
-            value={path}
-            onChange={(e) => setPath(e.target.value)}
-            placeholder={t('library.form.pathPlaceholder')}
-            aria-label={t('library.form.pathAriaLabel')}
-            aria-invalid={mensagemErro !== null || undefined}
-          />
-        </label>
+        <LibraryPathField
+          valor={path}
+          onChange={setPath}
+          inputRef={campoCaminho}
+          placeholder={t('library.form.pathPlaceholder')}
+          invalido={caminhoInvalido}
+          erroCaminho={erroCaminho}
+        />
 
         <PathBrowser value={path} onChange={setPath} />
 
@@ -126,14 +142,12 @@ export function LibraryNewScreen() {
           </p>
         ) : null}
 
-        <div>
-          <Button type="submit" disabled={mutation.isPending}>
-            <FolderPlus aria-hidden />
-            {mutation.isPending
-              ? t('library.create.submitting')
-              : t('library.create.submit')}
-          </Button>
-        </div>
+        <LibrarySubmitButton
+          Icone={FolderPlus}
+          pendente={mutation.isPending}
+          rotulo={t('library.create.submit')}
+          rotuloPendente={t('library.create.submitting')}
+        />
       </form>
     </main>
   )
