@@ -10,6 +10,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
+import { ArtworkImage } from '@/components/artwork-image'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -249,12 +250,16 @@ export function ArtLightbox({
             } ${info.contain ? 'bg-muted/40' : ''}`}
             onClick={(e) => e.stopPropagation()}
           >
-            <img
+            {/* `key` per URL: the placeholder state of a broken artwork belongs to the
+                URL, not to the position in the kind. */}
+            <ArtworkImage
               key={item.url}
               src={item.url}
               alt={t('media.lightbox.imageAlt', { kind: rotulo, n: index + 1 })}
               className={
-                zoom ? 'max-w-none' : 'max-h-full max-w-full object-contain'
+                zoom
+                  ? 'min-h-24 max-w-none'
+                  : 'min-h-24 max-h-full max-w-full object-contain'
               }
             />
           </div>

@@ -11,11 +11,7 @@ import {
 import { personQueryOptions } from '@/lib/queries'
 import { rotuloTipo } from '@/lib/entity-badges'
 import { PosterImg } from '@/components/rich-detail-view'
-import {
-  ErrorState,
-  LoadingState,
-  VoltarBiblioteca,
-} from '@/components/query-states'
+import { DetalheEstadoCarga, VoltarBiblioteca } from '@/components/query-states'
 import { Badge } from '@/components/ui/badge'
 import { useT } from '@/lib/i18n'
 import type { Translate } from '@/lib/i18n/types'
@@ -172,20 +168,13 @@ export function PersonDetailScreen() {
 
   const voltar = <VoltarBiblioteca />
 
-  if (isPending) {
+  if (isPending || isError) {
     return (
-      <main className="mx-auto max-w-4xl px-4 py-6">
-        {voltar}
-        <LoadingState label={t('entity.person.loading')} />
-      </main>
-    )
-  }
-  if (isError) {
-    return (
-      <main className="mx-auto max-w-4xl px-4 py-6">
-        {voltar}
-        <ErrorState {...propsDeErro(error, t)} />
-      </main>
+      <DetalheEstadoCarga
+        carregando={isPending}
+        textoCarregando={t('entity.person.loading')}
+        erro={propsDeErro(error, t)}
+      />
     )
   }
 

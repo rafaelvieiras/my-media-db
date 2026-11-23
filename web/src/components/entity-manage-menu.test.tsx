@@ -291,6 +291,16 @@ describe('EntityManageMenu — conditional dropdown items', () => {
     ).toBeInTheDocument()
   })
 
+  it('groups the items with separators (identity · completion · reading · destructive)', async () => {
+    const user = userEvent.setup()
+    render({ complete: false, missing: ['artwork:poster'] })
+    await abrirMenu(user)
+
+    // Two boundaries without the collection item: after "Edit"/"Find and match manually"
+    // and before the "reading" block (the destructive one only exists for a collection).
+    expect(screen.getAllByRole('separator')).toHaveLength(2)
+  })
+
   it('"Delete collection" only appears when isCollection is true', async () => {
     const user = userEvent.setup()
     render(null, true, false)
@@ -315,6 +325,25 @@ describe('EntityManageMenu — manual match (wrong identity)', () => {
       name: /Search for the correct title/,
     })
     expect((campo as HTMLInputElement).value).toBe('White Collar')
+  })
+})
+
+describe('EntityManageMenu — manual match: focus returns to the trigger', () => {
+  it('closing the manual match panel puts the focus back on "Manage"', async () => {
+    const user = userEvent.setup()
+    render(null)
+    await abrirMenu(user)
+    await user.click(
+      screen.getByRole('menuitem', { name: /Find and match manually/ }),
+    )
+    await screen.findByRole('searchbox', {
+      name: /Search for the correct title/,
+    })
+
+    await user.keyboard('{Escape}')
+
+    await waitFor(() => expect(screen.queryByRole('searchbox')).toBeNull())
+    expect(screen.getByRole('button', { name: /Manage/ })).toHaveFocus()
   })
 })
 
@@ -803,6 +832,17 @@ describe('EntityManageMenu — "Delete collection" (0026, now via AlertDialog)',
       screen.getByRole('alertdialog', { name: 'Delete the collection?' }),
     ).toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('closing the dialog returns the focus to the "Manage" trigger (not to <body>)', async () => {
+    const { user } = await abrirDialogoExclusaoColecao()
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).toBeNull()
+    })
+    expect(screen.getByRole('button', { name: /Manage/ })).toHaveFocus()
   })
 
   it('"Cancel" closes the dialog without deleting', async () => {

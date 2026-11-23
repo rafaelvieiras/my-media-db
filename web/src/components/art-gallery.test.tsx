@@ -240,6 +240,39 @@ describe('ArtGallery — one row per kind (0049)', () => {
   })
 })
 
+// Broken files: the gallery/lightbox used to draw the browser's broken-image icon AND the
+// alt text ("Poster 1") over the cover — a loose number that said nothing about the artwork.
+describe('ArtGallery — broken artwork falls back to a placeholder (03xx)', () => {
+  it('a card whose image fails shows "Image unavailable" instead of the alt text', async () => {
+    renderGallery({ artwork: artworkPadrao() })
+
+    const poster = (await screen.findByAltText('Poster 1')) as HTMLImageElement
+    fireEvent.error(poster)
+
+    expect(screen.queryByAltText('Poster 1')).toBeNull()
+    expect(screen.getByRole('img', { name: 'Poster 1' })).toHaveTextContent(
+      'Image unavailable',
+    )
+    // The other rows are untouched.
+    expect(screen.getByAltText('Fanart 1')).toBeInTheDocument()
+  })
+
+  it('the lightbox of a broken artwork shows the placeholder, keeping the caption', async () => {
+    const user = userEvent.setup()
+    renderGallery({ artwork: artworkPadrao() })
+    await abrirLightbox(user, 'View Poster 1')
+
+    fireEvent.error(
+      screen.getAllByAltText('Poster — artwork 1')[0] as HTMLImageElement,
+    )
+
+    expect(
+      screen.getByRole('img', { name: 'Poster — artwork 1' }),
+    ).toHaveTextContent('Image unavailable')
+    expect(screen.getByRole('dialog')).toHaveAccessibleName(/Poster 1 of/)
+  })
+})
+
 describe('ArtGallery — lightbox: navigation and keyboard (0049)', () => {
   it('(e) opens on the card, navigates with the arrow keys and closes on Esc', async () => {
     const user = userEvent.setup()

@@ -68,10 +68,17 @@ const indexRoute = createRoute({
 // search param `?type=` of the `/` route (removed — it was not a
 // documented public contract) with a friendly, dedicated URL; the slug is
 // resolved to `entity.type` by `lib/library-slugs.ts`.
+// Search param `page` of the library listing: the pagination lives in the URL
+// (shareable, restored by the back button and by a refresh); absent = first page.
+const libraryBrowseSearchSchema = z.object({
+  page: z.number().int().min(1).optional(),
+})
+
 const libraryBrowseRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/library/$entitySlug',
   component: LibraryBrowseScreen,
+  validateSearch: libraryBrowseSearchSchema,
 })
 
 // Administrative area: the 6 operation/config screens become

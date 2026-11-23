@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import {
@@ -497,11 +497,23 @@ export function EntityManageMenu({
     marcarAssistido.isPending || desmarcarAssistido.isPending
   const [matchManualAberto, setMatchManualAberto] = useState(false)
 
+  // The "Gerenciar" button is the trigger of the dropdown AND the element the owner comes
+  // back to: the controlled Sheet/AlertDialog open from a menu item (Radix closes the menu
+  // on select, which unmounts the item), so without this ref the focus of the dialog
+  // returned to the now-removed item and fell on `<body>`.
+  const gatilhoRef = useRef<HTMLButtonElement>(null)
+  // `preventDefault` cancels Radix's own "give the focus back to the previously focused
+  // element" and hands it to the trigger (same rule the art lightbox follows).
+  const fecharDevolvendoOFoco = (evento: Event) => {
+    evento.preventDefault()
+    gatilhoRef.current?.focus()
+  }
+
   return (
     <div className="flex flex-col items-end gap-1.5">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="secondary" size="sm">
+          <Button ref={gatilhoRef} variant="secondary" size="sm">
             <Settings aria-hidden />
             {t('entity.edit.manage.trigger')}
             <ChevronDown aria-hidden />
@@ -522,6 +534,8 @@ export function EntityManageMenu({
             <SearchCheck aria-hidden />
             {t('entity.edit.manage.manualMatch')}
           </DropdownMenuItem>
+          {/* Group boundary: identity/edit above, the data-completion mutations below. */}
+          <DropdownMenuSeparator />
           {mostrarInformacoes ? (
             <DropdownMenuItem
               disabled={enriquecer.isPending}
@@ -763,6 +777,7 @@ export function EntityManageMenu({
         <SheetContent
           side="right"
           className="w-full gap-4 overflow-y-auto sm:max-w-md"
+          onCloseAutoFocus={fecharDevolvendoOFoco}
         >
           <SheetHeader>
             <SheetTitle>{t('entity.edit.manage.manualMatch')}</SheetTitle>
@@ -780,7 +795,7 @@ export function EntityManageMenu({
 
       {isCollection ? (
         <AlertDialog open={alertaAberto} onOpenChange={setAlertaAberto}>
-          <AlertDialogContent>
+          <AlertDialogContent onCloseAutoFocus={fecharDevolvendoOFoco}>
             <AlertDialogHeader>
               <AlertDialogTitle>
                 {t('entity.edit.manage.deleteCollectionTitle')}
@@ -826,7 +841,7 @@ export function EntityManageMenu({
           open={alertaGravarTagAberto}
           onOpenChange={setAlertaGravarTagAberto}
         >
-          <AlertDialogContent>
+          <AlertDialogContent onCloseAutoFocus={fecharDevolvendoOFoco}>
             <AlertDialogHeader>
               <AlertDialogTitle>
                 {t('entity.edit.manage.writeTagsTitle')}

@@ -70,7 +70,9 @@ export function RecentlyAddedRail({
         </>
       ) : (
         <Carousel opts={{ align: 'start' }} className="w-full">
-          <div className="mb-3 flex items-center justify-between gap-3">
+          {/* `flex-wrap`: with the 44 px touch targets of the arrows below `sm`, a long
+              label can push the prev/next pair out of the viewport width. */}
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <RailTitulo type={type} label={label} />
             <div className="flex gap-1">
               <CarouselPrevious className="static translate-y-0" />

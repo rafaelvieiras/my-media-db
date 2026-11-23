@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { ErrorState } from '@/components/query-states'
 import { ArtLightbox, type AcoesLightbox } from '@/components/art-lightbox'
+import { ArtworkImage } from '@/components/artwork-image'
 import {
   ApiError,
   arteSrc,
@@ -155,13 +156,12 @@ function LinhaGaleria({
                   : 'ring-foreground/10 hover:ring-foreground/30'
               }`}
             >
-              <img
+              <ArtworkImage
                 src={item.url}
                 alt={t('media.gallery.artworkAlt', {
                   kind: rotulo,
                   n: i + 1,
                 })}
-                loading="lazy"
                 className={`${info.aspect} w-full ${ajuste}`}
               />
               {item.is_principal ? (
@@ -475,7 +475,7 @@ export function ArtGallery({
       ) : (
         <div className="flex flex-col gap-5">
           {/* Provider still (episode): read-only, it does not open the lightbox nor has actions. */}
-          {mostrarProviderStill ? (
+          {mostrarProviderStill && stillUrl ? (
             <section className="flex flex-col gap-2">
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-medium">
@@ -484,10 +484,9 @@ export function ArtGallery({
                 <Badge variant="outline">{t('media.gallery.provider')}</Badge>
               </div>
               <div className="w-80 overflow-hidden rounded-lg bg-muted ring-1 ring-foreground/10">
-                <img
-                  src={arteSrc(stillUrl) ?? undefined}
+                <ArtworkImage
+                  src={arteSrc(stillUrl) ?? stillUrl}
                   alt={t('media.gallery.providerStillAlt')}
-                  loading="lazy"
                   className="aspect-video w-full object-cover"
                 />
               </div>

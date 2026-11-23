@@ -108,6 +108,17 @@ describe('SecaoSerie — ordering selector (0040)', () => {
     expect(screen.getByLabelText('Episode display order')).toBeTruthy()
   })
 
+  it('the ordering row wraps inside the section header (it used to push the page 51 px to the side at 390 px)', async () => {
+    renderSerie(serieTV(['official', 'dvd', 'absolute']), [temporada])
+    // The row that holds the selector + "Episode order" is the slot of the section header:
+    // `min-w-0` lets it shrink and `flex-wrap` drops the button to a second line instead of
+    // overflowing the viewport.
+    const botao = await screen.findByRole('button', { name: 'Episode order' })
+    const linha = botao.parentElement as HTMLElement
+    expect(linha).toHaveClass('flex-wrap')
+    expect(linha).toHaveClass('min-w-0')
+  })
+
   it('switching to an alternative order navigates with the search param', async () => {
     renderSerie(serieTV(['official', 'dvd', 'absolute']), [temporada])
     const select = await screen.findByLabelText('Episode display order')

@@ -39,6 +39,7 @@ export const media = defineDomain({
       artworkAlt: '{kind} {n}',
       principal: 'Principal',
       savedInFolder: 'Saved in the folder',
+      imageError: 'Image unavailable',
     },
     lightbox: {
       caption: '{kind} {n} of {total}',
@@ -81,6 +82,8 @@ export const media = defineDomain({
       emptyDescription: 'Add a datasource and scan to populate the library.',
       goToLibraries: 'Go to libraries',
       range: '{from}–{to} of {total}',
+      pageOf: 'Page {page} of {pages}',
+      goToPage: 'Go to page {page}',
     },
     rail: {
       loading: 'Loading {label}…',
@@ -157,6 +160,7 @@ export const media = defineDomain({
       artworkAlt: '{kind} {n}',
       principal: 'Principal',
       savedInFolder: 'Salvo na pasta',
+      imageError: 'Imagem indisponível',
     },
     lightbox: {
       caption: '{kind} {n} de {total}',
@@ -200,6 +204,8 @@ export const media = defineDomain({
         'Adicione um datasource e escaneie para popular a biblioteca.',
       goToLibraries: 'Ir para Bibliotecas',
       range: '{from}–{to} de {total}',
+      pageOf: 'Página {page} de {pages}',
+      goToPage: 'Ir para a página {page}',
     },
     rail: {
       loading: 'Carregando {label}…',
@@ -276,6 +282,7 @@ export const media = defineDomain({
       artworkAlt: '{kind} {n}',
       principal: 'Principal',
       savedInFolder: 'Guardado en la carpeta',
+      imageError: 'Imagen no disponible',
     },
     lightbox: {
       caption: '{kind} {n} de {total}',
@@ -319,6 +326,8 @@ export const media = defineDomain({
         'Añade un datasource y escanea para llenar la biblioteca.',
       goToLibraries: 'Ir a Bibliotecas',
       range: '{from}–{to} de {total}',
+      pageOf: 'Página {page} de {pages}',
+      goToPage: 'Ir a la página {page}',
     },
     rail: {
       loading: 'Cargando {label}…',

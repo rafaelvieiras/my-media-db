@@ -34,11 +34,7 @@ import {
 import { TracklistAlbum } from '@/components/tracklist-album'
 import { HistoricoSection } from '@/components/historico-section'
 import { MediaInfoTable } from '@/components/media-info-table'
-import {
-  ErrorState,
-  LoadingState,
-  VoltarBiblioteca,
-} from '@/components/query-states'
+import { DetalheEstadoCarga, VoltarBiblioteca } from '@/components/query-states'
 import { Migalhas } from '@/components/migalhas'
 import { RichDetailView } from '@/components/rich-detail-view'
 import { deResolvedEntity } from '@/lib/rich-detail'
@@ -208,8 +204,12 @@ function SecaoSerie({
     })
   }
 
+  // The row of the order selector + "Ordem dos episódios" must survive a 390 px screen:
+  // `min-w-0` lets it shrink inside the section header and `flex-wrap` drops the button to
+  // a second line instead of pushing the page 51 px to the side (the whole row used to end
+  // at x=440 in a 390 px viewport).
   const seletor = (
-    <div className="flex items-center gap-2">
+    <div className="flex min-w-0 flex-wrap items-center gap-2">
       {mostrarSeletor && def && orderings ? (
         <SeletorOrdenacao
           value={ordering ?? def}
@@ -270,23 +270,16 @@ export function EntityDetailScreen() {
 
   const voltar = <VoltarBiblioteca />
 
-  if (isPending) {
+  if (isPending || isError) {
     return (
-      <main className="mx-auto max-w-4xl px-4 py-6">
-        {voltar}
-        <LoadingState label={t('entity.detail.loading')} />
-      </main>
-    )
-  }
-  if (isError) {
-    return (
-      <main className="mx-auto max-w-4xl px-4 py-6">
-        {voltar}
-        <ErrorState
-          title={t('entity.detail.error')}
-          message={error instanceof Error ? error.message : undefined}
-        />
-      </main>
+      <DetalheEstadoCarga
+        carregando={isPending}
+        textoCarregando={t('entity.detail.loading')}
+        erro={{
+          title: t('entity.detail.error'),
+          message: error instanceof Error ? error.message : undefined,
+        }}
+      />
     )
   }
 
