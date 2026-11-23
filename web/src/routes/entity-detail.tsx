@@ -26,6 +26,7 @@ import { ArtGallery } from '@/components/art-gallery'
 import { CollectionMembers } from '@/components/collection-members'
 import { DiscografiaArtista } from '@/components/discografia-artista'
 import { EntityManageMenu } from '@/components/entity-manage-menu'
+import { ListaEpisodiosTemporada } from '@/components/lista-episodios-temporada'
 import { MembrosSomenteLeitura } from '@/components/entity-members'
 import {
   EpisodiosAgrupados,
@@ -397,16 +398,7 @@ export function EntityDetailScreen() {
             ordering={ordering}
           />
         ) : null}
-        {data.type === 'season' ? (
-          <MembrosSomenteLeitura
-            id={id}
-            titulo={t('entity.detail.episodes')}
-            carregando={t('entity.detail.episodesLoading')}
-            erro={t('entity.detail.episodesError')}
-            vazio={t('entity.detail.episodesEmpty')}
-            numerar
-          />
-        ) : null}
+        {data.type === 'season' ? <ListaEpisodiosTemporada id={id} /> : null}
 
         {/* Music vertical (ADR-0027): an album shows the
             tracklist (tracks via entity_relation kind=music_album); artista

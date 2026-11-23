@@ -107,6 +107,9 @@ export const entity = defineDomain({
       episodesLoading: 'Loading episodes…',
       episodesError: 'Could not load the episodes',
       episodesEmpty: 'This season has no episodes yet.',
+      showMissingEpisodes: 'Show episodes outside the library',
+      showMissingEpisodesCount: 'Show {n} episodes outside the library',
+      notInLibrary: 'not in the library',
       incomplete: 'Incomplete cataloging',
     },
     external: {
@@ -437,6 +440,9 @@ export const entity = defineDomain({
       episodesLoading: 'Carregando episódios…',
       episodesError: 'Não foi possível carregar os episódios',
       episodesEmpty: 'Esta temporada ainda não tem episódios.',
+      showMissingEpisodes: 'Mostrar episódios fora da biblioteca',
+      showMissingEpisodesCount: 'Mostrar {n} episódios fora da biblioteca',
+      notInLibrary: 'fora da biblioteca',
       incomplete: 'Catalogação incompleta',
     },
     external: {
@@ -767,6 +773,9 @@ export const entity = defineDomain({
       episodesLoading: 'Cargando los episodios…',
       episodesError: 'No se pudieron cargar los episodios',
       episodesEmpty: 'Esta temporada todavía no tiene episodios.',
+      showMissingEpisodes: 'Mostrar episodios fuera de la biblioteca',
+      showMissingEpisodesCount: 'Mostrar {n} episodios fuera de la biblioteca',
+      notInLibrary: 'fuera de la biblioteca',
       incomplete: 'Catalogación incompleta',
     },
     external: {
