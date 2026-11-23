@@ -54,16 +54,15 @@ export function GradeMembros({
 // MembrosSomenteLeitura lists the CHILDREN of a node of the series tree as
 // READ-ONLY cards: the seasons of a series, the episodes of a season. Phase 1
 // does not edit the tree by hand (no add/remove — unlike the collection). The
-// backend already returns /members sorted by `sort_index`; `numerar` marks the card of the
-// episode to show its REAL number — read from `card.numbering` (projected
-// in the ordering of the parent season), not the ordinal position in the list.
+// backend already returns /members sorted by `sort_index`. The EPISODES have their own list
+// (`ListaEpisodiosTemporada`), which splits what the library has from what the provider
+// publishes and keeps the second group out of the way.
 export function MembrosSomenteLeitura({
   id,
   titulo,
   carregando,
   erro,
   vazio,
-  numerar = false,
   acao,
 }: {
   id: string
@@ -71,7 +70,6 @@ export function MembrosSomenteLeitura({
   carregando: string
   erro: string
   vazio: string
-  numerar?: boolean
   // acao is an OPTIONAL slot to the right of the header — today the ordering selector of the
   // series stays next to "Temporadas" without duplicating the section. null = no action.
   acao?: ReactNode
@@ -94,9 +92,6 @@ export function MembrosSomenteLeitura({
         erro={erro}
         vazio={vazio}
         render={(card) => {
-          if (numerar) {
-            return <CardNumerado card={card} />
-          }
           if (card.type === 'season') {
             return <CardTemporada card={card} />
           }
