@@ -420,7 +420,7 @@ func (s *Servico) acharOuCriarColecao(ctx context.Context, source, sourceID, nom
 //
 // tipo is NOT optional: the external id is only unique WITHIN a type. TMDB episode ids
 // and series ids share the same numeric space (measured in production: series 13943 =
-// Beavis and Butt-Head, episode 13943 = Everybody Hates PSATs of series 252), so an
+// a series and an episode of another series both answer to id 13943), so an
 // unscoped lookup makes an episode import reuse the series entity -- that is how a series
 // ended up with an episode's title, an episode's numbering and 314 of its own files.
 func (s *Servico) acharPorIDExterno(ctx context.Context, source, sourceID, tipo string) (string, bool, error) {
@@ -582,7 +582,7 @@ func chaveExternalID(source string) string {
 // It exists for a CORRECTION ("Corrigir"/"Confirmar candidato"/auto-match applying a new
 // identity): mesclarExternalIds preserves the other keys, which is right for an
 // enrichment that COMPLETES an identity and wrong for one that REPLACES it. Measured: a
-// series wrongly matched to "White Collar Blue" (2002) kept `tvdb: 82010` -- the id of
+// series wrongly matched to a same-name sibling kept `tvdb: 82010` -- the id of
 // the OTHER show -- after being corrected to the right TMDB id, so the NFO export would
 // point Jellyfin at a different series. Any cross-id the enrichment can resolve
 // authoritatively is written back right after this call (mesclarExternalIdSeAusente).
@@ -869,7 +869,7 @@ func isNoRows(err error) bool { return errors.Is(err, sql.ErrNoRows) }
 //     other show, and with the columns filled the completeness said "complete", so no job
 //     ever rewrote it.
 //
-// Measured case (23/nov/2026, "Clube do Terror (1990)"): after the owner corrected the
+// Measured case (23/nov/2026, a folder marked 1990): after the owner corrected the
 // identity from the 2019 reboot to the 1992 show, the tree and the file links came out right
 // (91 episodes, 78 files, no duplicates) but the folder kept the 2019 poster.jpg/fanart.jpg,
 // the app kept the 2019 artwork rows and the tree kept NFOs naming the 2019 episodes.

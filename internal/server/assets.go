@@ -491,7 +491,7 @@ func (s *Server) servirBinarioAsset(w http.ResponseWriter, r *http.Request, ctx 
 	// 304 from Last-Modified, so an unchanged poster costs one conditional request, while a
 	// REPLACED one (the identity of the item changed) actually reaches the screen. Without
 	// this header the browser applied heuristic freshness to a stable URL and kept showing the
-	// previous show's cover for days (measured: "Clube do Terror", 23/nov/2026).
+	// previous show's cover for days (measured, 23/nov/2026).
 	w.Header().Set("Cache-Control", "no-cache")
 	http.ServeContent(w, r, filepath.Base(limpo), info.ModTime(), f)
 }

@@ -53,9 +53,8 @@ threshold ([ADR-0037](adr/0037-search-term-from-the-catalog-too.md)):
 | any other type with its own file | the release name of the file                                                                                                                                                                                                                                                     |
 
 The two movie attempts are not redundant. The scan gives a movie two very different
-strings — the folder (`Alligator 2 A Mutação`, `Transformers 2 - A Vingança dos
-Derrotados (2011)`) and the file (`Alligator2.91.BD1080p.MemoriadaTV.Maior.mkv`) — and the
-provider only recognizes the first. Measured on a production library: of 25 random movies
+strings — the folder (`A Clean Title`, `A Title - The Subtitle (2011)`) and the file
+(`ACleanTitle.91.BD1080p.SomeGROUP.mkv`) — and the provider only recognizes the first. Measured on a production library: of 25 random movies
 with no external id, **21 reach the threshold** when searched by the catalog title and
 about **0** when searched by the release name. The release name is still tried second,
 because a draft named `Draft` in the database has nothing better than its file.
@@ -63,9 +62,8 @@ because a draft named `Draft` in the database has nothing better than its file.
 An entity with **no file at all** has no attempts: manual drafts and orphans are never
 searched on their own.
 
-Attempts whose titles are the same once normalized (`Alligator 2: A Mutação` vs
-`Alligator 2 A Mutação`) collapse into one — the provider is not asked twice for the same
-text.
+Attempts whose titles are the same once normalized (`A Title: Subtitle` vs `A Title
+Subtitle`) collapse into one — the provider is not asked twice for the same text.
 
 The **folder is the authority**: it is where the Kodi convention puts the work, and the entity
 title is only a cleaned copy of it — so the raw folder name is searched before the stored copy,

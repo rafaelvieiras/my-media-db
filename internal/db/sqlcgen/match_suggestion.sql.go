@@ -168,7 +168,7 @@ type ListarSeriesComArvoreIncompativelRow struct {
 // library with 21 files of a 42-episode show has 21 cataloged episodes (each holding a file)
 // and 21 draft episodes (the ones the owner does not have), which satisfied
 // "provisional >= cataloged" and produced an alert on a perfectly healthy series
-// (measured 22/nov/2026: Toonsylvania, 0 draft episodes holding a file). A draft episode that
+// (measured 22/nov/2026: one series, 0 draft episodes holding a file). A draft episode that
 // holds NOTHING is not evidence against the match -- it is the provider's episode that the
 // library does not have.
 //

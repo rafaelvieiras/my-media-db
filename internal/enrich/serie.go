@@ -525,7 +525,7 @@ func (s *Servico) ImportarSeriePorNome(ctx context.Context, alvo AlvoSerie, lang
 			continue
 		}
 		// The QUERY is always the folder's name in the active language: TMDb matches a query
-		// against the translated AND the original title, so "Cold Case" finds "Arquivo Morto"
+		// against the translated AND the original title, so an English folder name finds its
 		// (the pt-BR name of the 2003 show). The YEAR never goes into the query -- it is a
 		// SCORE input, because the year a folder states is often imprecise (measured: 1990
 		// for the 1992 show), and a hard filter would lose the right candidate instead of
@@ -896,8 +896,8 @@ func (s *Servico) importarSeriePorFonte(ctx context.Context, source, sourceID st
 // Half, not "any": a folder legitimately carries more FILES than the show has episodes
 // (specials, a "part 1/part 2" split, extras that were not recognized as extras), so "the
 // provider is smaller" cannot be a rejection on its own. Half separates the measured cases
-// cleanly -- Arrow 3 episodes vs 26 files, Cold Case 22 vs 65, Lie to Me 16 vs 48 are refused;
-// Beavis 221 vs 297 files (the right show) passes.
+// cleanly -- 3 episodes against 26 files, 22 against 65 and 16 against 48 are refused;
+// 221 against 297 files (the right show) passes.
 const divisorDeForma = 2
 
 // importarSerieComForma is importarSerie with the SHAPE gate: it fetches the tree, refuses an
