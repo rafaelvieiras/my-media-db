@@ -13,10 +13,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Input } from '@/components/ui/input'
 import { PathBrowser } from '@/components/path-browser'
 import { LibraryFormHeader } from '@/components/library-form-header'
 import { LibraryLanguageAndRetryFields } from '@/components/library-language-retry-fields'
+import { LibraryPathField } from '@/components/library-path-field'
+import { LibrarySubmitButton } from '@/components/library-submit-button'
 import { ErrorState, LoadingState } from '@/components/query-states'
 import { useT } from '@/lib/i18n'
 import {
@@ -194,34 +195,13 @@ function LibraryEditForm({
           the range validation belongs to the backend (422 inline), without depending on the
           native browser balloon blocking the submit before it gets there. */}
       <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-muted-foreground">
-            {t('library.form.path')}
-            <span aria-hidden className="ml-0.5 text-destructive">
-              *
-            </span>
-          </span>
-          <Input
-            ref={campoCaminho}
-            value={path}
-            onChange={(e) => setPath(e.target.value)}
-            aria-label={t('library.form.pathAriaLabel')}
-            required
-            aria-invalid={caminhoInvalido || undefined}
-            aria-describedby={
-              erroCaminho !== null ? 'library-path-error' : undefined
-            }
-          />
-        </label>
-        {erroCaminho !== null ? (
-          <p
-            id="library-path-error"
-            role="alert"
-            className="text-sm font-medium text-destructive"
-          >
-            {erroCaminho}
-          </p>
-        ) : null}
+        <LibraryPathField
+          valor={path}
+          onChange={setPath}
+          inputRef={campoCaminho}
+          invalido={caminhoInvalido}
+          erroCaminho={erroCaminho}
+        />
 
         <PathBrowser value={path} onChange={setPath} />
 
@@ -246,14 +226,12 @@ function LibraryEditForm({
           </p>
         ) : null}
 
-        <div>
-          <Button type="submit" disabled={salvar.isPending}>
-            <Save aria-hidden />
-            {salvar.isPending
-              ? t('common.action.saving')
-              : t('common.action.save')}
-          </Button>
-        </div>
+        <LibrarySubmitButton
+          Icone={Save}
+          pendente={salvar.isPending}
+          rotulo={t('common.action.save')}
+          rotuloPendente={t('common.action.saving')}
+        />
       </form>
 
       <DangerZone

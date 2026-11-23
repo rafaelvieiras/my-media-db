@@ -6,6 +6,11 @@ import type { Source } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 import { okJson } from '@/test/entity-fixtures'
 import { erroJson } from '@/test/detail-harness'
+import {
+  abrirGuardaDeSaida,
+  descartarESair,
+  enviarFormulario,
+} from '@/test/library-form-harness'
 
 // Route `/library/$id/edit`: it preloads the current path (via
 // `libraryQueryOptions`), saves via PATCH (the path re-basing) and concentrates the
@@ -90,24 +95,21 @@ function chamouPatch(fetchMock: ReturnType<typeof fetchRouter>): boolean {
   )
 }
 
-// Clicks "Save", waits for the success navigation and returns the body (already
-// parsed) of PATCH /library/s1 — the submit tests only vary in what they
-// filled in before and in what they check after this common point.
-async function clicarSalvarEPegarCorpo(
+// clicarSalvarEPegarCorpo saves and returns the body (already parsed) of PATCH
+// /library/s1 — the shared submit helper of the two form routes with the verb and the
+// route of this one.
+function clicarSalvarEPegarCorpo(
   user: ReturnType<typeof userEvent.setup>,
   fetchMock: ReturnType<typeof fetchRouter>,
 ) {
-  await user.click(screen.getByRole('button', { name: 'Save' }))
-
-  await waitFor(() =>
-    expect(spies.navigate).toHaveBeenCalledWith({ to: '/dashboard/library' }),
-  )
-  const chamada = fetchMock.mock.calls.find(
-    ([u, init]) =>
-      String(u) === '/api/v1/library/s1' &&
-      (init as RequestInit | undefined)?.method === 'PATCH',
-  )
-  return JSON.parse(String(chamada?.[1]?.body))
+  return enviarFormulario({
+    user,
+    fetchMock,
+    navigate: spies.navigate,
+    botao: 'Save',
+    rota: '/api/v1/library/s1',
+    metodo: 'PATCH',
+  })
 }
 
 // abrirZonaDePerigo mounts the screen, clicks "Remove datasource" and returns
@@ -301,20 +303,14 @@ describe('LibraryEditScreen', () => {
     vi.stubGlobal('fetch', fetchRouter({ fonte: source() }))
     renderWithClient(<LibraryEditScreen />)
 
-    const campo = await screen.findByLabelText('Datasource path')
-    await user.clear(campo)
-    await user.type(campo, '/mnt/novo')
-    await user.click(screen.getByRole('link', { name: /Back to libraries/ }))
-
-    expect(
-      await screen.findByRole('alertdialog', { name: 'Discard changes?' }),
-    ).toBeInTheDocument()
-    expect(spies.navigate).not.toHaveBeenCalled()
-
-    await user.click(screen.getByRole('button', { name: 'Discard and leave' }))
-    expect(spies.navigate).toHaveBeenCalledWith({
-      to: '/dashboard/library',
+    const dialogo = await abrirGuardaDeSaida({
+      user,
+      preencher: async (campo) => {
+        await user.clear(campo)
+        await user.type(campo, '/mnt/novo')
+      },
     })
+    await descartarESair({ user, navigate: spies.navigate, dialogo })
   })
 
   it('offers a retry when the datasource list fails to load', async () => {

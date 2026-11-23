@@ -1,10 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { LibraryNewScreen } from '@/routes/library-new'
 import { renderWithClient } from '@/test/render'
 import { okJson } from '@/test/entity-fixtures'
 import { erroJson } from '@/test/detail-harness'
+import {
+  abrirGuardaDeSaida,
+  descartarESair,
+  enviarFormulario,
+} from '@/test/library-form-harness'
 
 // Route `/dashboard/library/new`: path field + PathBrowser + type
 // Select + submit (`createLibrary`). Success navigates to `/dashboard/library`; an error
@@ -65,25 +70,21 @@ afterEach(() => {
   spies.navigate.mockReset()
 })
 
-// Clicks "Add datasource", waits for the success navigation and returns the
-// body (already parsed) of POST /library — the submit tests only vary in what they
-// filled in before and in what they check after this common point.
-async function clicarAdicionarEPegarCorpo(
+// clicarAdicionarEPegarCorpo creates and returns the body (already parsed) of POST
+// /library — the shared submit helper of the two form routes with the verb and the
+// route of this one.
+function clicarAdicionarEPegarCorpo(
   user: ReturnType<typeof userEvent.setup>,
   fetchMock: ReturnType<typeof fetchRouter>,
 ) {
-  await user.click(screen.getByRole('button', { name: /Add datasource/ }))
-
-  await waitFor(() =>
-    expect(spies.navigate).toHaveBeenCalledWith({ to: '/dashboard/library' }),
-  )
-  const chamada = fetchMock.mock.calls.find(
-    ([u, init]) =>
-      String(u) === '/api/v1/library' &&
-      (init as RequestInit | undefined)?.method === 'POST',
-  )
-  expect(chamada).toBeDefined()
-  return JSON.parse(String(chamada?.[1]?.body))
+  return enviarFormulario({
+    user,
+    fetchMock,
+    navigate: spies.navigate,
+    botao: /Add datasource/,
+    rota: '/api/v1/library',
+    metodo: 'POST',
+  })
 }
 
 describe('LibraryNewScreen', () => {
@@ -160,23 +161,14 @@ describe('LibraryNewScreen', () => {
     vi.stubGlobal('fetch', fetchRouter({}))
     renderWithClient(<LibraryNewScreen />)
 
-    await user.type(screen.getByLabelText('Datasource path'), '/mnt/filmes')
-    await user.click(screen.getByRole('link', { name: /Back to libraries/ }))
-
-    expect(
-      await screen.findByRole('alertdialog', { name: 'Discard changes?' }),
-    ).toBeInTheDocument()
-    expect(spies.navigate).not.toHaveBeenCalled()
+    const dialogo = await abrirGuardaDeSaida({ user })
 
     // The browser itself asks before a reload/close (the same guard).
     const despejo = new Event('beforeunload', { cancelable: true })
     window.dispatchEvent(despejo)
     expect(despejo.defaultPrevented).toBe(true)
 
-    await user.click(screen.getByRole('button', { name: 'Discard and leave' }))
-    expect(spies.navigate).toHaveBeenCalledWith({
-      to: '/dashboard/library',
-    })
+    await descartarESair({ user, navigate: spies.navigate, dialogo })
   })
 
   it('Esc closes the leave confirmation and gives the focus back to the link', async () => {
@@ -205,11 +197,11 @@ describe('LibraryNewScreen', () => {
     vi.stubGlobal('fetch', fetchRouter({}))
     renderWithClient(<LibraryNewScreen />)
 
-    await user.type(screen.getByLabelText('Datasource path'), '/mnt/filmes')
-    await user.click(screen.getByRole('link', { name: /Back to libraries/ }))
-    await screen.findByRole('alertdialog')
+    const dialogo = await abrirGuardaDeSaida({ user })
 
-    await user.click(screen.getByRole('button', { name: 'Keep editing' }))
+    await user.click(
+      within(dialogo).getByRole('button', { name: 'Keep editing' }),
+    )
 
     await waitFor(() =>
       expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument(),

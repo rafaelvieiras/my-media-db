@@ -2,12 +2,12 @@ import { useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { FolderPlus } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { PathBrowser } from '@/components/path-browser'
 import { LibraryFormHeader } from '@/components/library-form-header'
 import { LibraryLanguageAndRetryFields } from '@/components/library-language-retry-fields'
+import { LibraryPathField } from '@/components/library-path-field'
+import { LibrarySubmitButton } from '@/components/library-submit-button'
 import { useT } from '@/lib/i18n'
 import { ApiError, createLibrary, type CreateSource } from '@/lib/api'
 import {
@@ -102,35 +102,14 @@ export function LibraryNewScreen() {
           the range validation belongs to the backend (422 inline), without depending on the
           native browser balloon blocking the submit before it gets there. */}
       <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-muted-foreground">
-            {t('library.form.path')}
-            <span aria-hidden className="ml-0.5 text-destructive">
-              *
-            </span>
-          </span>
-          <Input
-            ref={campoCaminho}
-            value={path}
-            onChange={(e) => setPath(e.target.value)}
-            placeholder={t('library.form.pathPlaceholder')}
-            aria-label={t('library.form.pathAriaLabel')}
-            required
-            aria-invalid={caminhoInvalido || undefined}
-            aria-describedby={
-              erroCaminho !== null ? 'library-path-error' : undefined
-            }
-          />
-        </label>
-        {erroCaminho !== null ? (
-          <p
-            id="library-path-error"
-            role="alert"
-            className="text-sm font-medium text-destructive"
-          >
-            {erroCaminho}
-          </p>
-        ) : null}
+        <LibraryPathField
+          valor={path}
+          onChange={setPath}
+          inputRef={campoCaminho}
+          placeholder={t('library.form.pathPlaceholder')}
+          invalido={caminhoInvalido}
+          erroCaminho={erroCaminho}
+        />
 
         <PathBrowser value={path} onChange={setPath} />
 
@@ -163,14 +142,12 @@ export function LibraryNewScreen() {
           </p>
         ) : null}
 
-        <div>
-          <Button type="submit" disabled={mutation.isPending}>
-            <FolderPlus aria-hidden />
-            {mutation.isPending
-              ? t('library.create.submitting')
-              : t('library.create.submit')}
-          </Button>
-        </div>
+        <LibrarySubmitButton
+          Icone={FolderPlus}
+          pendente={mutation.isPending}
+          rotulo={t('library.create.submit')}
+          rotuloPendente={t('library.create.submitting')}
+        />
       </form>
     </main>
   )
