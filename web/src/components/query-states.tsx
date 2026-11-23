@@ -37,14 +37,29 @@ export function LoadingState({ label }: { label?: string }) {
   )
 }
 
+// erroTecnico are the messages the browser/fetch layer produces. They are not copy: they
+// arrive in English ("Failed to fetch") in the middle of a translated screen, and they say
+// nothing the user can act on. The retry button is the action; the raw text is dropped.
+const ERRO_TECNICO =
+  /failed to fetch|networkerror|network error|load failed|fetch failed/i
+
+function mensagemUtil(message: string | undefined): string | undefined {
+  if (!message) return undefined
+  return ERRO_TECNICO.test(message) ? undefined : message
+}
+
 export function ErrorState({
   title,
   message,
+  onRetry,
 }: {
   title?: string
   message?: string
+  /** Retry of the failed query (TanStack `refetch`). Without it the screen is a dead end. */
+  onRetry?: () => void
 }) {
   const t = useT()
+  const util = mensagemUtil(message)
   return (
     <div
       role="alert"
@@ -54,8 +69,13 @@ export function ErrorState({
       <p className="font-medium text-destructive">
         {title ?? t('common.state.error')}
       </p>
-      {message ? (
-        <p className="max-w-md text-sm text-muted-foreground">{message}</p>
+      {util ? (
+        <p className="max-w-md text-sm text-muted-foreground">{util}</p>
+      ) : null}
+      {onRetry ? (
+        <Button variant="outline" onClick={onRetry} className="mt-2">
+          {t('common.action.retry')}
+        </Button>
       ) : null}
     </div>
   )
@@ -171,6 +191,7 @@ export function ListaScreen<T>({
   textos,
   renderItem,
   listaClassName,
+  onRetry,
 }: {
   title: string
   subtitle: string
@@ -186,6 +207,7 @@ export function ListaScreen<T>({
   }
   renderItem: (item: T) => React.ReactNode
   listaClassName?: string
+  onRetry?: () => void
 }) {
   return (
     <main className="mx-auto max-w-4xl px-4 py-6">
@@ -197,6 +219,7 @@ export function ListaScreen<T>({
         <ErrorState
           title={textos.loadError}
           message={error instanceof Error ? error.message : undefined}
+          onRetry={onRetry}
         />
       ) : itens.length === 0 ? (
         <EmptyState

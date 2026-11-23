@@ -78,7 +78,7 @@ function StatusBadge({
     )
   }
   return (
-    <Badge className="border-transparent bg-emerald-600 text-white">
+    <Badge className="border-transparent bg-emerald-700 text-white">
       {t('jobs.health.status.online')}
     </Badge>
   )

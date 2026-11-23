@@ -25,6 +25,7 @@ export const nav = defineDomain({
       webhook: 'Webhook',
       eventsWithoutItem: 'Events without item',
       health: 'Health',
+      backToCatalog: 'Back to the catalog',
     },
     breadcrumb: {
       label: 'Series trail',
@@ -58,6 +59,7 @@ export const nav = defineDomain({
       webhook: 'Webhook',
       eventsWithoutItem: 'Eventos sem item',
       health: 'Saúde',
+      backToCatalog: 'Voltar ao catálogo',
     },
     breadcrumb: {
       label: 'Trilha da série',
@@ -91,6 +93,7 @@ export const nav = defineDomain({
       webhook: 'Webhook',
       eventsWithoutItem: 'Eventos sin elemento',
       health: 'Salud',
+      backToCatalog: 'Volver al catálogo',
     },
     breadcrumb: {
       label: 'Ruta de la serie',

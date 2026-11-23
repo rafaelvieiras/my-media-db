@@ -167,7 +167,7 @@ function PosseBadge({ owned }: { owned: boolean }) {
     return null
   }
   return (
-    <Badge className={cn('border-transparent bg-emerald-600 text-white')}>
+    <Badge className={cn('border-transparent bg-emerald-700 text-white')}>
       {t('media.poster.inLibrary')}
     </Badge>
   )

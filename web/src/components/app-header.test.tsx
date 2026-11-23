@@ -11,7 +11,14 @@ import { renderWithClient } from '@/test/render'
 // "Biblioteca" dropdown tests below.
 vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/link-mock')).LinkMock,
+  // AppHeader hides its own menu inside /dashboard (the DashboardShell owns the mobile
+  // navigation there), so the mock has to answer with a path.
+  useLocation: () => ({ pathname: estadoRota.pathname }),
 }))
+
+// AppHeader reads the current path to decide whether the DashboardShell owns the mobile
+// navigation (it does inside /dashboard). Tests flip this instead of re-mocking.
+const estadoRota = { pathname: '/' }
 
 // LanguageSelector does its own fetch/context (covered in
 // language-selector.test.tsx) — irrelevant for the nav collapse.
@@ -176,6 +183,19 @@ describe('AppHeader — dropdown "Biblioteca" (0110/0114)', () => {
     )
     await screen.findByRole('menuitem', { name: 'Movies' })
     expect(screen.queryByRole('menuitem', { name: 'Albums' })).toBeNull()
+  })
+
+  it('mobile: dentro do /dashboard o menu do header sai de cena (o shell do admin navega)', () => {
+    stubEntityTypes([])
+    estadoRota.pathname = '/dashboard/queue'
+    renderWithClient(<AppHeader />)
+
+    const gatilho = screen.getByRole('button', {
+      name: 'Open navigation menu',
+    })
+    expect(gatilho.className).toContain('hidden')
+
+    estadoRota.pathname = '/'
   })
 
   it('mobile: o dropdown funciona por toque dentro do Sheet', async () => {

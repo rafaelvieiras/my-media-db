@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router'
+import { Link, useLocation } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import {
   ChevronDown,
@@ -31,9 +31,13 @@ import { tipoParaSlug } from '@/lib/library-slugs'
 
 // Header with navigation between the Phase 2 screens. `activeProps` highlights the current
 // route (type-safe through the code-based router).
+// The colour lives in TWO disjoint classes on purpose: the base must not carry
+// `text-muted-foreground`, otherwise the active pill (bg + colour) loses the colour cascade and
+// the current page looks exactly like the others (measured: pill 1.09:1, text 4.35:1, same as
+// inactive). The active state now uses the same `secondary` pair as the admin sidebar.
 const linkBase =
-  'rounded-lg px-2.5 py-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground'
-const linkAtivo = 'bg-muted text-foreground'
+  'rounded-lg px-2.5 py-1 text-sm font-medium transition-colors text-muted-foreground hover:text-foreground'
+const linkAtivo = 'bg-secondary font-semibold text-secondary-foreground'
 
 // NavLink factors out the repeated pattern of the navigation links (conditional className
 // on the icon + activeProps) — each entry below used to be an almost identical <Link>,
@@ -99,7 +103,7 @@ function BibliotecaNavItem({ onNavigate }: { onNavigate?: () => void }) {
           <Button
             variant="ghost"
             size="icon"
-            className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
+            className="size-11 shrink-0 text-muted-foreground hover:text-foreground sm:size-6"
             aria-label={t('nav.header.filterByType')}
           >
             <ChevronDown className="size-3.5" aria-hidden />
@@ -147,6 +151,12 @@ export function AppHeader() {
   // controls the Sheet so it closes on navigation (otherwise the panel would stay open
   // over the next page, since the `AppHeader` is fixed in the root layout).
   const [menuAberto, setMenuAberto] = useState(false)
+  const { pathname } = useLocation()
+  const noAdmin = pathname.startsWith('/dashboard')
+  // The sheet element itself, so the language menu can portal INSIDE it (see
+  // LanguageSelector's `container`). A callback ref keeps it in state, so the menu re-renders
+  // with the real element once it mounts.
+  const [sheetEl, setSheetEl] = useState<HTMLDivElement | null>(null)
   const fecharMenu = () => setMenuAberto(false)
 
   return (
@@ -166,17 +176,24 @@ export function AppHeader() {
           </div>
         </div>
         <Sheet open={menuAberto} onOpenChange={setMenuAberto}>
+          {/* Inside the admin area the DashboardShell owns the mobile navigation (its own
+              button + its own sheet, with a way back to the catalog). Two hamburgers stacked
+              110 px apart, each opening a different menu, was the measured result. */}
           <SheetTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
-              className="ml-auto md:hidden"
+              className={`ml-auto md:hidden ${noAdmin ? 'hidden' : ''}`}
               aria-label={t('nav.header.openMenu')}
             >
               <Menu className="size-5" aria-hidden />
             </Button>
           </SheetTrigger>
-          <SheetContent side="right" className="w-full max-w-xs gap-4 p-4">
+          <SheetContent
+            ref={setSheetEl}
+            side="right"
+            className="w-full max-w-xs gap-4 p-4"
+          >
             <SheetHeader className="p-0">
               <SheetTitle>{t('nav.header.menuTitle')}</SheetTitle>
             </SheetHeader>
@@ -184,7 +201,7 @@ export function AppHeader() {
               <LinksNavegacao onNavigate={fecharMenu} />
             </div>
             <div className="mt-auto border-t border-border pt-3">
-              <LanguageSelector />
+              <LanguageSelector container={sheetEl} />
             </div>
           </SheetContent>
         </Sheet>

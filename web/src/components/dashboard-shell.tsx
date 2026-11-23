@@ -113,9 +113,11 @@ export function DashboardShell() {
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 md:flex-row">
       <div className="flex items-center justify-between md:hidden">
-        <h1 className="font-heading text-lg font-semibold">
+        {/* A label for the menu, not the page title: the section below owns the h1.
+            As an h1 it produced two level-1 headings per screen, the smaller one first. */}
+        <p className="font-heading text-lg font-semibold">
           {t('nav.dashboard.title')}
-        </h1>
+        </p>
         <Sheet open={menuAberto} onOpenChange={setMenuAberto}>
           <SheetTrigger asChild>
             <Button
@@ -133,6 +135,17 @@ export function DashboardShell() {
             </SheetHeader>
             <div className="flex flex-col items-start gap-1">
               <LinksSidebar onNavigate={fecharMenu} />
+              {/* The way back. On mobile the AppHeader hides its own menu inside /dashboard,
+                  so this sheet is the only navigation here — without this link the catalog
+                  would be unreachable from the admin area on a phone. */}
+              <Link
+                to="/"
+                onClick={fecharMenu}
+                className="mt-2 flex items-center gap-2 rounded-md border-t border-border px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+              >
+                <Library className="size-4" aria-hidden />
+                {t('nav.dashboard.backToCatalog')}
+              </Link>
             </div>
           </SheetContent>
         </Sheet>
