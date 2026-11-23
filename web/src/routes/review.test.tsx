@@ -2,6 +2,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ReviewScreen } from '@/routes/review'
+import {
+  filterReviewItems,
+  groupContext,
+  groupReviewItems,
+  reviewReason,
+  sortReviewGroups,
+} from '@/lib/review-filters'
 import type {
   EntityCard,
   ExternalResult,
@@ -353,7 +360,7 @@ describe('ReviewScreen — review queue (0018)', () => {
     )
   })
 
-  it('"Keep as is" (no candidate in the preview) calls confirmMatch and invalidates review/entities/entity (§5: the old "Confirm" behavior)', async () => {
+  it('"Keep as is" (no candidate in the preview) asks for confirmation, then calls confirmMatch, invalidates and announces the decision (§5: the old "Confirm" behavior)', async () => {
     const { user, espioes, invalidateSpy } = await renderBaixa({
       fila: [baixaCard],
       preview: previewVazia,
@@ -371,10 +378,51 @@ describe('ReviewScreen — review queue (0018)', () => {
       }),
     )
 
+    // "Keep as is" writes the identity: the dialog states it and the verb is on the action.
+    expect(screen.getByText('Keep as is?')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'This writes the current identity as final and re-enriches the item. There is no undo.',
+      ),
+    ).toBeInTheDocument()
+    expect(espioes.onConfirm).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Keep as is' }))
+
     await waitFor(() =>
       expect(espioes.onConfirm).toHaveBeenCalledWith('e-baixa'),
     )
     await esperarChaves(invalidateSpy, CHAVES_REVISAO)
+    // The row disappears with the invalidation, so the confirmation lives above it.
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          '"Palpite Fraco" kept as is — the identity was written.',
+        ),
+      ).toBeInTheDocument(),
+    )
+  })
+
+  it('cancelling "Keep as is" does not write anything', async () => {
+    const { user, espioes } = await renderBaixa({
+      fila: [baixaCard],
+      preview: previewVazia,
+    })
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          'no candidate found — neither in the local catalog nor in the external source',
+        ),
+      ).toBeInTheDocument(),
+    )
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Keep as is (no external metadata)',
+      }),
+    )
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(espioes.onConfirm).not.toHaveBeenCalled()
   })
 
   it('Correct searches and calls correctMatch with the chosen source_id (§5: correcting writes external_ids + re-enriches)', async () => {
@@ -470,7 +518,7 @@ describe('ReviewScreen — candidate preview (0060)', () => {
     await waitFor(() => expect(screen.getByText('Duna')).toBeInTheDocument())
     expect(screen.getByAltText('Poster for Duna')).toBeInTheDocument()
     expect(screen.getByText('2021')).toBeInTheDocument()
-    expect(screen.getByText('score 87.3')).toBeInTheDocument()
+    expect(screen.getByText('confidence 87.3%')).toBeInTheDocument()
     expect(screen.getByText('local catalog')).toBeInTheDocument()
     expect(screen.getByText('check before confirming')).toBeInTheDocument()
     expect(
@@ -568,13 +616,13 @@ describe('ReviewScreen — candidate preview (0060)', () => {
       screen.queryByRole('button', { name: /^Auto-sync$/ }),
     ).not.toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: /Auto-sync eligible/ }),
+      screen.getByRole('button', { name: /Sync eligible candidates/ }),
     ).toBeInTheDocument()
   })
 })
 
 describe('ReviewScreen — batch auto-match (0050)', () => {
-  it('"Auto-sync eligible" (batch) shows the aggregated summary and invalidates the queue', async () => {
+  it('"Sync eligible candidates" (batch) asks first — with how many items it touches — then shows the aggregated summary and invalidates the queue', async () => {
     const user = userEvent.setup()
     const { espioes, invalidateSpy } = renderReview({
       fila: [baixaCard],
@@ -591,7 +639,23 @@ describe('ReviewScreen — batch auto-match (0050)', () => {
       expect(screen.getByText('Série de Teste')).toBeInTheDocument(),
     )
 
-    await user.click(screen.getByRole('button', { name: /Auto-sync eligible/ }))
+    await user.click(
+      screen.getByRole('button', { name: /Sync eligible candidates/ }),
+    )
+
+    // One click used to rewrite the identity of the whole queue: now it says how many
+    // items are evaluated before doing it.
+    expect(
+      screen.getByText('Sync the eligible candidates?'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'This evaluates 1 item of the queue and re-enriches the ones that match.',
+      ),
+    ).toBeInTheDocument()
+    expect(espioes.onAutoMatchLote).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Sync candidates' }))
 
     await waitFor(() => expect(espioes.onAutoMatchLote).toHaveBeenCalled())
     await waitFor(() =>
@@ -606,7 +670,7 @@ describe('ReviewScreen — batch auto-match (0050)', () => {
 })
 
 describe('ReviewScreen — group auto-match (0137)', () => {
-  it('"Auto-sync this group" sends the ids of the group and shows the summary', async () => {
+  it('"Auto-sync this group" confirms with the size of the group, then sends the ids and shows the summary', async () => {
     const user = userEvent.setup()
     const { espioes } = renderReview({
       fila: [baixaCard, { ...baixaCard, id: 'e-baixa-2', title: 'Outro' }],
@@ -622,6 +686,13 @@ describe('ReviewScreen — group auto-match (0137)', () => {
     await user.click(
       screen.getByRole('button', { name: /Auto-sync this group/ }),
     )
+    expect(
+      screen.getByText(
+        'This evaluates 2 items of this group and re-enriches the ones that match.',
+      ),
+    ).toBeInTheDocument()
+    expect(espioes.onAutoMatchLote).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Sync candidates' }))
 
     await waitFor(() =>
       expect(espioes.onAutoMatchLote).toHaveBeenCalledWith({
@@ -633,5 +704,271 @@ describe('ReviewScreen — group auto-match (0137)', () => {
         screen.getByText('1 resolved · 1 still pending'),
       ).toBeInTheDocument(),
     )
+  })
+})
+
+describe('ReviewScreen — search, filters and order (Lote B)', () => {
+  // Two groups built only to exercise the header of the queue: one album with three
+  // items and one folder with a single item.
+  const albumGrande: EntityCard = {
+    ...baixaCard,
+    id: 'e-album-1',
+    type: 'faixa',
+    title: 'Primeira Faixa',
+    review_group: {
+      kind: 'album',
+      key: 'album:/Musicas/Duran Duran/Notorious',
+      label: 'Duran Duran — Notorious',
+      size: 3,
+    },
+  }
+  const albumGrande2: EntityCard = {
+    ...albumGrande,
+    id: 'e-album-2',
+    title: 'Segunda Faixa',
+  }
+  const albumGrande3: EntityCard = {
+    ...albumGrande,
+    id: 'e-album-3',
+    title: 'Terceira Faixa',
+  }
+
+  it('orders the sections by group size — the biggest group is the first one', async () => {
+    renderReview({ fila: [draftCard, albumGrande, albumGrande2, albumGrande3] })
+
+    const cabecalhos = await screen.findAllByTestId('review-grupo')
+    expect(cabecalhos).toHaveLength(2)
+    expect(cabecalhos[0]).toHaveTextContent('Duran Duran — Notorious')
+    expect(cabecalhos[0]).toHaveTextContent('3 items')
+    expect(cabecalhos[1]).toHaveTextContent('Pasta Fita Sem Nome')
+  })
+
+  it('searches by title with debounce, ignoring case and accents', async () => {
+    const user = userEvent.setup()
+    renderReview({ fila: [draftCard, baixaCard] })
+    await screen.findByText('Série de Teste')
+
+    // The group label ("Série de Teste") does not carry the title: the match is the row.
+    await user.type(
+      screen.getByLabelText('Search the queue by title'),
+      'PALPITE',
+    )
+
+    await waitFor(() =>
+      expect(screen.queryByText('Pasta Fita Sem Nome')).not.toBeInTheDocument(),
+    )
+    expect(screen.getByText('Série de Teste')).toBeInTheDocument()
+
+    // "serie" also finds "Série" — the search normalizes the accents.
+    await user.clear(screen.getByLabelText('Search the queue by title'))
+    await user.type(screen.getByLabelText('Search the queue by title'), 'serie')
+    await waitFor(() =>
+      expect(screen.queryByText('Pasta Fita Sem Nome')).not.toBeInTheDocument(),
+    )
+    expect(screen.getByText('Série de Teste')).toBeInTheDocument()
+  })
+
+  it('filters by group kind', async () => {
+    const user = userEvent.setup()
+    renderReview({ fila: [draftCard, baixaCard] })
+    await screen.findByText('Série de Teste')
+
+    await user.selectOptions(
+      screen.getByLabelText('Filter by group type'),
+      'pasta',
+    )
+
+    expect(screen.getByText('Pasta Fita Sem Nome')).toBeInTheDocument()
+    expect(screen.queryByText('Série de Teste')).not.toBeInTheDocument()
+  })
+
+  it('filters by review reason', async () => {
+    const user = userEvent.setup()
+    renderReview({ fila: [draftCard, baixaCard] })
+    await screen.findByText('Série de Teste')
+
+    await user.selectOptions(
+      screen.getByLabelText('Filter by reason'),
+      'low_confidence',
+    )
+
+    expect(screen.getByText('Série de Teste')).toBeInTheDocument()
+    expect(screen.queryByText('Pasta Fita Sem Nome')).not.toBeInTheDocument()
+  })
+
+  it('shows how many items the filters kept, with a way to clear them', async () => {
+    const user = userEvent.setup()
+    renderReview({ fila: [draftCard, baixaCard] })
+    await screen.findByText('Série de Teste')
+
+    await user.selectOptions(
+      screen.getByLabelText('Filter by group type'),
+      'serie',
+    )
+
+    expect(screen.getByText(/1 of 2 items/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }))
+
+    expect(screen.queryByText(/1 of 2 items/)).not.toBeInTheDocument()
+    expect(screen.getByText('Pasta Fita Sem Nome')).toBeInTheDocument()
+    expect(screen.getByText('Série de Teste')).toBeInTheDocument()
+  })
+
+  it('nothing matching the filters gives an empty state with "Clear filters"', async () => {
+    const user = userEvent.setup()
+    renderReview({ fila: [draftCard, baixaCard] })
+    await screen.findByText('Série de Teste')
+
+    await user.type(
+      screen.getByLabelText('Search the queue by title'),
+      'nao existe',
+    )
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('No item matches the filters'),
+      ).toBeInTheDocument(),
+    )
+    expect(
+      screen.getByRole('button', { name: 'Clear filters' }),
+    ).toBeInTheDocument()
+  })
+
+  it('shows the folder under the label, so equal labels are told apart', async () => {
+    renderReview({ fila: [draftCard, baixaCard] })
+    await screen.findByText('Série de Teste')
+
+    // The card is the only index of the screen: the label repeats across the queue, the
+    // path behind it does not.
+    expect(screen.getByText('Filmes/Fita Sem Nome')).toBeInTheDocument()
+    expect(screen.getByText('Series/Palpite')).toBeInTheDocument()
+  })
+})
+
+describe('ReviewScreen — pagination inside the open group (Lote B)', () => {
+  function filaDe(n: number): EntityCard[] {
+    return Array.from({ length: n }, (_, i) => ({
+      ...baixaCard,
+      id: `e-item-${i}`,
+      title: `Item ${i}`,
+      review_group: {
+        kind: 'serie',
+        key: 'serie:/Series/Palpite',
+        label: 'Série de Teste',
+        size: n,
+      },
+    }))
+  }
+
+  it('renders 50 rows, shows the total and loads the next 50 on "Show more"', async () => {
+    const user = userEvent.setup()
+    renderReview({ fila: filaDe(55) })
+    await abrirGrupo(user, 'Série de Teste', 'Item 0')
+
+    expect(screen.getAllByText(/^Item \d+$/)).toHaveLength(50)
+    expect(screen.getByText('Showing 50 of 55')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Show more (5)' }))
+
+    expect(screen.getAllByText(/^Item \d+$/)).toHaveLength(55)
+    expect(
+      screen.queryByRole('button', { name: /Show more/ }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('a group smaller than one page shows no "Show more"', async () => {
+    const user = userEvent.setup()
+    renderReview({ fila: filaDe(3) })
+    await abrirGrupo(user, 'Série de Teste', 'Item 0')
+
+    expect(screen.getAllByText(/^Item \d+$/)).toHaveLength(3)
+    expect(screen.getByText('Showing 3 of 3')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /Show more/ }),
+    ).not.toBeInTheDocument()
+  })
+})
+
+describe('review-filters (pure helpers)', () => {
+  const album: EntityCard = {
+    ...baixaCard,
+    id: 'e-album',
+    type: 'faixa',
+    title: 'Faixa Um',
+    review_group: {
+      kind: 'album',
+      key: 'album:/Musicas/Artista/Disco',
+      label: 'Artista — Disco',
+      size: 2,
+    },
+  }
+  const album2: EntityCard = { ...album, id: 'e-album-2', title: 'Faixa Dois' }
+
+  it('classifies the reason from the card status', () => {
+    expect(reviewReason(draftCard)).toBe('not_identified')
+    expect(reviewReason(baixaCard)).toBe('low_confidence')
+    expect(reviewReason(album)).toBe('low_confidence')
+  })
+
+  it('sorts the biggest group first and breaks ties by label', () => {
+    const grupos = groupReviewItems(
+      [draftCard, album, album2, baixaCard],
+      'No file',
+    )
+    const ordenados = sortReviewGroups(grupos, 'en')
+
+    expect(ordenados.map((g) => g.label)).toEqual([
+      'Artista — Disco',
+      'Pasta Fita Sem Nome',
+      'Série de Teste',
+    ])
+  })
+
+  it('filters by title, kind and reason on the client', () => {
+    const cards = [draftCard, baixaCard, album]
+    const semFiltro = filterReviewItems(
+      cards,
+      { query: '', kind: 'all', reason: 'all' },
+      'No file',
+    )
+    expect(semFiltro).toHaveLength(3)
+
+    expect(
+      filterReviewItems(
+        cards,
+        { query: 'faixa', kind: 'all', reason: 'all' },
+        'No file',
+      ),
+    ).toEqual([album])
+    expect(
+      filterReviewItems(
+        cards,
+        { query: '', kind: 'serie', reason: 'all' },
+        'No file',
+      ),
+    ).toEqual([baixaCard])
+    expect(
+      filterReviewItems(
+        cards,
+        { query: '', kind: 'all', reason: 'not_identified' },
+        'No file',
+      ),
+    ).toEqual([draftCard])
+    // The group label/path also answers the search: the series name brings its items.
+    expect(
+      filterReviewItems(
+        cards,
+        { query: 'DISC', kind: 'all', reason: 'all' },
+        'No file',
+      ),
+    ).toEqual([album])
+  })
+
+  it('hides the path when it does not add context to the label', () => {
+    expect(groupContext('Musicas/Artista/Disco', 'Artista — Disco')).toBe(
+      'Musicas/Artista/Disco',
+    )
+    expect(groupContext('Sem arquivo', 'Sem arquivo')).toBe('')
+    expect(groupContext('', 'Sem arquivo')).toBe('')
   })
 })
