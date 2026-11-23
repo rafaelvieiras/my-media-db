@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
-import { ScreenHeader } from '@/components/screen-header'
+import { DataScreen } from '@/components/data-screen'
 import { QueueItemCard } from '@/components/queue-item-card'
-import { EmptyState, LoadingState, ErrorState } from '@/components/query-states'
+import type { QueueView } from '@/lib/api'
 import { queueQueryOptions } from '@/lib/queries'
 import { useT } from '@/lib/i18n'
 
@@ -15,71 +15,83 @@ import { useT } from '@/lib/i18n'
 // screen triggers (plus the scans, which have no screen of their own).
 export function QueueScreen() {
   const t = useT()
-  const { data, isPending, isError, error } = useQuery(queueQueryOptions)
+  const query = useQuery(queueQueryOptions)
+  const data = query.data
 
+  // The screen polls every 4s while something runs; without the shell's line the
+  // counters moved on their own and nothing said the page was alive.
   const vazia =
     !data ||
     (!data.running && data.queued.length === 0 && data.recent.length === 0)
 
   return (
-    <main className="mx-auto max-w-4xl px-4 py-6">
-      <ScreenHeader
-        title={t('queue.screen.title')}
-        subtitle={t('queue.screen.subtitle')}
-      />
+    <DataScreen
+      title={t('queue.screen.title')}
+      subtitle={t('queue.screen.subtitle')}
+      updatedAt={query.dataUpdatedAt}
+      query={query}
+      empty={vazia}
+      copy={{
+        loading: t('queue.screen.loading'),
+        loadError: t('queue.screen.loadError'),
+        emptyTitle: t('queue.screen.emptyTitle'),
+        emptyDescription: t('queue.screen.emptyDescription'),
+      }}
+    >
+      {data ? <QueueSections data={data} /> : null}
+    </DataScreen>
+  )
+}
 
-      {isPending ? (
-        <LoadingState label={t('queue.screen.loading')} />
-      ) : isError ? (
-        <ErrorState
-          title={t('queue.screen.loadError')}
-          message={error instanceof Error ? error.message : undefined}
-        />
-      ) : vazia ? (
-        <EmptyState
-          title={t('queue.screen.emptyTitle')}
-          description={t('queue.screen.emptyDescription')}
-        />
-      ) : (
-        <div className="flex flex-col gap-6">
-          {data.running ? (
-            <section className="flex flex-col gap-2">
-              <h2 className="font-heading text-lg font-medium">
-                {t('queue.sections.running')}
-              </h2>
-              <ul className="flex flex-col gap-3">
-                <QueueItemCard item={data.running} />
-              </ul>
-            </section>
-          ) : null}
+// QueueSections is the content of the screen once the query answered: the running
+// run, the FIFO and the recent ones. It is a separate component so the empty
+// branch of the shell stays simple and `data` is narrowed once.
+function QueueSections({ data }: { data: QueueView }) {
+  const t = useT()
 
-          {data.queued.length > 0 ? (
-            <section className="flex flex-col gap-2">
-              <h2 className="font-heading text-lg font-medium">
-                {t('queue.sections.queued')}
-              </h2>
-              <ul className="flex flex-col gap-3">
-                {data.queued.map((item) => (
-                  <QueueItemCard key={item.id} item={item} />
-                ))}
-              </ul>
-            </section>
-          ) : null}
+  return (
+    <div className="flex flex-col gap-6">
+      {data.running ? (
+        <section className="flex flex-col gap-2">
+          <h2 className="font-heading text-lg font-medium">
+            {t('queue.sections.running')}
+          </h2>
+          <ul className="flex flex-col gap-3">
+            <QueueItemCard item={data.running} />
+          </ul>
+        </section>
+      ) : null}
 
-          {data.recent.length > 0 ? (
-            <section className="flex flex-col gap-2">
-              <h2 className="font-heading text-lg font-medium">
-                {t('queue.sections.recent')}
-              </h2>
-              <ul className="flex flex-col gap-3">
-                {data.recent.map((item) => (
-                  <QueueItemCard key={item.id} item={item} />
-                ))}
-              </ul>
-            </section>
-          ) : null}
-        </div>
-      )}
-    </main>
+      {data.queued.length > 0 ? (
+        <section className="flex flex-col gap-2">
+          <h2 className="font-heading text-lg font-medium">
+            {t('queue.sections.queued')}
+          </h2>
+          <ul className="flex flex-col gap-3">
+            {data.queued.map((item) => (
+              <QueueItemCard key={item.id} item={item} />
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {data.recent.length > 0 ? (
+        <section className="flex flex-col gap-2">
+          <h2 className="font-heading text-lg font-medium">
+            {t('queue.sections.recent')}{' '}
+            <span className="text-sm font-normal text-muted-foreground">
+              {t('queue.sections.recentCount', {
+                count: data.recent.length,
+              })}
+            </span>
+          </h2>
+          <ul className="flex flex-col gap-3">
+            {data.recent.map((item) => (
+              <QueueItemCard key={item.id} item={item} />
+            ))}
+          </ul>
+        </section>
+      ) : null}
+    </div>
   )
 }

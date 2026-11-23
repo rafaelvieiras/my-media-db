@@ -24,10 +24,17 @@ import {
 // linking action here (out of scope, see §3).
 const LIMITE_PAGINA = 20
 
+// numero writes a count in the interface locale ("1,361" in English, "1.361" in
+// pt-BR): the range line mixed raw digits with the localized dates around it.
+function numero(valor: number, locale: string): string {
+  return new Intl.NumberFormat(locale).format(valor)
+}
+
 export function HistoricoOrfaosScreen() {
   const t = useT()
+  const locale = useLocale()
   const [offset, setOffset] = useState(0)
-  const { data, isPending, isError, error } = useQuery(
+  const { data, isPending, isError, error, refetch } = useQuery(
     historicoOrfaosQueryOptions({ limit: LIMITE_PAGINA, offset }),
   )
 
@@ -37,7 +44,7 @@ export function HistoricoOrfaosScreen() {
   const temProxima = offset + LIMITE_PAGINA < total
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-6">
+    <main className="mx-auto max-w-4xl px-4 py-6">
       <ScreenHeader
         title={t('review.orphanEvents.title')}
         subtitle={t('review.orphanEvents.subtitle')}
@@ -49,6 +56,7 @@ export function HistoricoOrfaosScreen() {
         <ErrorState
           title={t('review.orphanEvents.loadError')}
           message={error instanceof Error ? error.message : undefined}
+          onRetry={() => void refetch()}
         />
       ) : itens.length === 0 ? (
         <EmptyState
@@ -75,9 +83,9 @@ export function HistoricoOrfaosScreen() {
             </Button>
             <span className="text-xs text-muted-foreground">
               {t('review.orphanEvents.range', {
-                from: offset + 1,
-                to: offset + itens.length,
-                total,
+                from: numero(offset + 1, locale),
+                to: numero(offset + itens.length, locale),
+                total: numero(total, locale),
               })}
             </span>
             <Button

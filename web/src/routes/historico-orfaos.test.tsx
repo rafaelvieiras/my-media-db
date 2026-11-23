@@ -156,3 +156,31 @@ it('renders the "Events without a related item" heading', async () => {
     }),
   ).toBeInTheDocument()
 })
+
+it('a failed load offers a retry', async () => {
+  const user = userEvent.setup()
+  let chamadas = 0
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) => {
+      if (!String(url).includes('/api/v1/historico/orfaos')) {
+        throw new Error('rota nao mockada')
+      }
+      chamadas += 1
+      if (chamadas === 1) {
+        return erroJson(503, 'indisponivel', 'sem resposta')
+      }
+      return okJson({
+        items: [eventoOrfao()],
+        total: 1,
+        limit: 20,
+        offset: 0,
+      })
+    }),
+  )
+  renderWithClient(<HistoricoOrfaosScreen />)
+
+  await user.click(await screen.findByRole('button', { name: 'Try again' }))
+
+  expect(await screen.findByText('Duna')).toBeInTheDocument()
+})

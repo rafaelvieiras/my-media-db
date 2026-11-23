@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { HealthScreen } from '@/routes/health'
 import { renderWithClient } from '@/test/render'
 
@@ -103,7 +104,7 @@ describe('HealthScreen', () => {
     expect(screen.getByText('connecting')).toBeInTheDocument()
   })
 
-  it('shows "API online" with the version on success', async () => {
+  it('shows the running version on success', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -116,7 +117,7 @@ describe('HealthScreen', () => {
     renderWithClient(<HealthScreen />)
 
     await waitFor(() =>
-      expect(screen.getByText(/API online — v9\.9\.9/)).toBeInTheDocument(),
+      expect(screen.getByText('Running version 9.9.9')).toBeInTheDocument(),
     )
     expect(screen.getByText('online')).toBeInTheDocument()
   })
@@ -159,7 +160,7 @@ describe('HealthScreen', () => {
 
       // The basic status card keeps working (independent query).
       await waitFor(() =>
-        expect(screen.getByText(/API online — v9\.9\.9/)).toBeInTheDocument(),
+        expect(screen.getByText('Running version 9.9.9')).toBeInTheDocument(),
       )
       await waitFor(() =>
         expect(
@@ -203,5 +204,100 @@ describe('HealthScreen', () => {
       expect(screen.getByText('Unidentified')).toBeInTheDocument()
       expect(screen.getByText('5.00 GB')).toBeInTheDocument() // unmanaged_bytes
     })
+  })
+})
+
+// The screen used to start straight at a card (no h1 of its own) and to tell the
+// owner to "reload the page" to refresh a 60s-cached snapshot.
+describe('HealthScreen — header, freshness and refresh', () => {
+  it('owns the screen title', async () => {
+    mockFetch()
+    renderWithClient(<HealthScreen />)
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Health' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/Status of the API and the local snapshot/),
+    ).toBeInTheDocument()
+  })
+
+  it('shows when the snapshot was generated', async () => {
+    mockFetch()
+    renderWithClient(<HealthScreen />)
+
+    expect(
+      await screen.findByText(/^Snapshot generated at /),
+    ).toBeInTheDocument()
+  })
+
+  it('Refresh asks the API for a new snapshot instead of reloading the page', async () => {
+    const user = userEvent.setup()
+    mockFetch()
+    renderWithClient(<HealthScreen />)
+
+    await screen.findByText('Running version 9.9.9')
+    const fetchMock = vi.mocked(fetch)
+    const antes = fetchMock.mock.calls.length
+
+    await user.click(screen.getByRole('button', { name: 'Refresh' }))
+
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.length).toBeGreaterThan(antes),
+    )
+    expect(
+      fetchMock.mock.calls.some(([url]) =>
+        String(url).includes('/health/system'),
+      ),
+    ).toBe(true)
+  })
+
+  it('a failed telemetry offers a retry', async () => {
+    const user = userEvent.setup()
+    let chamadas = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input)
+        if (!url.includes('/health/system')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({ status: 'ok', version: '9.9.9' }),
+          } as Response)
+        }
+        chamadas += 1
+        if (chamadas === 1) {
+          return Promise.resolve({
+            ok: false,
+            status: 503,
+            json: async () => ({}),
+          } as Response)
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => SYSTEM_HEALTH_OK,
+        } as Response)
+      }),
+    )
+    renderWithClient(<HealthScreen />)
+
+    // One inline error per telemetry card.
+    expect(
+      (await screen.findAllByText('Could not load the telemetry')).length,
+    ).toBe(3)
+    await user.click(screen.getAllByRole('button', { name: 'Try again' })[0])
+
+    expect(await screen.findByText('/mnt/filmes')).toBeInTheDocument()
+  })
+
+  it('wraps the source path instead of truncating it to a hover title', async () => {
+    mockFetch()
+    renderWithClient(<HealthScreen />)
+
+    const caminho = await screen.findByText('/mnt/filmes')
+    expect(caminho.className).toContain('break-all')
+    expect(caminho).not.toHaveAttribute('title')
   })
 })

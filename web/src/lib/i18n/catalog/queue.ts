@@ -22,6 +22,7 @@ export const queue = defineDomain({
       queuedEmpty: 'Nothing waiting.',
       recent: 'Recently finished',
       recentEmpty: 'No run finished yet.',
+      recentCount: 'the last {count}',
     },
     item: {
       kindScan: 'Scan',
@@ -33,8 +34,8 @@ export const queue = defineDomain({
       startedAt: 'started {when}',
       finishedAt: 'finished {when}',
       step: 'Step {index}/{total}: {label}',
-      progress: '{done} of {total}',
-      okFailed: '{ok} ok · {failed} failed',
+      progressFiles: '{done} of {total} files',
+      okFailedItems: '{ok} items ok · {failed} failed',
       currentItem: 'Now: {item}',
       unknownItem: 'nothing reported yet',
       showTrail: 'Show what it did',
@@ -42,6 +43,10 @@ export const queue = defineDomain({
       trailLoading: 'Loading the trail…',
       trailError: 'Could not load the trail',
       trailEmpty: 'This run has not reported any item yet.',
+      failedItems: '{failed} items failed',
+      progressbarLabel: 'Progress of this run',
+      trailCount: 'Showing {shown} of {total}',
+      trailMore: 'Show more',
     },
     event: {
       ok: 'Done',
@@ -50,7 +55,7 @@ export const queue = defineDomain({
     },
     trigger: {
       manual: 'Manual',
-      schedule: 'Scheduled',
+      schedule: 'By schedule',
       watch: 'Watcher',
     },
     status: {
@@ -77,6 +82,7 @@ export const queue = defineDomain({
       queuedEmpty: 'Nada esperando.',
       recent: 'Concluídos recentemente',
       recentEmpty: 'Nenhuma execução concluída ainda.',
+      recentCount: 'os últimos {count}',
     },
     item: {
       kindScan: 'Varredura',
@@ -88,8 +94,8 @@ export const queue = defineDomain({
       startedAt: 'começou {when}',
       finishedAt: 'terminou {when}',
       step: 'Etapa {index}/{total}: {label}',
-      progress: '{done} de {total}',
-      okFailed: '{ok} ok · {failed} com erro',
+      progressFiles: '{done} de {total} arquivos',
+      okFailedItems: '{ok} itens ok · {failed} com erro',
       currentItem: 'Agora: {item}',
       unknownItem: 'nada reportado ainda',
       showTrail: 'Ver o que fez',
@@ -97,6 +103,10 @@ export const queue = defineDomain({
       trailLoading: 'Carregando o rastro…',
       trailError: 'Não foi possível carregar o rastro',
       trailEmpty: 'Esta execução ainda não reportou nenhum item.',
+      failedItems: '{failed} itens com erro',
+      progressbarLabel: 'Progresso desta execução',
+      trailCount: 'Mostrando {shown} de {total}',
+      trailMore: 'Mostrar mais',
     },
     event: {
       ok: 'Concluído',
@@ -105,7 +115,7 @@ export const queue = defineDomain({
     },
     trigger: {
       manual: 'Manual',
-      schedule: 'Agendado',
+      schedule: 'Por agendamento',
       watch: 'Watcher',
     },
     status: {
@@ -132,6 +142,7 @@ export const queue = defineDomain({
       queuedEmpty: 'Nada en espera.',
       recent: 'Terminados recientemente',
       recentEmpty: 'Ninguna ejecución terminada todavía.',
+      recentCount: 'los últimos {count}',
     },
     item: {
       kindScan: 'Escaneo',
@@ -143,8 +154,8 @@ export const queue = defineDomain({
       startedAt: 'empezó {when}',
       finishedAt: 'terminó {when}',
       step: 'Paso {index}/{total}: {label}',
-      progress: '{done} de {total}',
-      okFailed: '{ok} ok · {failed} con error',
+      progressFiles: '{done} de {total} archivos',
+      okFailedItems: '{ok} elementos ok · {failed} con error',
       currentItem: 'Ahora: {item}',
       unknownItem: 'nada reportado todavía',
       showTrail: 'Ver qué hizo',
@@ -152,6 +163,10 @@ export const queue = defineDomain({
       trailLoading: 'Cargando el rastro…',
       trailError: 'No fue posible cargar el rastro',
       trailEmpty: 'Esta ejecución todavía no reportó ningún elemento.',
+      failedItems: '{failed} elementos con error',
+      progressbarLabel: 'Progreso de esta ejecución',
+      trailCount: 'Mostrando {shown} de {total}',
+      trailMore: 'Mostrar más',
     },
     event: {
       ok: 'Hecho',
@@ -160,7 +175,7 @@ export const queue = defineDomain({
     },
     trigger: {
       manual: 'Manual',
-      schedule: 'Programado',
+      schedule: 'Por programación',
       watch: 'Vigilante',
     },
     status: {

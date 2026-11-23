@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { ListaScreen } from '@/components/query-states'
+import { DataScreen } from '@/components/data-screen'
 import { JobCard } from '@/components/job-card'
 import { jobsQueryOptions } from '@/lib/queries'
 import { useT } from '@/lib/i18n'
@@ -9,26 +9,34 @@ import { useT } from '@/lib/i18n'
 // Grouped with `/settings` under "Administração" in the `AppHeader` — it is not
 // everyday navigation. It lists the `job_definition` with the current state; each
 // card takes care of enabling/disabling, scheduling, triggering and showing the history.
+//
+// The screen polls while a job runs, so it also carries the "updated Xs ago" line
+// (the `DataScreen` shell owns it): a live value that changes by itself needs to
+// say it is alive.
 export function JobsScreen() {
   const t = useT()
-  const { data, isPending, isError, error } = useQuery(jobsQueryOptions)
+  const query = useQuery(jobsQueryOptions)
+  const jobs = query.data ?? []
 
   return (
-    <ListaScreen
+    <DataScreen
       title={t('jobs.screen.title')}
       subtitle={t('jobs.screen.subtitle')}
-      isPending={isPending}
-      isError={isError}
-      error={error}
-      itens={data ?? []}
-      textos={{
+      updatedAt={query.dataUpdatedAt}
+      query={query}
+      empty={jobs.length === 0}
+      copy={{
         loading: t('jobs.screen.loading'),
         loadError: t('jobs.screen.loadError'),
         emptyTitle: t('jobs.screen.emptyTitle'),
         emptyDescription: t('jobs.screen.emptyDescription'),
       }}
-      listaClassName="flex flex-col gap-3"
-      renderItem={(job) => <JobCard key={job.id} job={job} />}
-    />
+    >
+      <ul className="flex flex-col gap-3">
+        {jobs.map((job) => (
+          <JobCard key={job.id} job={job} />
+        ))}
+      </ul>
+    </DataScreen>
   )
 }

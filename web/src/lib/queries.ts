@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { queryOptions } from '@tanstack/react-query'
 import {
   browseLibraryPath,
@@ -523,4 +524,29 @@ export function jobExecutionsQueryOptions(
     ],
     queryFn: () => listJobExecutions(id, params),
   })
+}
+
+// useFreshnessSeconds answers "how long ago did this query last answer" — the
+// live signal the polling screens (`/queue`, `/jobs`) were missing. It takes the
+// `dataUpdatedAt` of the query, ticks once a second and returns `null` before the
+// first answer and while the document is hidden: a background tab has nobody to
+// read "updated 3s ago", and TanStack already stops polling there.
+export function useFreshnessSeconds(dataUpdatedAt: number): number | null {
+  const [agora, setAgora] = useState(() => Date.now())
+  const [visivel, setVisivel] = useState(() => !document.hidden)
+
+  useEffect(() => {
+    const aoTrocarVisibilidade = () => setVisivel(!document.hidden)
+    document.addEventListener('visibilitychange', aoTrocarVisibilidade)
+    const timer = window.setInterval(() => setAgora(Date.now()), 1000)
+    return () => {
+      document.removeEventListener('visibilitychange', aoTrocarVisibilidade)
+      window.clearInterval(timer)
+    }
+  }, [])
+
+  if (!visivel || dataUpdatedAt <= 0) {
+    return null
+  }
+  return Math.max(0, Math.round((agora - dataUpdatedAt) / 1000))
 }

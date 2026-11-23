@@ -33,10 +33,17 @@ export const jobs = defineDomain({
       hideHistory: 'Hide history',
       took: 'Last run took {duration}',
       step: 'Step {index}/{total}: {label}',
-      progressCount: '{done} of {total}',
-      okFailed: '{ok} ok · {failed} failed',
       currentItem: 'Now: {item}',
       elapsed: 'running for {duration}',
+      progressFiles: '{done} of {total} files',
+      okFailedItems: '{ok} items ok · {failed} failed',
+      failedItems: '{failed} items failed',
+      runNowConfirmTitle: 'Run {name} now?',
+      runNowConfirmDescription:
+        'It runs on the server and takes a while — the last run took {duration}. Only one run at a time: anything else waits in line.',
+      runNowConfirmDescriptionUnknown:
+        'It runs on the server and takes a while. Only one run at a time: anything else waits in line.',
+      runNowConfirm: 'Run now',
     },
     history: {
       loading: 'Loading the history…',
@@ -51,6 +58,7 @@ export const jobs = defineDomain({
         success: 'Success',
         error: 'Error',
       },
+      took: 'took {duration}',
     },
     health: {
       apiTitle: 'API status',
@@ -58,6 +66,11 @@ export const jobs = defineDomain({
       connecting: 'Connecting…',
       apiUnavailable: 'API unavailable',
       apiOnline: 'API online — v{version}',
+      title: 'Health',
+      subtitle:
+        'Status of the API and the local snapshot of the process: database, catalog usage and the disk of the sources.',
+      generatedAt: 'Snapshot generated at {time}',
+      apiVersion: 'Running version {version}',
       status: {
         connecting: 'connecting',
         offline: 'offline',
@@ -66,7 +79,7 @@ export const jobs = defineDomain({
       system: {
         title: 'System',
         description:
-          'Local snapshot of the process — database, catalog usage and the disk of the sources. Snapshot cached for 60s (reload the page to refresh).',
+          'Local snapshot of the process — database, catalog usage and the disk of the sources. The snapshot is cached for 60s; Refresh asks for a new one.',
       },
       telemetryError: 'Could not load the telemetry',
       database: {
@@ -93,6 +106,8 @@ export const jobs = defineDomain({
         noSources: 'No source registered.',
         offlineBadge: 'unavailable',
         ofTotal: 'of {total}',
+        barLabel: 'Disk usage of this source',
+        usedOfTotal: '{used} of {total}',
       },
     },
     pathBrowser: {
@@ -140,10 +155,17 @@ export const jobs = defineDomain({
       hideHistory: 'Ocultar histórico',
       took: 'Última execução levou {duration}',
       step: 'Etapa {index}/{total}: {label}',
-      progressCount: '{done} de {total}',
-      okFailed: '{ok} ok · {failed} com erro',
       currentItem: 'Agora: {item}',
       elapsed: 'rodando há {duration}',
+      progressFiles: '{done} de {total} arquivos',
+      okFailedItems: '{ok} itens ok · {failed} com erro',
+      failedItems: '{failed} itens com erro',
+      runNowConfirmTitle: 'Executar {name} agora?',
+      runNowConfirmDescription:
+        'Roda no servidor e demora — a última execução levou {duration}. Só um por vez: o resto espera na fila.',
+      runNowConfirmDescriptionUnknown:
+        'Roda no servidor e demora. Só um por vez: o resto espera na fila.',
+      runNowConfirm: 'Executar agora',
     },
     history: {
       loading: 'Carregando histórico…',
@@ -158,6 +180,7 @@ export const jobs = defineDomain({
         success: 'Sucesso',
         error: 'Erro',
       },
+      took: 'levou {duration}',
     },
     health: {
       apiTitle: 'Estado da API',
@@ -165,6 +188,11 @@ export const jobs = defineDomain({
       connecting: 'Conectando…',
       apiUnavailable: 'API indisponível',
       apiOnline: 'API online — v{version}',
+      title: 'Saúde',
+      subtitle:
+        'Estado da API e retrato local do processo: banco, uso do catálogo e disco das fontes.',
+      generatedAt: 'Retrato gerado às {time}',
+      apiVersion: 'Rodando a versão {version}',
       status: {
         connecting: 'conectando',
         offline: 'offline',
@@ -173,7 +201,7 @@ export const jobs = defineDomain({
       system: {
         title: 'Sistema',
         description:
-          'Retrato local do processo — banco, uso do catálogo e disco das fontes. Snapshot cacheado por 60s (recarregue a página para atualizar).',
+          'Retrato local do processo — banco, uso do catálogo e disco das fontes. O retrato fica em cache por 60s; o botão Atualizar pede outro.',
       },
       telemetryError: 'Não foi possível carregar a telemetria',
       database: {
@@ -200,6 +228,8 @@ export const jobs = defineDomain({
         noSources: 'Nenhuma fonte cadastrada.',
         offlineBadge: 'indisponível',
         ofTotal: 'de {total}',
+        barLabel: 'Uso do disco desta fonte',
+        usedOfTotal: '{used} de {total}',
       },
     },
     pathBrowser: {
@@ -248,10 +278,17 @@ export const jobs = defineDomain({
       hideHistory: 'Ocultar historial',
       took: 'La última ejecución tardó {duration}',
       step: 'Paso {index}/{total}: {label}',
-      progressCount: '{done} de {total}',
-      okFailed: '{ok} ok · {failed} con error',
       currentItem: 'Ahora: {item}',
       elapsed: 'ejecutando desde hace {duration}',
+      progressFiles: '{done} de {total} archivos',
+      okFailedItems: '{ok} elementos ok · {failed} con error',
+      failedItems: '{failed} elementos con error',
+      runNowConfirmTitle: '¿Ejecutar {name} ahora?',
+      runNowConfirmDescription:
+        'Se ejecuta en el servidor y tarda: la última ejecución tardó {duration}. Solo uno a la vez: el resto espera en la cola.',
+      runNowConfirmDescriptionUnknown:
+        'Se ejecuta en el servidor y tarda. Solo uno a la vez: el resto espera en la cola.',
+      runNowConfirm: 'Ejecutar ahora',
     },
     history: {
       loading: 'Cargando el historial…',
@@ -266,6 +303,7 @@ export const jobs = defineDomain({
         success: 'Éxito',
         error: 'Error',
       },
+      took: 'tardó {duration}',
     },
     health: {
       apiTitle: 'Estado de la API',
@@ -273,6 +311,11 @@ export const jobs = defineDomain({
       connecting: 'Conectando…',
       apiUnavailable: 'API no disponible',
       apiOnline: 'API en línea — v{version}',
+      title: 'Salud',
+      subtitle:
+        'Estado de la API y retrato local del proceso: base de datos, uso del catálogo y disco de las fuentes.',
+      generatedAt: 'Retrato generado a las {time}',
+      apiVersion: 'Ejecutando la versión {version}',
       status: {
         connecting: 'conectando',
         offline: 'offline',
@@ -281,7 +324,7 @@ export const jobs = defineDomain({
       system: {
         title: 'Sistema',
         description:
-          'Retrato local del proceso: base de datos, uso del catálogo y disco de las fuentes. Instantánea en caché durante 60 s (recarga la página para actualizar).',
+          'Retrato local del proceso: base de datos, uso del catálogo y disco de las fuentes. El retrato queda en caché 60 s; el botón Actualizar pide otro.',
       },
       telemetryError: 'No se pudo cargar la telemetría',
       database: {
@@ -308,6 +351,8 @@ export const jobs = defineDomain({
         noSources: 'Ninguna fuente registrada.',
         offlineBadge: 'no disponible',
         ofTotal: 'de {total}',
+        barLabel: 'Uso del disco de esta fuente',
+        usedOfTotal: '{used} de {total}',
       },
     },
     pathBrowser: {
