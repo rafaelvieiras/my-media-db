@@ -34,17 +34,17 @@ The tree keeps the **official** order as the default — it stays the only one t
 season entities — and each imported group adds **one more entry in `numbering`** of the
 episodes it contains. The mapping is direct:
 
-| TMDB episode group | our `numbering[<chave>]` |
-| --- | --- |
-| sub-group (`groups[].order`, 1-based) | `season` |
-| position inside the sub-group (`episodes[].order`, **0-based**, restarts per sub-group) | `number + 1` |
-| group `name` | the order **key**, slugged (`Blu-ray Order` → `blu-ray-order`) |
+| TMDB episode group                                                                      | our `numbering[<chave>]`                                       |
+| --------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| sub-group (`groups[].order`, 1-based)                                                   | `season`                                                       |
+| position inside the sub-group (`episodes[].order`, **0-based**, restarts per sub-group) | `number + 1`                                                   |
+| group `name`                                                                            | the order **key**, slugged (`Blu-ray Order` → `blu-ray-order`) |
 
 Rules that come from the measurements:
 
 - **The key comes from the name, never from the type.** The `type` (1 original air date,
   2 absolute, 3 DVD, 4 digital, 5 story arc, 6 production, 7 TV) is picked by whoever created
-  the group — *The Office*'s "Alternate Order" is filed as type 1. The type is used **only** to
+  the group — _The Office_'s "Alternate Order" is filed as type 1. The type is used **only** to
   decide which groups win the import cap.
 - **Cap of `maxGruposTMDB` = 8** groups per series, ordered by type preference (DVD, absolute,
   original air date, TV, digital, production, story arc) and then by size. Cost is one request
@@ -122,3 +122,21 @@ disjoint by construction, because TMDB keys always come from a name slug.
 - Still open: the ordering selector shows the **key** (`blu-ray-order`). A human label per order
   (`order_labels` in `extension_data`) needs the label to travel provider → server → UI, which is
   a cross-cutting change; until then the UI prettifies the key.
+
+## Amendment (23/nov/2026, issue #113) — every group, and every group recorded
+
+The import of episode groups runs on **every** metadata import, not only on the first one, and
+it has **no cap**. Two defects motivated the change, both measured in production: a series with
+10 groups kept only 8 of them, and a group that failed to anchor any episode was discarded
+without a trace — so "the source publishes no such group" and "the import dropped it" were
+indistinguishable.
+
+Now the provider returns, next to the orders it added, the **inventory** of groups it saw
+(`provider.EpisodeGroup`: id, name, kind, episodes, mapped, note), which the series'
+`extension_data` persists as `episode_groups`. A group with `mapped: 0` is a fact about OUR
+tree, and it is readable.
+
+The anchoring stays by the provider episode id. The official `(season, episode)` an item also
+carries is **not** used as a fallback: a provisional tree numbered its episodes from file names,
+so such a fallback would attach an alternative ordering to a possibly different episode. An
+unmapped group is recorded instead — the numbering is never invented.

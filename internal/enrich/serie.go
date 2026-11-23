@@ -1193,12 +1193,40 @@ func (s *Servico) ligarFilho(ctx context.Context, parentID, childID, kind string
 
 // --- assembly of extension_data (core.tv@1 namespace) ---
 
-// extensaoSerie builds the series extension_data: default_season_type + season_types.
+// extensaoSerie builds the series extension_data: default_season_type + season_types +
+// episode_groups. The groups are recorded EVEN WHEN the tree could not anchor any of them
+// (an entry with mapped=0 and a note), because a group the source published and the import
+// dropped is a fact about our tree -- and today it was indistinguishable from a series the
+// source has no group for (ADR-0033, issue #113).
 func extensaoSerie(a provider.SerieArvore) string {
-	return envelopeTV(map[string]any{
+	payload := map[string]any{
 		"default_season_type": a.DefaultSeasonType,
 		"season_types":        a.SeasonTypes,
-	})
+	}
+	if len(a.Groups) > 0 {
+		payload["episode_groups"] = groupsMap(a.Groups)
+	}
+	return envelopeTV(payload)
+}
+
+// groupsMap converts the episode-group inventory into the JSON array the extension_data
+// stores -- one object per group the source published.
+func groupsMap(groups []provider.EpisodeGroup) []map[string]any {
+	out := make([]map[string]any, 0, len(groups))
+	for _, g := range groups {
+		item := map[string]any{
+			"id":       g.SourceID,
+			"name":     g.Name,
+			"kind":     g.Kind,
+			"episodes": g.Episodes,
+			"mapped":   g.Mapped,
+		}
+		if g.Note != "" {
+			item["note"] = g.Note
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 // extensaoTemporada builds the season extension_data: ordering + season_number

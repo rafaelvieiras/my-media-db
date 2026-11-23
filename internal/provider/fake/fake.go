@@ -245,6 +245,13 @@ func (p *Provider) BuscarSerieArvore(_ context.Context, sourceID string, _ []str
 	return provider.SerieArvore{
 		DefaultSeasonType: "official",
 		SeasonTypes:       []string{"official", "dvd", "absolute"},
+		// The inventory of the groups the source published -- one that mapped and one that
+		// anchored nothing (issue #113: the two must not look the same downstream).
+		Groups: []provider.EpisodeGroup{
+			{SourceID: "g-dvd", Name: "DVD Order", Kind: "3", Episodes: 4, Mapped: 4},
+			{SourceID: "g-arc", Name: "Story Arc", Kind: "5", Episodes: 2, Mapped: 0,
+				Note: "no item of the group is in the tree"},
+		},
 		Temporadas: []provider.TemporadaExterna{
 			p.temporadaFake(1, "1989", nil, []provider.EpisodioExterno{
 				// Matching orders: official/dvd are the same.

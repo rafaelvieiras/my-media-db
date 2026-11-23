@@ -66,6 +66,17 @@ func exigirSerieRaiz(t *testing.T, r *sqlcgen.Queries, serieID string) {
 	if tipos := aStrings(ns["season_types"]); len(tipos) != 3 {
 		t.Errorf("season_types = %v, quero 3 ordens", ns["season_types"])
 	}
+	// EVERY group the source published is recorded, mapped or not (issue #113): the
+	// inventory must survive the import so "no group" and "group the tree could not
+	// anchor" are countable.
+	grupos, ok := ns["episode_groups"].([]any)
+	if !ok || len(grupos) == 0 {
+		t.Fatalf("episode_groups = %v, quero o inventario dos grupos do provedor", ns["episode_groups"])
+	}
+	primeiro, _ := grupos[0].(map[string]any)
+	if primeiro["name"] == nil || primeiro["mapped"] == nil || primeiro["episodes"] == nil {
+		t.Errorf("registro de grupo = %v, quero name/episodes/mapped", primeiro)
+	}
 }
 
 // exigirTemporadas checks the 2 seasons (sort_index 1,2), the "Temporada N" fallback
