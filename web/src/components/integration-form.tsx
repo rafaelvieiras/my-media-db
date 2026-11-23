@@ -106,7 +106,7 @@ export function IntegrationForm({
       }),
     [campos, estados],
   )
-  useUnsavedGuard(sujo)
+  const guardaSaida = useUnsavedGuard(sujo)
 
   const mutation = useMutation({
     mutationFn: (valores: Record<string, string | null>) =>
@@ -163,6 +163,7 @@ export function IntegrationForm({
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-5">
+      {guardaSaida}
       {campos.map((campo) => (
         <CampoIntegracao
           key={campo.nome}

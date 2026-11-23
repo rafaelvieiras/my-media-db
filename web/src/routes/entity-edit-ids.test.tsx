@@ -47,20 +47,21 @@ describe('EntityEditIdsScreen (real route tree)', () => {
   })
 
   it('editing the IDs without saving fires the confirmation; cancelling keeps, confirming navigates', async () => {
-    const confirmar = vi.fn(() => false)
-    vi.stubGlobal('confirm', confirmar)
     const user = userEvent.setup()
     await renderRota('/entities/e1/edit/ids')
     await user.click(await screen.findByRole('button', { name: 'Add source' }))
     await user.type(screen.getByLabelText('External id source'), 'tmdb')
+
+    // First attempt, cancelled in the product dialog: it stays, text intact.
     await user.click(screen.getByRole('link', { name: 'Cast and crew' }))
-    expect(confirmar).toHaveBeenCalledTimes(1)
-    // It cancelled the exit: it stays in the same section, with the typed text intact.
+    await user.click(await screen.findByRole('button', { name: 'Cancel' }))
     expect(screen.getByLabelText('External id source')).toHaveValue('tmdb')
 
-    // Confirming this time, the navigation actually happens.
-    confirmar.mockReturnValue(true)
+    // Second attempt, confirmed: the navigation actually happens.
     await user.click(screen.getByRole('link', { name: 'Cast and crew' }))
+    await user.click(
+      await screen.findByRole('button', { name: 'Leave without saving' }),
+    )
     await waitFor(() =>
       expect(
         screen.getByRole('link', { name: 'Cast and crew' }),

@@ -67,10 +67,11 @@ export function EntityEditShell({
 
   // "Leave without saving" guard: extracted to `lib/use-unsaved-guard` and reused by
   // the other form routes (settings, integrations, creation).
-  useUnsavedGuard(sujo)
+  const guardaSaida = useUnsavedGuard(sujo)
 
   return (
     <main className="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-6">
+      {guardaSaida}
       <Link
         to="/entities/$id"
         params={{ id }}

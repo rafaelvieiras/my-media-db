@@ -43,7 +43,7 @@ function CollectionNewForm({ fields }: { fields: FieldDescriptor[] }) {
   // Same guard wiring as the item creation: off while the write is in flight, back
   // when it fails (the success redirect is not a "leave without saving").
   const [criando, setCriando] = useState(false)
-  useUnsavedGuard(sujo && !criando)
+  const guardaSaida = useUnsavedGuard(sujo && !criando)
 
   async function onSubmit(valores: ValoresForm) {
     // An empty title is refused by the form validation (inline error + summary),
@@ -61,19 +61,22 @@ function CollectionNewForm({ fields }: { fields: FieldDescriptor[] }) {
   }
 
   return (
-    <SchemaForm
-      fields={camposColecao}
-      defaultValues={valoresDeCriacao(camposColecao)}
-      schema={schemaZod(camposColecao, 'criacao', t)}
-      onSubmit={onSubmit}
-      onCancel={() => navigate({ to: '/' })}
-      submitLabel={t('collections.create.submit')}
-      submitPendingLabel={t('collections.create.submitting')}
-      submitIcon={<FolderPlus aria-hidden />}
-      isPending={mutation.isPending}
-      mensagemErro={mensagemErro}
-      obrigatorios={OBRIGATORIO_NA_CRIACAO}
-      onDirtyChange={setSujo}
-    />
+    <>
+      {guardaSaida}
+      <SchemaForm
+        fields={camposColecao}
+        defaultValues={valoresDeCriacao(camposColecao)}
+        schema={schemaZod(camposColecao, 'criacao', t)}
+        onSubmit={onSubmit}
+        onCancel={() => navigate({ to: '/' })}
+        submitLabel={t('collections.create.submit')}
+        submitPendingLabel={t('collections.create.submitting')}
+        submitIcon={<FolderPlus aria-hidden />}
+        isPending={mutation.isPending}
+        mensagemErro={mensagemErro}
+        obrigatorios={OBRIGATORIO_NA_CRIACAO}
+        onDirtyChange={setSujo}
+      />
+    </>
   )
 }

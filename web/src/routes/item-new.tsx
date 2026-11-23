@@ -69,7 +69,7 @@ function ItemNewForm({
   // While the creation is in flight the guard steps aside: the success redirect is
   // not a "leave without saving". A failure puts it back (the typed data stays).
   const [criando, setCriando] = useState(false)
-  useUnsavedGuard(sujo && !criando)
+  const guardaSaida = useUnsavedGuard(sujo && !criando)
   const criaveisFields = criaveis(fields)
   const { mutation, mensagemErro } = useCriarEntidade(
     createItem,
@@ -111,21 +111,24 @@ function ItemNewForm({
   )
 
   return (
-    <SchemaForm
-      fields={criaveisFields}
-      defaultValues={valoresDeCriacao(criaveisFields)}
-      schema={schemaZod(criaveisFields, 'criacao', t)}
-      onSubmit={onSubmit}
-      onCancel={() => navigate({ to: '/' })}
-      submitLabel={t('collections.item.submit')}
-      submitPendingLabel={t('collections.item.submitting')}
-      submitIcon={<FilmIcon aria-hidden />}
-      isPending={mutation.isPending}
-      mensagemErro={mensagemErro}
-      header={header}
-      obrigatorios={OBRIGATORIO_NA_CRIACAO}
-      onDirtyChange={setSujo}
-    />
+    <>
+      {guardaSaida}
+      <SchemaForm
+        fields={criaveisFields}
+        defaultValues={valoresDeCriacao(criaveisFields)}
+        schema={schemaZod(criaveisFields, 'criacao', t)}
+        onSubmit={onSubmit}
+        onCancel={() => navigate({ to: '/' })}
+        submitLabel={t('collections.item.submit')}
+        submitPendingLabel={t('collections.item.submitting')}
+        submitIcon={<FilmIcon aria-hidden />}
+        isPending={mutation.isPending}
+        mensagemErro={mensagemErro}
+        header={header}
+        obrigatorios={OBRIGATORIO_NA_CRIACAO}
+        onDirtyChange={setSujo}
+      />
+    </>
   )
 }
 

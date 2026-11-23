@@ -55,7 +55,7 @@ export function SettingsScreen() {
   // "Leave without saving" guard: the screen used to navigate away with a section
   // half edited — the manual sections report their dirty state up.
   const [sujos, setSujos] = useState<Record<string, boolean>>({})
-  useUnsavedGuard(Object.values(sujos).some(Boolean))
+  const guardaSaida = useUnsavedGuard(Object.values(sujos).some(Boolean))
 
   function reportarSujo(secao: string, sujo: boolean) {
     setSujos((prev) =>
@@ -65,6 +65,7 @@ export function SettingsScreen() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-6">
+      {guardaSaida}
       <section className="mb-10">
         <ScreenHeader
           title={t('settings.screen.title')}
