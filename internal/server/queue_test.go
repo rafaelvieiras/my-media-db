@@ -333,3 +333,115 @@ func TestHistoricoExpoeDuracao(t *testing.T) {
 		t.Errorf("started_at = %q nao e RFC3339: %v", got.Items[0].StartedAt, err)
 	}
 }
+
+// TestQueueViewRotuloDoItemAtual covers the HUMAN label of the current item: the
+// health job narrates the entity id it has at hand (reprocessar_artes.go,
+// reconcilia_orfaos.go, arte_local_musica.go) and the screen read "Now:
+// 78616b63-…". The API now sends current_label (the entity title) NEXT TO the
+// untouched current_item, so nothing that already consumes current_item breaks.
+func TestQueueViewRotuloDoItemAtual(t *testing.T) {
+	h, s := setupQueueServer(t)
+	const entityID = "78616b63-1111-4111-8111-111111111111"
+	semearEntity(t, s.db, entityID, "movie", "The Matrix")
+	semearItemDaFila(t, s, "q-run-uuid", execqueue.KindJob, "saude_biblioteca", execqueue.StatusRunning,
+		3, 10, "reprocessando artes", 3, 8, entityID, 2, 1)
+	// A finished item whose current_item already IS the label (a file path) and one
+	// with no current item at all: current_label stays absent in both.
+	semearItemDaFila(t, s, "q-done-path", execqueue.KindScan, "src-inexistente", execqueue.StatusSuccess,
+		9, 9, "varredura", 1, 1, "/media/filmes/matrix.mkv", 9, 0)
+	semearItemDaFila(t, s, "q-done-vazio", execqueue.KindJob, "saude_biblioteca", execqueue.StatusSuccess,
+		1, 1, "", 0, 0, "", 1, 0)
+
+	rec := do(t, h, http.MethodGet, "/api/v1/queue", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	var got queueViewDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decodificar: %v", err)
+	}
+	if got.Running == nil {
+		t.Fatal("running = null, quero o item em execucao")
+	}
+	if got.Running.CurrentItem == nil || *got.Running.CurrentItem != entityID {
+		t.Errorf("current_item = %v, quero o id cru (contrato preservado)", got.Running.CurrentItem)
+	}
+	if got.Running.CurrentLabel == nil || *got.Running.CurrentLabel != "The Matrix" {
+		t.Errorf("current_label = %v, quero The Matrix", got.Running.CurrentLabel)
+	}
+
+	porID := map[string]queueItemDTO{}
+	for _, item := range got.Recent {
+		porID[item.ID] = item
+	}
+	comCaminho, ok := porID["q-done-path"]
+	if !ok {
+		t.Fatal("faltou o item recente com caminho")
+	}
+	if comCaminho.CurrentLabel != nil {
+		t.Errorf("current_label = %v, quero null quando current_item ja e o rotulo", *comCaminho.CurrentLabel)
+	}
+	if comCaminho.CurrentItem == nil || *comCaminho.CurrentItem != "/media/filmes/matrix.mkv" {
+		t.Errorf("current_item = %v, quero o caminho do arquivo", comCaminho.CurrentItem)
+	}
+	semItem, ok := porID["q-done-vazio"]
+	if !ok {
+		t.Fatal("faltou o item recente sem current_item")
+	}
+	if semItem.CurrentLabel != nil {
+		t.Errorf("current_label = %v, quero null sem current_item", *semItem.CurrentLabel)
+	}
+
+	// The detail endpoint answers the same label as the view.
+	rec = do(t, h, http.MethodGet, "/api/v1/queue/q-run-uuid", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	var detalhe queueDetailDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &detalhe); err != nil {
+		t.Fatalf("decodificar: %v", err)
+	}
+	if detalhe.Item.CurrentLabel == nil || *detalhe.Item.CurrentLabel != "The Matrix" {
+		t.Errorf("current_label do detalhe = %v, quero The Matrix", detalhe.Item.CurrentLabel)
+	}
+}
+
+// TestJobProgressRotuloDoItemAtual covers the SAME label on GET /jobs: the job
+// card showed "Now: <uuid>" for the step that narrates only the entity id.
+func TestJobProgressRotuloDoItemAtual(t *testing.T) {
+	h, s := setupQueueServer(t)
+	const entityID = "78616b63-2222-4222-8222-222222222222"
+	semearEntity(t, s.db, entityID, "movie", "Dune")
+	semearItemDaFila(t, s, "q-job-uuid", execqueue.KindJob, "saude_biblioteca", execqueue.StatusRunning,
+		4, 10, "descobrindo arte local de musica", 5, 8, entityID, 4, 0)
+
+	rec := do(t, h, http.MethodGet, "/api/v1/jobs", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	var got jobListDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decodificar: %v", err)
+	}
+	var saude *jobDTO
+	for i := range got.Items {
+		if got.Items[i].ID == "saude_biblioteca" {
+			saude = &got.Items[i]
+		}
+	}
+	if saude == nil || saude.Progress == nil {
+		t.Fatal("progress de saude_biblioteca ausente")
+	}
+	if saude.Progress.CurrentItem == nil || *saude.Progress.CurrentItem != entityID {
+		t.Errorf("current_item = %v, quero o id cru (contrato preservado)", saude.Progress.CurrentItem)
+	}
+	if saude.Progress.CurrentLabel == nil || *saude.Progress.CurrentLabel != "Dune" {
+		t.Errorf("current_label = %v, quero Dune", saude.Progress.CurrentLabel)
+	}
+	// The other jobs never ran: no progress, no label, no panic.
+	for _, item := range got.Items {
+		if item.Progress != nil && item.Progress.CurrentLabel != nil && item.Progress.CurrentItem == nil {
+			t.Errorf("job %q com current_label sem current_item", item.ID)
+		}
+	}
+}

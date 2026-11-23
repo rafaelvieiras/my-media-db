@@ -1,6 +1,9 @@
 package tmdb
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // TestDescriptorIntegracaoSlugENome covers the basic shape of the Descriptor.
 func TestDescriptorIntegracaoSlugENome(t *testing.T) {
@@ -57,5 +60,13 @@ func TestDescriptorIntegracaoConfigurada(t *testing.T) {
 		if got := d.Configurada(c.efetivos); got != c.querFinal {
 			t.Errorf("%s: Configurada(%v) = %v, quero %v", c.nome, c.efetivos, got, c.querFinal)
 		}
+	}
+}
+
+// TestDescriptorDescricaoComAcento guards the text the Integrations screen
+// renders verbatim: "filmes e séries", never the ASCII-only "series".
+func TestDescriptorDescricaoComAcento(t *testing.T) {
+	if !strings.Contains(NovoDescriptorIntegracao().Descricao(), "filmes e séries") {
+		t.Errorf("Descricao() = %q, quero \"filmes e séries\" com acento", NovoDescriptorIntegracao().Descricao())
 	}
 }

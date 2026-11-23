@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -72,11 +73,15 @@ type jobProgressDTO struct {
 	StepIndex   int     `json:"step_index"`
 	StepTotal   int     `json:"step_total"`
 	CurrentItem *string `json:"current_item"`
-	Done        int     `json:"done"`
-	Total       int     `json:"total"`
-	OK          int     `json:"ok"`
-	Failed      int     `json:"failed"`
-	ElapsedMS   *int64  `json:"elapsed_ms"`
+	// CurrentLabel is current_item in words when the run narrates an entity id
+	// instead of a title (same rule, same resolver as the queue view: see
+	// currentItemLabel). Absent when current_item already IS the label.
+	CurrentLabel *string `json:"current_label"`
+	Done         int     `json:"done"`
+	Total        int     `json:"total"`
+	OK           int     `json:"ok"`
+	Failed       int     `json:"failed"`
+	ElapsedMS    *int64  `json:"elapsed_ms"`
 }
 
 // jobListDTO is the body of GET /jobs.
@@ -128,7 +133,9 @@ func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {
 	estados := s.jobs.EstadoDasExecucoes(r.Context())
 	items := make([]jobDTO, 0, len(defs))
 	for _, def := range defs {
-		items = append(items, jobToDTO(def, estados[def.ID]))
+		dto := jobToDTO(def, estados[def.ID])
+		s.fillCurrentLabel(r.Context(), dto.Progress)
+		items = append(items, dto)
 	}
 	writeJSON(w, http.StatusOK, jobListDTO{Items: items})
 }
@@ -167,7 +174,9 @@ func (s *Server) patchJob(w http.ResponseWriter, r *http.Request) {
 		respondJobError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, jobToDTO(def, s.jobs.EstadoDasExecucoes(r.Context())[def.ID]))
+	dto := jobToDTO(def, s.jobs.EstadoDasExecucoes(r.Context())[def.ID])
+	s.fillCurrentLabel(r.Context(), dto.Progress)
+	writeJSON(w, http.StatusOK, dto)
 }
 
 // parseJobConfigPatch interprets the RAW map of the PATCH /jobs/{id} body into a
@@ -288,6 +297,17 @@ func parseJobLimit(w http.ResponseWriter, q url.Values) (int, bool) {
 }
 
 // ── Conversion to DTO ──────────────────────────────────────────────────────
+
+// fillCurrentLabel completes the progress of a job with the readable label of the
+// current item (currentItemLabel, in queue.go): the step that narrates only the
+// entity id reaches the screen as a title instead of a UUID. No-op when the job
+// never ran or when current_item already is the label.
+func (s *Server) fillCurrentLabel(ctx context.Context, progresso *jobProgressDTO) {
+	if progresso == nil || progresso.CurrentItem == nil {
+		return
+	}
+	progresso.CurrentLabel = s.currentItemLabel(ctx, *progresso.CurrentItem)
+}
 
 func jobToDTO(def sqlcgen.JobDefinition, estado *execqueue.QueueItemStatus) jobDTO {
 	dto := jobDTO{

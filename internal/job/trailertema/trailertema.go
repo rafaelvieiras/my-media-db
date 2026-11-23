@@ -16,6 +16,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+
+	"github.com/rafaelvieiras/my-media-db/internal/job"
 )
 
 // nomeJob is the Handler.Nome() -- it matches the slug seeded in job_definition
@@ -112,10 +114,12 @@ func (h *Handler) Executar(ctx context.Context, _ json.RawMessage) (string, erro
 // montarMensagem composes the final summary: how many eligible entities, how
 // many trailers and how many themes downloaded in total.
 func montarMensagem(total, trailersBaixados, temasBaixados, falhas int) string {
-	base := fmt.Sprintf("%d entity(ies) elegível(is), %d trailer(s) baixado(s), %d tema(s) musical(is) baixado(s)",
-		total, trailersBaixados, temasBaixados)
+	base := fmt.Sprintf("%s, %s, %s",
+		job.Plural(total, "entity elegível", "entities elegíveis"),
+		job.Plural(trailersBaixados, "trailer baixado", "trailers baixados"),
+		job.Plural(temasBaixados, "tema musical baixado", "temas musicais baixados"))
 	if falhas > 0 {
-		base = fmt.Sprintf("%s, %d falha(s)", base, falhas)
+		base = fmt.Sprintf("%s, %s", base, job.Plural(falhas, "falha", "falhas"))
 	}
 	return base
 }

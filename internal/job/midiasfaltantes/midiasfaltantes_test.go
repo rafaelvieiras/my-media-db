@@ -77,7 +77,7 @@ func TestExecutarProcessaTodasEResume(t *testing.T) {
 	if len(mat.chamadas) != 3 {
 		t.Fatalf("materializador chamado %d vez(es), quero 3", len(mat.chamadas))
 	}
-	for _, want := range []string{"3 entity", "3 processada", "3 arte(s) materializada", "1 NFO(s) gravado"} {
+	for _, want := range []string{"3 entities elegíveis", "3 processadas", "3 artes materializadas", "1 NFO gravado"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("mensagem %q não contém %q", msg, want)
 		}
@@ -118,7 +118,7 @@ func TestExecutarSemEntitiesElegiveis(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar: %v", err)
 	}
-	if !strings.Contains(msg, "0 entity") {
+	if !strings.Contains(msg, "0 entities elegíveis") {
 		t.Errorf("mensagem %q deveria reportar 0 entities elegíveis", msg)
 	}
 }
@@ -143,7 +143,7 @@ func TestExecutarResumoIncluiMissingQuandoMaiorQueZero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar: %v", err)
 	}
-	if !strings.Contains(msg, "3 media_file(s) em estado 'missing'") {
+	if !strings.Contains(msg, "3 media_files em estado 'missing'") {
 		t.Errorf("mensagem %q deveria conter a contagem de missing", msg)
 	}
 }
@@ -304,8 +304,8 @@ func TestExecutarComProgressoNarraContagemEItem(t *testing.T) {
 	if resumo == nil {
 		t.Fatal("faltou o resumo das entities sem nada faltando")
 	}
-	if resumo.Label != "1 entity(ies)" || !strings.Contains(resumo.Detail, "nada faltando") {
-		t.Errorf("resumo = %+v, quero \"1 entity(ies)\" com \"nada faltando no disco\"", *resumo)
+	if resumo.Label != "1 entity" || !strings.Contains(resumo.Detail, "nada faltando") {
+		t.Errorf("resumo = %+v, quero \"1 entity\" com \"nada faltando no disco\"", *resumo)
 	}
 }
 
@@ -364,7 +364,7 @@ func TestExecutarComProgressoTituloIndisponivelUsaID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("um erro de título não pode falhar o job: %v", err)
 	}
-	if !strings.Contains(msg, "1 arte(s) materializada") {
+	if !strings.Contains(msg, "1 arte materializada") {
 		t.Errorf("mensagem %q deveria seguir contando as artes", msg)
 	}
 	itens := map[string]bool{}

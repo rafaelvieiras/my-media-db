@@ -23,7 +23,7 @@ func (descriptorIntegracao) Nome() string { return "TMDB" }
 
 // Descricao is the short supporting text for the UI.
 func (descriptorIntegracao) Descricao() string {
-	return "The Movie Database -- provider de busca/enriquecimento de filmes e series."
+	return "The Movie Database -- provider de busca/enriquecimento de filmes e séries."
 }
 
 // Campos describes token (preferred, Read Access Token v4) and api_key

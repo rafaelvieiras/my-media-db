@@ -2618,7 +2618,8 @@ paths:
         item, counters and elapsed time), the items waiting in FIFO order
         (with position and waiting time) and the last finished ones (with duration).
         It covers kind=scan and kind=job; `ref_label` brings the readable name of the
-        reference. Read-only.
+        reference and `current_label` the readable name of the item being processed
+        (the entity title, when the run narrates only an id). Read-only.
       tags: [queue]
       parameters:
         - name: recent
@@ -5229,6 +5230,13 @@ components:
         step_total: { type: integer }
         current_item:
           type: [string, "null"]
+        current_label:
+          type: [string, "null"]
+          description: >
+            `current_item` written the way a person reads it: when the run narrates
+            an entity id instead of a title, this is the entity title. null when
+            `current_item` already is the label (a file path, a source path) or when
+            the id no longer resolves — the screen then shows `current_item`.
         done: { type: integer }
         total: { type: integer }
         ok: { type: integer }
@@ -5295,6 +5303,12 @@ components:
         current_item:
           type: [string, "null"]
           description: What is being processed now (file, title, source).
+        current_label:
+          type: [string, "null"]
+          description: >
+            `current_item` written the way a person reads it (the entity title when
+            the run narrates only an id). null when `current_item` already is the
+            label or when the id no longer resolves.
         done: { type: integer }
         total: { type: integer }
         ok: { type: integer }

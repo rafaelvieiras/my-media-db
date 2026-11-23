@@ -85,7 +85,7 @@ func TestExecutarProcessaTodasEResume(t *testing.T) {
 	if len(baix.chamadasTrailer) != 3 || len(baix.chamadasTema) != 3 {
 		t.Fatalf("baixador chamado trailer=%d tema=%d, quero 3/3", len(baix.chamadasTrailer), len(baix.chamadasTema))
 	}
-	for _, want := range []string{"3 entity", "2 trailer(s) baixado", "1 tema(s) musical"} {
+	for _, want := range []string{"3 entities elegíveis", "2 trailers baixados", "1 tema musical baixado"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("mensagem %q não contém %q", msg, want)
 		}
@@ -111,7 +111,7 @@ func TestExecutarErroDeUmaEntityNaoAbortaAsDemais(t *testing.T) {
 	if !strings.Contains(msg, "1 falha") {
 		t.Errorf("mensagem %q deveria reportar 1 falha", msg)
 	}
-	if !strings.Contains(msg, "1 trailer(s) baixado") {
+	if !strings.Contains(msg, "1 trailer baixado") {
 		t.Errorf("mensagem %q deveria reportar 1 trailer baixado", msg)
 	}
 }
@@ -123,7 +123,7 @@ func TestExecutarSemEntitiesElegiveis(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar: %v", err)
 	}
-	if !strings.Contains(msg, "0 entity") {
+	if !strings.Contains(msg, "0 entities elegíveis") {
 		t.Errorf("mensagem %q deveria reportar 0 entities elegíveis", msg)
 	}
 }

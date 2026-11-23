@@ -158,8 +158,9 @@ func (h *Handler) executar(ctx context.Context, _ json.RawMessage, p *job.Progre
 		}
 		p.Contagem(i+1, len(ids))
 		if (i+1)%cadaQuantosLog == 0 {
-			log.Printf("midias_faltantes: %d/%d processadas, %d arte(s), %d NFO(s), %d falha(s)",
-				i+1, len(ids), artesTotal, nfosGravados, falhas)
+			log.Printf("midias_faltantes: %d/%d processadas, %s, %s, %s",
+				i+1, len(ids), job.Plural(artesTotal, "arte", "artes"),
+				job.Plural(nfosGravados, "NFO", "NFOs"), job.Plural(falhas, "falha", "falhas"))
 		}
 	}
 
@@ -169,7 +170,7 @@ func (h *Handler) executar(ctx context.Context, _ json.RawMessage, p *job.Progre
 	// faltando no disco" rows say nothing that one number does not. The interesting
 	// rows (art or NFO written, failures) keep their own line.
 	if semPendencias > 0 {
-		p.Ignorado(fmt.Sprintf("%d entity(ies)", semPendencias), "nada faltando no disco")
+		p.Ignorado(job.Plural(semPendencias, "entity", "entities"), "nada faltando no disco")
 	}
 
 	// The media_file 'missing' case: best-effort count -- a failure here (database
@@ -242,13 +243,17 @@ func (h *Handler) rotulo(ctx context.Context, id string) string {
 // incomplete by a race with another job (e.g. saude_biblioteca) over the same
 // remote mount. missing < 0 (count not determined) or == 0 appends nothing.
 func montarMensagem(total, processadas, artesTotal, nfosGravados, falhas int, missing int64) string {
-	base := fmt.Sprintf("%d entity(ies) elegível(is), %d processada(s), %d arte(s) materializada(s), %d NFO(s) gravado(s)",
-		total, processadas, artesTotal, nfosGravados)
+	base := fmt.Sprintf("%s, %s, %s, %s",
+		job.Plural(total, "entity elegível", "entities elegíveis"),
+		job.Plural(processadas, "processada", "processadas"),
+		job.Plural(artesTotal, "arte materializada", "artes materializadas"),
+		job.Plural(nfosGravados, "NFO gravado", "NFOs gravados"))
 	if falhas > 0 {
-		base = fmt.Sprintf("%s, %d falha(s)", base, falhas)
+		base = fmt.Sprintf("%s, %s", base, job.Plural(falhas, "falha", "falhas"))
 	}
 	if missing > 0 {
-		base = fmt.Sprintf("%s, %d media_file(s) em estado 'missing' no momento do scan (pode ter excluído alguma entity deste ciclo)", base, missing)
+		base = fmt.Sprintf("%s, %s em estado 'missing' no momento do scan (pode ter excluído alguma entity deste ciclo)",
+			base, job.Plural(int(missing), "media_file", "media_files"))
 	}
 	return base
 }

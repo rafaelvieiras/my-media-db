@@ -196,8 +196,8 @@ func (h *Handler) executar(ctx context.Context, _ json.RawMessage, p *job.Progre
 	escaneadas, falhas := h.escanearTodas(ctx, sources, p)
 	h.atualizarStorage(sources)
 	if len(sources) > 0 && escaneadas == 0 {
-		return "", fmt.Errorf("todas as %d fonte(s) falharam ao escanear: %s",
-			len(sources), strings.Join(falhas, "; "))
+		return "", fmt.Errorf("todas as %s falharam ao escanear: %s",
+			job.Plural(len(sources), "fonte", "fontes"), strings.Join(falhas, "; "))
 	}
 
 	p.Etapa(2, passosSaude, "contar as filas de curadoria")
@@ -460,29 +460,43 @@ const passosSaude = 8
 // positive information, unlike aplicados/sinalizados==0 which only means
 // "nothing to do").
 func montarMensagem(total, escaneadas int, falhas []string, revisao, orfas, resolvidos, aplicados, sinalizados, artesReprocessadas, arteLocalMusica, reconciliados, avaliados, incompletos int) string {
-	base := fmt.Sprintf("%s; %d em revisão, %d órfã(s)", resumoScans(total, escaneadas, falhas), revisao, orfas)
+	base := fmt.Sprintf("%s; %d em revisão, %s", resumoScans(total, escaneadas, falhas), revisao, pluralOrfas(orfas))
 	if resolvidos > 0 {
-		base = fmt.Sprintf("%s; %d em revisão (%d resolvidos automaticamente), %d órfã(s)",
-			resumoScans(total, escaneadas, falhas), revisao, resolvidos, orfas)
+		base = fmt.Sprintf("%s; %d em revisão (%s), %s",
+			resumoScans(total, escaneadas, falhas), revisao,
+			job.Plural(resolvidos, "resolvido automaticamente", "resolvidos automaticamente"),
+			pluralOrfas(orfas))
 	}
 	if aplicados > 0 || sinalizados > 0 {
-		base = fmt.Sprintf("%s; enriquecimento retroativo: %d aplicado(s), %d sinalizado(s) para revisão",
-			base, aplicados, sinalizados)
+		base = fmt.Sprintf("%s; enriquecimento retroativo: %s, %s",
+			base,
+			job.Plural(aplicados, "aplicado", "aplicados"),
+			job.Plural(sinalizados, "sinalizado para revisão", "sinalizados para revisão"))
 	}
 	if artesReprocessadas > 0 {
-		base = fmt.Sprintf("%s; %d entity(ies) com inventário de arte reprocessado", base, artesReprocessadas)
+		base = fmt.Sprintf("%s; %s com inventário de arte reprocessado", base,
+			job.Plural(artesReprocessadas, "entity", "entities"))
 	}
 	if arteLocalMusica > 0 {
-		base = fmt.Sprintf("%s; %d entity(ies) de música com pôster local encontrado", base, arteLocalMusica)
+		base = fmt.Sprintf("%s; %s de música com pôster local encontrado", base,
+			job.Plural(arteLocalMusica, "entity", "entities"))
 	}
 	if reconciliados > 0 {
-		base = fmt.Sprintf("%s; %d faixa(s)/episódio(s) religado(s) à árvore", base, reconciliados)
+		base = fmt.Sprintf("%s; %s", base,
+			job.Plural(reconciliados, "faixa/episódio religado à árvore", "faixas/episódios religados à árvore"))
 	}
 	if avaliados > 0 {
-		base = fmt.Sprintf("%s; %d itens avaliados, %d incompletos em catalogação", base, avaliados, incompletos)
+		base = fmt.Sprintf("%s; %s, %s em catalogação", base,
+			job.Plural(avaliados, "item avaliado", "itens avaliados"),
+			job.Plural(incompletos, "incompleto", "incompletos"))
 	}
 	return base
 }
+
+// pluralOrfas writes the review-queue count the way a person does -- "2 órfãs",
+// "1 órfã", "0 órfãs" -- instead of the old programmer placeholder "2 órfã(s)"
+// (the final message is shown verbatim on the queue screen, contract #34).
+func pluralOrfas(n int) string { return job.Plural(n, "órfã", "órfãs") }
 
 // montarMensagemSemContagem is used when the scans finished but the count of the
 // queues failed -- it still reflects what actually ran (the scan itself did not
@@ -497,9 +511,12 @@ func resumoScans(total, escaneadas int, falhas []string) string {
 	case total == 0:
 		return "nenhuma fonte de biblioteca cadastrada"
 	case len(falhas) == 0:
-		return fmt.Sprintf("%d fonte(s) escaneada(s) com sucesso", escaneadas)
+		return job.Plural(escaneadas, "fonte escaneada com sucesso", "fontes escaneadas com sucesso")
 	default:
-		return fmt.Sprintf("%d de %d fonte(s) escaneada(s) com sucesso (%d falharam: %s)",
-			escaneadas, total, len(falhas), strings.Join(falhas, "; "))
+		return fmt.Sprintf("%d de %s com sucesso (%s: %s)",
+			escaneadas,
+			job.Plural(total, "fonte escaneada", "fontes escaneadas"),
+			job.Plural(len(falhas), "falhou", "falharam"),
+			strings.Join(falhas, "; "))
 	}
 }

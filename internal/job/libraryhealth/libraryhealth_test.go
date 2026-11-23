@@ -201,7 +201,7 @@ func TestExecutarSemFontes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar: %v", err)
 	}
-	quero := "nenhuma fonte de biblioteca cadastrada; 3 em revisão, 2 órfã(s)"
+	quero := "nenhuma fonte de biblioteca cadastrada; 3 em revisão, 2 órfãs"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
@@ -225,7 +225,7 @@ func TestExecutarTodasSucesso(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar: %v", err)
 	}
-	quero := "2 fonte(s) escaneada(s) com sucesso; 5 em revisão, 1 órfã(s)"
+	quero := "2 fontes escaneadas com sucesso; 5 em revisão, 1 órfã"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
@@ -247,7 +247,7 @@ func TestExecutarFalhaParcial(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar não deveria falhar com sucesso parcial: %v", err)
 	}
-	quero := "1 de 2 fonte(s) escaneada(s) com sucesso (1 falharam: /lib/offline: datasource inacessível (offline)); 0 em revisão, 0 órfã(s)"
+	quero := "1 de 2 fontes escaneadas com sucesso (1 falhou: /lib/offline: datasource inacessível (offline)); 0 em revisão, 0 órfãs"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
@@ -272,7 +272,7 @@ func TestExecutarErroDeScanNoMeio(t *testing.T) {
 	if msg == "" {
 		t.Fatal("mensagem vazia")
 	}
-	quero := "1 de 2 fonte(s) escaneada(s) com sucesso (1 falharam: /lib/quebra: permissão negada); 0 em revisão, 0 órfã(s)"
+	quero := "1 de 2 fontes escaneadas com sucesso (1 falhou: /lib/quebra: permissão negada); 0 em revisão, 0 órfãs"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
@@ -358,7 +358,7 @@ func TestExecutarAcionaAutoMatchEReflete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar: %v", err)
 	}
-	quero := "nenhuma fonte de biblioteca cadastrada; 3 em revisão (2 resolvidos automaticamente), 1 órfã(s)"
+	quero := "nenhuma fonte de biblioteca cadastrada; 3 em revisão (2 resolvidos automaticamente), 1 órfã"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
@@ -380,7 +380,7 @@ func TestExecutarFalhaDoAutoMatchNaoAbortaJob(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar não deveria falhar por causa do auto-match (best-effort): %v", err)
 	}
-	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s)"
+	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfãs"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
@@ -389,7 +389,7 @@ func TestExecutarFalhaDoAutoMatchNaoAbortaJob(t *testing.T) {
 // TestExecutarAcionaEnriquecimentoRetroativoEReflete covers the central
 // criterion of the retroactive enrichment: after the batch auto-match, the job
 // calls EnriquecerRetroativo and the final message gains the clause
-// "enriquecimento retroativo: <A> aplicado(s), <S> sinalizado(s) para revisão"
+// "enriquecimento retroativo: <A> aplicados, <S> sinalizados para revisão"
 // -- with the review count RECOUNTED again after this step (3, not the 5 from
 // before), proving that the job reflects the FINAL state (flagged items entered
 // the queue).
@@ -402,7 +402,7 @@ func TestExecutarAcionaEnriquecimentoRetroativoEReflete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar: %v", err)
 	}
-	quero := "nenhuma fonte de biblioteca cadastrada; 3 em revisão, 1 órfã(s); enriquecimento retroativo: 3 aplicado(s), 2 sinalizado(s) para revisão"
+	quero := "nenhuma fonte de biblioteca cadastrada; 3 em revisão, 1 órfã; enriquecimento retroativo: 3 aplicados, 2 sinalizados para revisão"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
@@ -424,7 +424,7 @@ func TestExecutarEnriquecimentoRetroativoOmiteClausulaQuandoZero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar: %v", err)
 	}
-	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s)"
+	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfãs"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
@@ -442,7 +442,7 @@ func TestExecutarFalhaDoEnriquecimentoRetroativoNaoAbortaJob(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar não deveria falhar por causa do enriquecimento retroativo (best-effort): %v", err)
 	}
-	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s)"
+	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfãs"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
@@ -458,7 +458,7 @@ func TestExecutarSemMatcherNaoRodaEnriquecimentoRetroativo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar: %v", err)
 	}
-	quero := "nenhuma fonte de biblioteca cadastrada; 1 em revisão, 0 órfã(s)"
+	quero := "nenhuma fonte de biblioteca cadastrada; 1 em revisão, 0 órfãs"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
@@ -467,7 +467,7 @@ func TestExecutarSemMatcherNaoRodaEnriquecimentoRetroativo(t *testing.T) {
 // TestExecutarAcionaReprocessamentoArtesEReflete covers the central criterion of
 // the art reprocessing: after the retroactive enrichment, the job calls
 // ReprocessarArtesFaltantes and the final message gains the clause "<N>
-// entity(ies) com inventário de arte reprocessado".
+// "entities" com inventário de arte reprocessado".
 func TestExecutarAcionaReprocessamentoArtesEReflete(t *testing.T) {
 	cont := &contadorFake{revisao: 4, orfas: 2}
 	matcher := &matcherFake{artesProcessadas: 7}
@@ -477,7 +477,7 @@ func TestExecutarAcionaReprocessamentoArtesEReflete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar: %v", err)
 	}
-	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s); 7 entity(ies) com inventário de arte reprocessado"
+	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfãs; 7 entities com inventário de arte reprocessado"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
@@ -498,7 +498,7 @@ func TestExecutarReprocessamentoArtesOmiteClausulaQuandoZero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar: %v", err)
 	}
-	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s)"
+	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfãs"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
@@ -516,7 +516,7 @@ func TestExecutarFalhaDoReprocessamentoArtesNaoAbortaJob(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar não deveria falhar por causa do reprocessamento de artes (best-effort): %v", err)
 	}
-	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s)"
+	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfãs"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
@@ -533,7 +533,7 @@ func TestExecutarSemMatcherNaoRodaReprocessamentoArtes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar: %v", err)
 	}
-	quero := "nenhuma fonte de biblioteca cadastrada; 1 em revisão, 0 órfã(s)"
+	quero := "nenhuma fonte de biblioteca cadastrada; 1 em revisão, 0 órfãs"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
@@ -542,7 +542,7 @@ func TestExecutarSemMatcherNaoRodaReprocessamentoArtes(t *testing.T) {
 // TestExecutarAcionaDescobertaArteLocalMusicaEReflete covers the central
 // criterion of the local music art discovery: after the art reprocessing, the
 // job calls DescobrirArteLocalMusica and the final message gains the clause
-// "<N> entity(ies) de música com pôster local encontrado".
+// "<N> entities" de música com pôster local encontrado".
 func TestExecutarAcionaDescobertaArteLocalMusicaEReflete(t *testing.T) {
 	cont := &contadorFake{revisao: 4, orfas: 2}
 	matcher := &matcherFake{arteLocalEncontrada: 3}
@@ -552,7 +552,7 @@ func TestExecutarAcionaDescobertaArteLocalMusicaEReflete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar: %v", err)
 	}
-	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s); 3 entity(ies) de música com pôster local encontrado"
+	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfãs; 3 entities de música com pôster local encontrado"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
@@ -573,7 +573,7 @@ func TestExecutarDescobertaArteLocalMusicaOmiteClausulaQuandoZero(t *testing.T) 
 	if err != nil {
 		t.Fatalf("Executar: %v", err)
 	}
-	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s)"
+	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfãs"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
@@ -591,7 +591,7 @@ func TestExecutarFalhaDaDescobertaArteLocalMusicaNaoAbortaJob(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar não deveria falhar por causa da descoberta de arte local (best-effort): %v", err)
 	}
-	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s)"
+	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfãs"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
@@ -606,7 +606,7 @@ func TestExecutarSemMatcherNaoRodaDescobertaArteLocalMusica(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar: %v", err)
 	}
-	quero := "nenhuma fonte de biblioteca cadastrada; 1 em revisão, 0 órfã(s)"
+	quero := "nenhuma fonte de biblioteca cadastrada; 1 em revisão, 0 órfãs"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
@@ -615,7 +615,7 @@ func TestExecutarSemMatcherNaoRodaDescobertaArteLocalMusica(t *testing.T) {
 // TestExecutarAcionaReconciliacaoFilhosOrfaosEReflete covers the central
 // criterion of the reconciliation of orphan children: after the local music art
 // discovery, the job calls ReconciliarFilhosOrfaos and the final message gains
-// the clause "<N> faixa(s)/episódio(s) religado(s) à árvore" -- with the review
+// the clause "<N> faixas/episódios religados à árvore" -- with the review
 // count RECOUNTED again after this step (3, not the 5 from before), proving that
 // the reconciliation really removes items from the queue.
 func TestExecutarAcionaReconciliacaoFilhosOrfaosEReflete(t *testing.T) {
@@ -627,7 +627,7 @@ func TestExecutarAcionaReconciliacaoFilhosOrfaosEReflete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar: %v", err)
 	}
-	quero := "nenhuma fonte de biblioteca cadastrada; 3 em revisão, 1 órfã(s); 2 faixa(s)/episódio(s) religado(s) à árvore"
+	quero := "nenhuma fonte de biblioteca cadastrada; 3 em revisão, 1 órfã; 2 faixas/episódios religados à árvore"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
@@ -648,7 +648,7 @@ func TestExecutarReconciliacaoFilhosOrfaosOmiteClausulaQuandoZero(t *testing.T) 
 	if err != nil {
 		t.Fatalf("Executar: %v", err)
 	}
-	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s)"
+	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfãs"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
@@ -666,7 +666,7 @@ func TestExecutarFalhaDaReconciliacaoFilhosOrfaosNaoAbortaJob(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar não deveria falhar por causa da reconciliação de filhos órfãos (best-effort): %v", err)
 	}
-	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s)"
+	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfãs"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
@@ -681,7 +681,7 @@ func TestExecutarSemMatcherNaoRodaReconciliacaoFilhosOrfaos(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar: %v", err)
 	}
-	quero := "nenhuma fonte de biblioteca cadastrada; 1 em revisão, 0 órfã(s)"
+	quero := "nenhuma fonte de biblioteca cadastrada; 1 em revisão, 0 órfãs"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
@@ -700,7 +700,7 @@ func TestExecutarAcionaRecalculoCompletudeEReflete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar: %v", err)
 	}
-	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s); 10 itens avaliados, 3 incompletos em catalogação"
+	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfãs; 10 itens avaliados, 3 incompletos em catalogação"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
@@ -722,7 +722,7 @@ func TestExecutarRecalculoCompletudeClausulaComZeroIncompletos(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar: %v", err)
 	}
-	quero := "nenhuma fonte de biblioteca cadastrada; 0 em revisão, 0 órfã(s); 5 itens avaliados, 0 incompletos em catalogação"
+	quero := "nenhuma fonte de biblioteca cadastrada; 0 em revisão, 0 órfãs; 5 itens avaliados, 0 incompletos em catalogação"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
@@ -740,7 +740,7 @@ func TestExecutarFalhaDoRecalculoCompletudeNaoAbortaJob(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar não deveria falhar por causa do recalculo de completude (best-effort): %v", err)
 	}
-	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s)"
+	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfãs"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
@@ -757,7 +757,7 @@ func TestExecutarSemCompletenessRecalculatorNaoRecalcula(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Executar: %v", err)
 	}
-	quero := "nenhuma fonte de biblioteca cadastrada; 1 em revisão, 0 órfã(s)"
+	quero := "nenhuma fonte de biblioteca cadastrada; 1 em revisão, 0 órfãs"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
