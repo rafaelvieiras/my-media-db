@@ -63,8 +63,8 @@ func TestSugerirIdentidadesPoeOCandidatoNoAlerta(t *testing.T) {
 		t.Fatal("handler de sugerir_identidades nao registrado (WithIdentidadesJob pulou o registro)")
 	}
 
-	// A pasta leva o nome que a fonte falsa devolve ("Springfield Tales"): o que esta errado e a
-	// IDENTIDADE (tmdb 999), nao o nome -- exatamente o caso que o alerta descreve.
+	// The folder carries the name the fake source returns ("Springfield Tales"): what is wrong is
+	// the IDENTITY (tmdb 999), not the name -- exactly the case the alert describes.
 	serieSuspeita(t, database, "s1", "Springfield Tales", "999", 6)
 	// The post-scan's alert is what the job consumes -- and the census would NOT list s1 while
 	// this row exists, which is the bug the first production run exposed.

@@ -242,8 +242,8 @@ func TestDetalheDaFilaInexistente(t *testing.T) {
 	}
 }
 
-// TestItemOrfaoRecebeEventoDeErro garante que o boot continua fechando orfaos
-// (ADR-0028) sem quebrar com as colunas novas.
+// TestItemOrfaoRecebeEventoDeErro ensures that boot keeps closing orphans
+// (ADR-0028) without breaking on the new columns.
 func TestItemOrfaoRecebeEventoDeErro(t *testing.T) {
 	m := setupManager(t)
 	ctx := context.Background()
@@ -281,7 +281,7 @@ func TestItemOrfaoRecebeEventoDeErro(t *testing.T) {
 
 // TestProgressoDaEtapaLimpaOItem is the measured defect of the health job: the scan
 // narrates one FILE per report, the six steps after it narrate nothing, and the screen kept
-// showing the last scanned file ("X-Men 76 Dia de Formatura") under a step about music
+// showing the last scanned file (an episode file of a season folder) under a step about music
 // artwork. A step transition must clear the item, not inherit it.
 func TestProgressoDaEtapaLimpaOItem(t *testing.T) {
 	m := setupManager(t)

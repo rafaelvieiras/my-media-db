@@ -28,8 +28,8 @@ func serieComAlerta(t *testing.T, svc *Servico, titulo, tmdbID string) string {
 	return id
 }
 
-// TestSugereOutraIdentidadeQuandoElaAbarcaOsArquivos: the folder is "Clube do Terror" of 1990
-// with 78 files; the entity carries the 2019 reboot (13 episodes). The suggestion must point at
+// TestSugereOutraIdentidadeQuandoElaAbarcaOsArquivos: the folder is a 1990 series with
+// 78 files; the entity carries the 2019 reboot (13 episodes). The suggestion must point at
 // the 1992 show, whose 91 episodes can host the files.
 func TestSugereOutraIdentidadeQuandoElaAbarcaOsArquivos(t *testing.T) {
 	prov := stubSerieIdentidade{
@@ -97,7 +97,7 @@ func TestNaoSugereAIdentidadeQueJaTem(t *testing.T) {
 }
 
 // TestNaoSugereArvoreQueNaoAbarca: a candidate that scores well but has 3 episodes for 26 files
-// is the measured "Arrow" case -- the shape gate refuses it instead of proposing another wrong
+// is a measured case -- the shape gate refuses it instead of proposing another wrong
 // identity with a confident score.
 func TestNaoSugereArvoreQueNaoAbarca(t *testing.T) {
 	prov := stubSerieIdentidade{
@@ -130,7 +130,7 @@ func TestSugestaoPreservaOCensoDoAlerta(t *testing.T) {
 		arvores: map[string]provider.SerieArvore{"2913": arvoreDeTeste(91)},
 	}
 	svc := svcIdentidade(t, prov)
-	id := serieComAlerta(t, svc, "Clube do Terror", "93693") // censo 65/78 gravado por serieComAlerta
+	id := serieComAlerta(t, svc, "Clube do Terror", "93693") // census 65/78 written by serieComAlerta
 
 	if _, err := svc.SugerirIdentidadeDaArvore(context.Background(), id,
 		AlvoSerie{Nome: "Clube do Terror", Ano: 1990, Arquivos: 78}, []string{"pt-BR"}); err != nil {

@@ -610,7 +610,7 @@ func TestCorrigirDescartaIdentidadeAntigaDasOutrasFontes(t *testing.T) {
 
 // TestCorrigirDescartaArvoreDaIdentidadeAntiga is the regression of the duplicated
 // episodes found right after correcting a series: the OLD tree (seasons/episodes of the
-// previous identity) stayed linked to the same seasons, so Temporada 1 came out holding
+// previous identity) stayed linked to the same seasons, so season 1 came out holding
 // the 22 episodes of the wrong show AND the 14 real ones -- two cards per number.
 //
 // Correcting now discards the tree before importing the new one. The files survive: they
@@ -662,7 +662,7 @@ func TestCorrigirDescartaArvoreDaIdentidadeAntiga(t *testing.T) {
 
 // TestCorrigirInvalidaODerivadoDaIdentidadeAnterior: correcting the identity must invalidate
 // what the PREVIOUS one produced, or the wrong show keeps passing for the new one. Measured in
-// production on "Clube do Terror (1990)" (23/nov/2026): the tree and the links came out right
+// production on a 1990 series (23/nov/2026): the tree and the links came out right
 // while the folder kept the 2019 poster.jpg/fanart.jpg, the app kept serving the 2019 artwork
 // and the tree kept NFOs naming the 2019 episodes -- with the completeness saying "complete",
 // so no job ever rewrote them.

@@ -24,9 +24,9 @@ package tmdb
 //     `type` is chosen by whoever created the group — "Alternate Order" is filed as
 //     type 1 (original air date) in The Office. So the KEY comes from the group NAME
 //     (readable in the UI) and the type is only a hint for the import priority.
-//   - EVERY GROUP THE PROVIDER PUBLISHES IS IMPORTED (owner, 23/nov/2026: "sempre que
-//     os metadados de uma série forem baixados, ela precisa baixar logo tudo
-//     disponível no provedor, inclusive as variações de grupos"). The old cap of 8
+//   - EVERY GROUP THE PROVIDER PUBLISHES IS IMPORTED (owner, 23/Nov/2026: "whenever the
+//     metadata of a series is downloaded, it must download right away everything
+//     available in the provider, including the group variations"). The old cap of 8
 //     silently dropped real orders on a popular series (The Office publishes 10), and
 //     a dropped group and a missing group looked exactly the same. There is no cap
 //     now: one request per group, and ONE RECORD PER GROUP in the returned tree.

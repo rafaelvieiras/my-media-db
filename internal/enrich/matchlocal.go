@@ -1,7 +1,7 @@
 // This file implements the NAME MATCHING against local drafts on manual import:
 // before creating a new entity, `importarItemBase` tries to find a PURE draft (with NO
 // external_id, same `type`) already scanned with the same title/year — reusing the SAME
-// scoring of the auto-match of the Revisão queue, now extracted into the leaf package
+// scoring of the auto-match of the review queue, now extracted into the leaf package
 // `internal/matching` (no import cycle with internal/server).
 package enrich
 

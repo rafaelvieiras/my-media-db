@@ -602,9 +602,10 @@ func EscreverArquivoAtomico(destino string, dados []byte) error {
 	if err != nil {
 		return err
 	}
-	// os.CreateTemp cria 0600 e o rename mantem o modo: sem isto todo .nfo e toda arte que o
-	// MyMediaDB grava fica ilegivel para Kodi/Jellyfin rodando com outro uid -- que e justamente
-	// quem le esses arquivos. 0664 casa com o resto da biblioteca (nobody:users).
+	// os.CreateTemp creates the file with 0600 and the rename keeps the mode: without this,
+	// every .nfo and every artwork file that MyMediaDB writes stays unreadable to a Kodi/Jellyfin
+	// running with another uid -- which is exactly who reads these files. 0664 matches the rest
+	// of the library (nobody:users).
 	if err := tmp.Chmod(0o664); err != nil {
 		_ = tmp.Close()
 		_ = os.Remove(tmp.Name())

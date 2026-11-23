@@ -127,10 +127,10 @@ func TestIndexarEpisodioEPreencherOrdenacoes(t *testing.T) {
 	}
 }
 
-// idxDaSerieAbsoluta builds an index shaped like the owner's X-Men: 76 episodes that the
-// provider numbers in TWO split layouts and never marks with absolute_number. "dvd-order" is
-// 13/13/25/15/10 and "official" is 13/13/19/17/14 — the folder layout of the library is
-// 13/13/26/14/10, which follows the dvd one for all but one file.
+// idxDaSerieAbsoluta builds an index shaped like a series with 76 files: the provider numbers
+// it in TWO split layouts and never marks absolute_number. "dvd-order" is 13/13/25/15/10 and
+// "official" is 13/13/19/17/14 — the folder layout of the library is 13/13/26/14/10, which
+// follows the dvd one for all but one file.
 func idxDaSerieAbsoluta() *Index {
 	idx := NovoIndex()
 	idx.PreencherOrdenacoes(map[string]any{
@@ -159,10 +159,10 @@ func idxDaSerieAbsoluta() *Index {
 	return idx
 }
 
-// TestAbsolutoPelaOrdemDaSerie cobre o mapeamento que faltava (issue #104): um arquivo cujo
-// nome só traz o número ABSOLUTO não tem temporada, e o provedor não preenche absolute_number
-// para essa série. A ordem da série resolve o número, e a temporada da PASTA desempata qual
-// ordem usar.
+// TestAbsolutoPelaOrdemDaSerie covers the mapping that was missing (issue #104): a file whose
+// name only carries the ABSOLUTE number has no season, and the provider does not fill
+// absolute_number for that series. The order of the series resolves the number, and the
+// season of the FOLDER breaks the tie on which order to use.
 func TestAbsolutoPelaOrdemDaSerie(t *testing.T) {
 	idx := idxDaSerieAbsoluta()
 	casos := []struct {
@@ -175,11 +175,11 @@ func TestAbsolutoPelaOrdemDaSerie(t *testing.T) {
 		{1, 1, "ep01", 1, false},
 		{14, 2, "ep14", 2, false},
 		{27, 3, "ep27", 3, false},
-		{46, 3, "ep46", 3, false}, // o "official" poria na temporada 4; o dvd mantém na 3
-		{52, 3, "ep52", 4, true},  // o único arquivo em que o dvd discorda da pasta
-		{52, 4, "ep52", 4, false}, // na pasta 4 as duas concordam
+		{46, 3, "ep46", 3, false}, // "official" would put it in season 4; dvd keeps it in 3
+		{52, 3, "ep52", 4, true},  // the only file where dvd disagrees with the folder
+		{52, 4, "ep52", 4, false}, // in folder 4 both agree
 		{66, 4, "ep66", 4, false},
-		{76, 5, "ep76", 5, false}, // o "official" poria em S5E14; o dvd dá S5E10
+		{76, 5, "ep76", 5, false}, // "official" would put it in S5E14; dvd gives S5E10
 	}
 	for _, c := range casos {
 		ids, temporada, ok := CasarComPasta(idx, naming.EpisodeInfo{Absolute: []int{c.absoluto}, IsAbsolute: true}, c.pasta, "")
@@ -199,8 +199,9 @@ func TestAbsolutoPelaOrdemDaSerie(t *testing.T) {
 	}
 }
 
-// TestAbsolutoDoProvedorVenceAOrdem garante a precedência: quando o provedor PREENCHE
-// absolute_number, ele é a âncora (ADR-0021) e a derivação pela ordem não é consultada.
+// TestAbsolutoDoProvedorVenceAOrdem guarantees the precedence: when the provider FILLS
+// absolute_number, it is the anchor (ADR-0021) and the derivation through the order is not
+// consulted.
 func TestAbsolutoDoProvedorVenceAOrdem(t *testing.T) {
 	idx := idxDaSerieAbsoluta()
 	idx.IndexarEpisodio("especial-do-provedor", map[string]any{"absolute_number": float64(3)})
@@ -210,9 +211,9 @@ func TestAbsolutoDoProvedorVenceAOrdem(t *testing.T) {
 	}
 }
 
-// TestAbsolutoSemOrdemConfiavelNaoCasa garante o outro lado: uma ordem com BURACO na
-// numeração (temporada que começa no episódio 5) é descartada, porque contar posições sobre
-// uma grade furada deslocaria todos os números seguintes. Melhor mandar para a revisão.
+// TestAbsolutoSemOrdemConfiavelNaoCasa guarantees the other side: an order with a HOLE in the
+// numbering (a season that starts at episode 5) is discarded, because counting positions over
+// a holed grid would shift every following number. Better to send it to review.
 func TestAbsolutoSemOrdemConfiavelNaoCasa(t *testing.T) {
 	idx := NovoIndex()
 	idx.IndexarEpisodio("a", map[string]any{"numbering": map[string]any{"official": map[string]any{"season": float64(1), "number": float64(1)}}})
@@ -223,12 +224,12 @@ func TestAbsolutoSemOrdemConfiavelNaoCasa(t *testing.T) {
 	}
 }
 
-// TestTituloDoArquivoVenceAFilaDaPasta cobre a licao medida em producao: a pasta diz de qual
-// BLOCO de episodios o arquivo e, mas nao QUAL episodio e. Na biblioteca do dono os nomes dos
-// arquivos seguem a ordem "disney" (74 de 76 nomes batem), enquanto o "dvd-order" casa melhor
-// com a CONTAGEM das pastas e aponta para o episodio errado ("X-Men - 46 - A Volta do
-// Juggernaut" caiu em "Um Trato com o Diabo"). O titulo que o arquivo declara e o voto que
-// desempata; a pasta so decide quando o voto e inconclusivo.
+// TestTituloDoArquivoVenceAFilaDaPasta covers the lesson measured in production: the folder
+// says which BLOCK of episodes the file is in, but not WHICH episode it is. In the library the
+// file names follow the "disney" order (74 of 76 names match), while the "dvd-order" fits the
+// folder COUNT better and points at the wrong episode (a file stating one title landed on a
+// different one). The title the file states is the vote that breaks the
+// tie; the folder only decides when the vote is inconclusive.
 func TestTituloDoArquivoVenceAFilaDaPasta(t *testing.T) {
 	idx := NovoIndex()
 	idx.PreencherOrdenacoes(map[string]any{"default_season_type": "official"})
@@ -242,20 +243,20 @@ func TestTituloDoArquivoVenceAFilaDaPasta(t *testing.T) {
 		"official":  map[string]any{"season": float64(2), "number": float64(1)},
 		"dvd-order": map[string]any{"season": float64(1), "number": float64(2)}}})
 
-	// Sem titulo, a prioridade escolhe o "dvd-order": posicao 2 = z.
+	// Without a title, the priority chooses the "dvd-order": position 2 = z.
 	if ids, _, ok := CasarComPasta(idx, naming.EpisodeInfo{Absolute: []int{2}, IsAbsolute: true}, 0, ""); !ok || ids[0] != "z" {
 		t.Fatalf("sem titulo, absoluto 2 = %v (%v), quero z (prioridade dvd-order)", ids, ok)
 	}
-	// Com o titulo que o arquivo declara, o voto resolve para y.
+	// With the title the file states, the vote resolves to y.
 	if ids, _, ok := CasarComPasta(idx, naming.EpisodeInfo{Absolute: []int{2}, IsAbsolute: true}, 0, "Serie - 02 - Segredos Revelados"); !ok || ids[0] != "y" {
 		t.Fatalf("com titulo, absoluto 2 = %v (%v), quero y (o titulo desempata)", ids, ok)
 	}
 }
 
-// TestAbsolutoComTituloQueNaoExisteVaiParaRevisao cobre o desempate perigoso: o arquivo declara
-// um titulo e NENHUM candidato compartilha palavra com ele. Cair na prioridade foi como dois
-// arquivos terminaram no MESMO episodio em producao ("Um Mutante dos Diabos" roubou o episodio
-// de "O Valor de um Homem 1"). Revisao, nao chute.
+// TestAbsolutoComTituloQueNaoExisteVaiParaRevisao covers the dangerous tie-break: the file
+// states a title and NO candidate shares a word with it. Falling back to the priority is how
+// two files ended up on the SAME episode in production (a name that exists in no provider
+// list stole the episode of a real one). Review, not a guess.
 func TestAbsolutoComTituloQueNaoExisteVaiParaRevisao(t *testing.T) {
 	idx := NovoIndex()
 	idx.IndexarEpisodioComTitulo("a", "O Valor de um Homem (Parte 1)", map[string]any{"numbering": map[string]any{
@@ -265,7 +266,7 @@ func TestAbsolutoComTituloQueNaoExisteVaiParaRevisao(t *testing.T) {
 	if ids, _, ok := CasarComPasta(idx, naming.EpisodeInfo{Absolute: []int{53}, IsAbsolute: true}, 4, "X-Men - 53 - Um Mutante dos Diabos"); ok {
 		t.Fatalf("absoluto 53 = %v, quero não casar (nenhum episódio tem esse título)", ids)
 	}
-	// Sem titulo declarado o arquivo nao tem como votar: a pasta continua decidindo.
+	// Without a declared title the file cannot vote: the folder keeps deciding.
 	if ids, _, ok := CasarComPasta(idx, naming.EpisodeInfo{Absolute: []int{2}, IsAbsolute: true}, 4, "X-Men - 02"); !ok || ids[0] != "b" {
 		t.Fatalf("sem titulo, absoluto 2 = %v (%v), quero b pela ordem", ids, ok)
 	}

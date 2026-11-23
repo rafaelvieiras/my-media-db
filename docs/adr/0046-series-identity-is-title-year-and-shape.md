@@ -15,15 +15,15 @@ That combination produced confident wrong identities in production. All of them 
 `match_confidence` 90–100 and a `tree_mismatch` alert that says "the entry is another show with
 the same name" — which was literally true:
 
-| library folder                | entry accepted | what the provider says of that entry          | files stranded |
-| ----------------------------- | -------------- | --------------------------------------------- | -------------- |
-| `Cold Case`                   | tmdb 81197     | "Cold Case" **2018**, 3 seasons / 22 episodes | 44             |
-| `Clube do Terror (1990)`      | tmdb 93693     | "Clube do Terror" **2019**, 3 / 13            | 65             |
-| `As Tartarugas Ninjas (1983)` | tmdb 51817     | **2012**                                      | 36             |
-| `Arrow`                       | tmdb 280224    | "Arrow" **2009**, 1 / 3                       | 23             |
-| `Lie to Me`                   | tmdb 39261     | "Minta para Mim" **2011**, 1 / 16             | 35             |
-| `Aladdin`                     | tmdb 14383     | **0 seasons / 0 episodes**                    | 86             |
-| `Esquadrilha Aérea`           | tmdb 5565      | **0 / 0**                                     | 26             |
+| the folder says        | entry accepted | what the provider says of that entry        | files stranded |
+| ---------------------- | -------------- | ------------------------------------------- | -------------- |
+| a series, no year      | tmdb 81197     | the same title **2018**, 3 seasons / 22 eps | 44             |
+| a series marked (1990) | tmdb 93693     | the same title **2019**, 3 / 13             | 65             |
+| a series marked (1983) | tmdb 51817     | **2012**                                    | 36             |
+| a series, no year      | tmdb 280224    | the same title **2009**, 1 / 3              | 23             |
+| a series, no year      | tmdb 39261     | a translated title, **2011**, 1 / 16        | 35             |
+| a series, no year      | tmdb 14383     | **0 seasons / 0 episodes**                  | 86             |
+| a series, no year      | tmdb 5565      | **0 / 0**                                   | 26             |
 
 Three measured causes, each independent:
 
@@ -52,7 +52,8 @@ The identity of a series is decided by three pieces of evidence, in this order o
    "Clube do Terror"), because an article is not part of a name — measured: that difference alone
    costs 17 points of Jaro-Winkler and pushed the correct show 9 points below the cut.
 2. **The year the folder states**, with a **2-year slack** for series (movies keep 1). The slack is
-   not cosmetic: `Clube do Terror (1990)` is the 1992 show, so a 1-year gate would discard the only
+   not cosmetic: a folder marked `(1990)` was measured against the 1992 show, so a 1-year gate
+   would discard the only
    correct candidate. A candidate outside the slack is **discarded**, which is what keeps a remake
    of the same name from winning.
 3. **The shape of the tree**, checked BEFORE anything is written: the provider's tree must be able

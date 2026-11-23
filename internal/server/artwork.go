@@ -105,10 +105,10 @@ func ordenarGruposArtwork(grupos map[string][]artworkItem, idiomaPreferido strin
 	for _, itens := range grupos {
 		sort.SliceStable(itens, func(i, j int) bool {
 			if itens[i].IsPrincipal != itens[j].IsPrincipal {
-				return itens[i].IsPrincipal // true vem primeiro
+				return itens[i].IsPrincipal // true first
 			}
 			if itens[i].IsLocalInLibrary != itens[j].IsLocalInLibrary {
-				return itens[i].IsLocalInLibrary // true vem primeiro
+				return itens[i].IsLocalInLibrary // true first
 			}
 			ri, rj := rankIdiomaArte(itens[i].Lang, base), rankIdiomaArte(itens[j].Lang, base)
 			if ri != rj {

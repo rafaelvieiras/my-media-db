@@ -40,10 +40,10 @@ var (
 	// the entry is another show with the same name, or an entry with no episode at all. It is
 	// a DIFFERENT failure from "not found": the name matched, the identity does not fit.
 	//
-	// Measured in production (23/nov/2026): "Arrow" (TMDb 2009, 3 episodes) was cataloged for
-	// a folder with 26 files, "Cold Case" (2018, 22 episodes) for 65 files, "Aladdin" and
-	// "Esquadrilha Aérea" for entries with ZERO episodes. The files could never find an
-	// episode, and every screen showed a "does not fit" alert instead of "wrong entry".
+	// Measured in production (23/nov/2026): a 2009 entry (3 episodes) was cataloged for a
+	// folder with 26 files, a 2018 entry (22 episodes) for 65 files, and two other entries
+	// with ZERO episodes. The files could never find an episode, and every screen showed a
+	// "does not fit" alert instead of "wrong entry".
 	ErrSerieIdentidadeIncompativel = errors.New("enrich: a arvore da serie nao comporta os arquivos da pasta")
 	// ErrArvoreVazia: the source answered the series with ZERO episodes. The identity is
 	// not wrong by itself, but it is USELESS: no file can ever be placed in a tree with no
@@ -285,7 +285,7 @@ func (s *Servico) mesclarTvdbCruzado(ctx context.Context, entityID, source strin
 //
 // It exists for a manual identity change: the tree describes the PREVIOUS show, so
 // re-importing over it leaves two episode sets inside the same seasons (measured: after
-// correcting "White Collar" from "White Collar Blue", Temporada 1 held both the 22
+// correcting a series from its same-name sibling, "Temporada 1" held both the 22
 // episodes of the wrong show -- titled "Episódio N", and holding every file -- and the 14
 // real ones). Dedup by external id (ADR-0021) cannot merge them: they are different
 // episodes of different shows.
@@ -527,9 +527,9 @@ func (s *Servico) ImportarSeriePorNome(ctx context.Context, alvo AlvoSerie, lang
 		// The QUERY is always the folder's name in the active language: TMDb matches a query
 		// against the translated AND the original title, so "Cold Case" finds "Arquivo Morto"
 		// (the pt-BR name of the 2003 show). The YEAR never goes into the query -- it is a
-		// SCORE input, because the year a folder states is often imprecise (measured:
-		// "Clube do Terror (1990)" is the 1992 show) and a hard filter would lose the right
-		// candidate instead of just deprioritizing it.
+		// SCORE input, because the year a folder states is often imprecise (measured: 1990
+		// for the 1992 show), and a hard filter would lose the right candidate instead of
+		// just deprioritizing it.
 		res, err := prov.Buscar(ctx, nome, tipoSerie, lang)
 		if err != nil {
 			log.Printf("enrich: busca de serie %q na fonte %q falhou (segue): %v", nome, prov.Nome(), err)
@@ -682,8 +682,8 @@ func anoDeString(ano *string) int {
 //
 // It was born series-only (ADR-0035, the misspelled "2 Broken Girls") and is now shared by
 // every type the sources answer by name: a MOVIE needs it for the same reason, and its
-// absence was measured -- "101 Dálmatas O Filme" had no identity, no search result and no
-// hint, because the hint only ever ran for series.
+// absence was measured -- a movie folder had no identity, no search result and no hint,
+// because the hint only ever ran for series.
 type SugestaoDeMatch struct {
 	// Resultado is the candidate exactly as the source returned it (the UI shows its
 	// poster/title/year).

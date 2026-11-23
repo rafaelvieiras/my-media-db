@@ -249,8 +249,8 @@ const dashboardJobsRoute = createRoute({
   component: JobsScreen,
 })
 
-// A fila (ADR-0040) fica ao lado dos jobs porque mostra as MESMAS execuções que
-// a tela de jobs dispara — mais as varreduras, que não têm tela própria.
+// The queue (ADR-0040) sits next to the jobs because it shows the SAME executions
+// that the jobs screen fires — plus the scans, which have no screen of their own.
 const dashboardQueueRoute = createRoute({
   getParentRoute: () => dashboardRoute,
   path: '/queue',

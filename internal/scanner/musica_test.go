@@ -1191,9 +1191,9 @@ func TestScanMusicaTentaDeNovoDraftForaDaJanela(t *testing.T) {
 	}
 }
 
-// manejarMusicaNegativa monta um scan com DOIS arquivos do MESMO album (as tags sao
-// identicas no que importa: album_artist + album), que e o caso em que o cache por
-// album precisa falar mais alto que o arquivo.
+// manejarMusicaNegativa assembles a scan with TWO files of the SAME album (the tags are
+// identical in what matters: album_artist + album), which is the case where the per-album
+// cache must speak louder than the file.
 func manejarMusicaNegativa(t *testing.T, d *db.DB, spy *spyMusicaImportador) (*Manager, string, []string) {
 	t.Helper()
 	root := t.TempDir()
@@ -1215,10 +1215,10 @@ func manejarMusicaNegativa(t *testing.T, d *db.DB, spy *spyMusicaImportador) (*M
 	return m, root, arqs
 }
 
-// TestScanMusicaNaoRepeteArtistaSemAlbum e o caso MEDIDO em producao: o artista existe
-// na fonte, mas nao tem album com aquele nome. A resposta e um fato do par
-// (artista, album), entao o segundo arquivo do mesmo album NAO pode repetir a pergunta
-// (eram 3 candidatos x 2-3 requests por arquivo, a 1 req/s).
+// TestScanMusicaNaoRepeteArtistaSemAlbum is the case MEASURED in production: the artist
+// exists in the source, but has no album with that name. The answer is a fact of the
+// (artist, album) pair, so the second file of the same album MUST NOT repeat the question
+// (it was 3 candidates x 2-3 requests per file, at 1 req/s).
 func TestScanMusicaNaoRepeteArtistaSemAlbum(t *testing.T) {
 	d := abrirDB(t)
 	spy := &spyMusicaImportador{erroEhAlbumAusente: true}
@@ -1239,9 +1239,9 @@ func TestScanMusicaNaoRepeteArtistaSemAlbum(t *testing.T) {
 	}
 }
 
-// TestScanMusicaLembraAlbumSemAFaixa cobre o outro desfecho observado: o album EXISTE,
-// a faixa nao esta nele (lado B, bonus). O album resolvido fica lembrado, entao o
-// arquivo seguinte e respondido localmente -- sem uma unica requisicao.
+// TestScanMusicaLembraAlbumSemAFaixa covers the other observed outcome: the album EXISTS,
+// the track is not in it (B side, bonus). The resolved album stays remembered, so the
+// next file is answered locally -- without a single request.
 func TestScanMusicaLembraAlbumSemAFaixa(t *testing.T) {
 	d := abrirDB(t)
 	album := &enrich.AlbumImportado{AlbumID: "album-1", ArtistaMBID: "artista-1"}
@@ -1256,7 +1256,7 @@ func TestScanMusicaLembraAlbumSemAFaixa(t *testing.T) {
 	if spy.chamadas != 1 {
 		t.Errorf("imports pela rede = %d, quero 1", spy.chamadas)
 	}
-	// O segundo arquivo tenta o album lembrado em memoria antes de qualquer requisicao.
+	// The second file tries the album remembered in memory before any request.
 	if spy.doCache != 1 {
 		t.Errorf("imports locais = %d, quero 1 (album lembrado)", spy.doCache)
 	}
@@ -1270,9 +1270,9 @@ func TestScanMusicaLembraAlbumSemAFaixa(t *testing.T) {
 	}
 }
 
-// TestScanMusicaErroDeRedeNaoEhLembrado garante o limite do cache: falha de rede nao e
-// fato do par (artista, album), entao NAO pode ser lembrada -- o arquivo seguinte tem
-// que tentar de novo.
+// TestScanMusicaErroDeRedeNaoEhLembrado guarantees the cache limit: a network failure is
+// not a fact of the (artist, album) pair, so it MUST NOT be remembered -- the next file
+// has to try again.
 func TestScanMusicaErroDeRedeNaoEhLembrado(t *testing.T) {
 	d := abrirDB(t)
 	spy := &spyMusicaImportador{erroDeRede: true}

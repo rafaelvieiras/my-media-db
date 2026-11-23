@@ -262,7 +262,7 @@ func semearTemporada(t *testing.T, d *db.DB, id, titulo, ano string) {
 	}
 }
 
-// membrosDe faz GET /entities/{id}/members e decodifica os cards (exige 200).
+// membrosDe does GET /entities/{id}/members and decodes the cards (it requires 200).
 func membrosDe(t *testing.T, h http.Handler, id string) []entityCardDTO {
 	t.Helper()
 	rec := do(t, h, http.MethodGet, "/api/v1/entities/"+id+"/members", nil)

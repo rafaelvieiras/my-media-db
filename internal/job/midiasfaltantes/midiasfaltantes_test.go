@@ -62,7 +62,7 @@ func TestExecutarProcessaTodasEResume(t *testing.T) {
 	mat := &materializadorFake{
 		artesPorID: map[string][]string{
 			"e1": {"poster", "fanart"},
-			"e2": {}, // sem candidato pra nenhum kind -- não é erro
+			"e2": {}, // no candidate for any kind -- not an error
 			"e3": {"poster"},
 		},
 		nfoPorID: map[string]bool{"e1": true, "e3": false},
@@ -217,9 +217,9 @@ func TestExecutarComProgressoNarraContagemEItem(t *testing.T) {
 	if len(progressos) == 0 {
 		t.Fatal("nenhum progresso reportado")
 	}
-	// Cada snapshot é um DELTA (campo zero = "não mudou"), que é como o registro
-	// real faz o merge na linha da fila; aqui dobramos os deltas para ler o
-	// estado acumulado, que é o que o dono vê na tela.
+	// Each snapshot is a DELTA (zero field = "did not change"), which is how the real
+	// record merges on the queue row; here we accumulate the deltas to read the
+	// cumulative state, which is what the owner sees on the screen.
 	estado := execqueue.Progresso{}
 	dobrados := make([]execqueue.Progresso, 0, len(progressos))
 	for _, p := range progressos {
@@ -234,9 +234,9 @@ func TestExecutarComProgressoNarraContagemEItem(t *testing.T) {
 		}
 		dobrados = append(dobrados, estado)
 	}
-	// O total tem que ser o universo ANTES de processar qualquer entity (é o
-	// defeito da #69): o snapshot da etapa ainda não traz contagem, o seguinte
-	// já traz "0 de 3".
+	// The total must be the universe BEFORE processing any entity (that is the
+	// defect of #69): the snapshot of the step does not carry a count yet, the next
+	// one already carries "0 de 3".
 	primeiroComTotal := -1
 	for i, p := range dobrados {
 		if p.Total != 0 {
@@ -254,13 +254,13 @@ func TestExecutarComProgressoNarraContagemEItem(t *testing.T) {
 	if ultimo.Atual != 3 || ultimo.Total != 3 {
 		t.Errorf("contagem final = %d/%d, quero 3/3", ultimo.Atual, ultimo.Total)
 	}
-	// Contagem monotônica: o estado acumulado nunca anda para trás.
+	// Monotonic count: the cumulative state never moves backwards.
 	for i := 1; i < len(dobrados); i++ {
 		if dobrados[i].Atual < dobrados[i-1].Atual {
 			t.Fatalf("contagem não-monotônica em %d: %d -> %d", i, dobrados[i-1].Atual, dobrados[i].Atual)
 		}
 	}
-	// O item corrente é o TÍTULO, não o uuid (o último item narrado é o e3).
+	// The current item is the TITLE, not the uuid (the last narrated item is e3).
 	if ultimo.Item != "Duran Duran" {
 		t.Errorf("último item = %q, quero o título \"Duran Duran\"", ultimo.Item)
 	}
@@ -277,9 +277,9 @@ func TestExecutarComProgressoNarraContagemEItem(t *testing.T) {
 		t.Error("o uuid não deveria aparecer como item quando o título está disponível")
 	}
 
-	// Trilha: uma linha por entity COM trabalho, mais UM resumo das que não tinham
-	// nada (issue #73: 19.000 linhas idênticas de "nada faltando" custavam mais que o
-	// próprio trabalho, e diziam o mesmo que um número).
+	// Trail: one line per entity WITH work, plus ONE summary of those that had
+	// nothing (issue #73: 19.000 identical lines of "nada faltando" cost more than the
+	// work itself, and said the same as a number).
 	eventos := registro.Eventos()
 	if len(eventos) != 3 {
 		t.Fatalf("eventos = %d, quero 3 (2 com trabalho + 1 resumo dos que não tinham)", len(eventos))
@@ -325,7 +325,7 @@ func TestExecutarComProgressoContaFalhaNaTrilha(t *testing.T) {
 	if _, err := h.ExecutarComProgresso(context.Background(), nil, job.NovoProgresso(registro)); err != nil {
 		t.Fatalf("ExecutarComProgresso não deveria falhar por causa de UMA entity: %v", err)
 	}
-	// Sem titulador, o rótulo é o id -- e a trilha continua correta.
+	// Without a Titulador, the label is the id -- and the trail stays correct.
 	eventos := registro.Eventos()
 	if len(eventos) != 2 {
 		t.Fatalf("eventos = %d, quero 2", len(eventos))
@@ -333,8 +333,8 @@ func TestExecutarComProgressoContaFalhaNaTrilha(t *testing.T) {
 	if eventos[0].Status != execqueue.EventoErro || !strings.Contains(eventos[0].Detail, "permission denied") {
 		t.Errorf("evento de falha = %+v, quero erro com a mensagem", eventos[0])
 	}
-	// O último snapshot com contagem é o 2/2 do fim do loop (os anteriores são
-	// deltas de Item, com contagem zero).
+	// The last snapshot with a count is the 2/2 at the end of the loop (the previous ones are
+	// Item deltas, with a zero count).
 	var atual, total int
 	for _, p := range registro.Progressos() {
 		if p.Total != 0 || p.Atual != 0 {

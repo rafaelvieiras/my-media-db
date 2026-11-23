@@ -331,7 +331,6 @@ func TestSimilaresOrdenaPorSobreposicaoDeGenero(t *testing.T) {
 }
 
 // TestSimilaresDesempataPorNota: on an EQUAL genre overlap, the score (vote_average) breaks the tie -- highest first.
-// (vote_average) desempata -- maior primeiro.
 func TestSimilaresDesempataPorNota(t *testing.T) {
 	c := New(Credencial{Token: "tok"}, nil, "")
 	raw := json.RawMessage(`{

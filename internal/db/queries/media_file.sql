@@ -406,8 +406,8 @@ WHERE mf.state = 'present'
 -- name: ObterCaminhoDeArquivoDaSerie :one
 -- The path of ONE present file of the series tree (episode hanging on the series or on one of its
 -- seasons). It exists because a SERIES has no media_file of its own in production: the files hang
--- on the episodes (measured 23/nov/2026: 1.240 epsodios com arquivo na tabela de vinculo e 0 na
--- coluna legada), so ListarMediaFilesPorEntity(serie) comes out empty and any derivation of the
+-- on the episodes (measured 23/nov/2026: 1,240 episodes carrying a file in the link table and 0 in
+-- the legacy column), so ListarMediaFilesPorEntity(serie) comes out empty and any derivation of the
 -- FOLDER NAME from a file needs this. sql.ErrNoRows when the tree holds no present file.
 SELECT mf.path
 FROM media_file mf

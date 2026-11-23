@@ -126,7 +126,7 @@ func TestBuscarArtesFilme(t *testing.T) {
 	assertContagemPorKindFilme(t, porKind)
 	assertDetalhesArteFilme(t, porKind)
 
-	// a api_key foi enviada.
+	// the api_key was sent.
 	if capturado == "" || !contemAPIKey(capturado) {
 		t.Errorf("URL sem api_key: %q", capturado)
 	}
@@ -136,7 +136,7 @@ func TestBuscarArtesFilme(t *testing.T) {
 // fixture.
 func assertContagemPorKindFilme(t *testing.T, porKind map[string][]provider.Arte) {
 	t.Helper()
-	// poster: 2 (en + pt), preservando lang e likes.
+	// poster: 2 (en + pt), keeping lang and likes.
 	if len(porKind["poster"]) != 2 {
 		t.Fatalf("poster = %d, quero 2", len(porKind["poster"]))
 	}
@@ -148,7 +148,7 @@ func assertContagemPorKindFilme(t *testing.T, porKind map[string][]provider.Arte
 	if len(porKind["clearart"]) != 2 {
 		t.Errorf("clearart = %d, quero 2", len(porKind["clearart"]))
 	}
-	// banner e thumb.
+	// banner and thumb.
 	if len(porKind["banner"]) != 1 || len(porKind["thumb"]) != 1 {
 		t.Errorf("banner=%d thumb=%d, quero 1 cada", len(porKind["banner"]), len(porKind["thumb"]))
 	}
@@ -158,16 +158,16 @@ func assertContagemPorKindFilme(t *testing.T, porKind map[string][]provider.Arte
 // parsed, likes converted from string) of the movie fixture.
 func assertDetalhesArteFilme(t *testing.T, porKind map[string][]provider.Arte) {
 	t.Helper()
-	// fanart: textless (lang vazio).
+	// fanart: textless (empty lang).
 	if fa := porKind["fanart"]; len(fa) != 1 || fa[0].Lang != "" {
 		t.Errorf("fanart = %+v, quero 1 textless", fa)
 	}
-	// disc: com disc/disc_type parseados.
+	// disc: with disc/disc_type parsed.
 	disc := porKind["disc"]
 	if len(disc) != 1 || disc[0].Disc != 1 || disc[0].DiscType != "bluray" {
 		t.Errorf("disc = %+v, quero 1 com disc=1 disc_type=bluray", disc)
 	}
-	// likes convertidos de string.
+	// likes converted from string.
 	for _, a := range porKind["poster"] {
 		if a.Lang == "en" && a.Likes != 10 {
 			t.Errorf("poster en likes = %d, quero 10", a.Likes)
@@ -204,7 +204,7 @@ func TestBuscarArtesTVComTemporada(t *testing.T) {
 	if len(porKind["characterart"]) != 1 {
 		t.Errorf("characterart = %d, quero 1", len(porKind["characterart"]))
 	}
-	// as artes de temporada carregam o season.
+	// the season arts carry the season.
 	var s1, sall int
 	for _, a := range porKind["poster"] {
 		switch a.Season {
@@ -224,7 +224,7 @@ func TestBuscarArtesSemIdOuSemMatch(t *testing.T) {
 	c := New(Credencial{APIKey: "k"}, srv.Client(), srv.URL)
 	ctx := context.Background()
 
-	// tv sem id TVDB: (nil,nil).
+	// tv without a TVDB id: (nil,nil).
 	if artes, err := c.BuscarArtes(ctx, provider.ExternalIDs{Tmdb: "603"}, "tv", nil); err != nil || artes != nil {
 		t.Errorf("tv sem tvdb = (%v,%v), quero (nil,nil)", artes, err)
 	}

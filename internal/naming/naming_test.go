@@ -70,8 +70,8 @@ func TestParseFilmesConvencao(t *testing.T) {
 			want: Info{Title: "The Matrix", Year: 1999},
 		},
 		{
-			// O caso real que destravou a correção: pasta com "O Filme" a mais e arquivo
-			// nomeado em ponto com o release colado na resolução.
+			// The real case that unblocked the fix: a folder with an extra "O Filme" and a
+			// file named with dots, with the release glued to the resolution.
 			nome: "release em ponto com cauda longa",
 			in:   "101.Dálmatas.1996.WEB-DL.MAIOR.1080p.DualÁudio.AC3.H264-ACHEIOFILME.COM-trailer",
 			want: Info{Title: "101 Dálmatas", Year: 1996},
@@ -269,9 +269,9 @@ func TestSemEnfeite(t *testing.T) {
 		{"Aladdin A Serie", "Aladdin"},
 		{"Aladdin A Série", "Aladdin"},
 		{"Space Jam The Movie", "Space Jam"},
-		{"O Filme", "O Filme"},                       // só o enfeite: não vira título vazio
-		{"Toy Story", "Toy Story"},                   // nada a remover
-		{"O Filme do Meu Pai", "O Filme do Meu Pai"}, // o enfeite está no começo
+		{"O Filme", "O Filme"},                       // only the filler: does not become an empty title
+		{"Toy Story", "Toy Story"},                   // nothing to remove
+		{"O Filme do Meu Pai", "O Filme do Meu Pai"}, // the filler is at the beginning
 	}
 	for _, c := range casos {
 		if got := SemEnfeite(c.in); got != c.want {
@@ -288,9 +288,9 @@ func TestTituloSemSubtitulo(t *testing.T) {
 		{"101 Dálmatas - O Filme (1996)", "101 Dálmatas"},
 		{"Mortal Kombat - O Filme (1995)", "Mortal Kombat"},
 		{"Dungeons & Dragons 3 - O Livro da Escuridão (2012)", "Dungeons & Dragons 3"},
-		{"Spider-Man - Homecoming (2017)", "Spider-Man"}, // o hífen sem espaços NÃO separa
-		{"Toy Story (1995)", ""},                         // sem separador: nada a cortar
-		{"- O Filme (1996)", ""},                         // só o subtítulo: não vira título vazio
+		{"Spider-Man - Homecoming (2017)", "Spider-Man"}, // the hyphen without spaces does NOT split
+		{"Toy Story (1995)", ""},                         // no separator: nothing to cut
+		{"- O Filme (1996)", ""},                         // only the subtitle: does not become an empty title
 		{"Show (2011–2013) - A Série", "Show"},
 	}
 	for _, c := range casos {
@@ -300,11 +300,12 @@ func TestTituloSemSubtitulo(t *testing.T) {
 	}
 }
 
-// TestParseEpisodeNoCaminho cobre a pilha que o Kodi usa (e que o Jellyfin copiou: a lista dele
-// abre com "Kodi Standard Naming"): nome primeiro; sem episodio no nome, ep numero SOLTO
-// (E05/EP05/S1EP05/T01E05) + temporada da PASTA. Medido na biblioteca do dono: 83 arquivos que
-// hoje nao tem numeracao caem aqui (Dilbert S1EP01 x30, Ragnarok/Toonsylvania/O Socio T01E01 x53),
-// todos dentro de pasta de temporada, e nenhum falso positivo.
+// TestParseEpisodeNoCaminho covers the stack Kodi uses (and Jellyfin copied: its list
+// opens with "Kodi Standard Naming"): the name first; with no episode in the name, a LOOSE
+// episode number (E05/EP05/S1EP05/T01E05) + the season of the FOLDER. Measured on the owner's
+// library: 83 files that have no numbering today land here (30 files of one series as S1EP01,
+// 53 files across three series as T01E01), all of them inside a season folder, and no false
+// positive.
 func TestParseEpisodeNoCaminho(t *testing.T) {
 	casos := []struct {
 		caminho   string
@@ -312,21 +313,21 @@ func TestParseEpisodeNoCaminho(t *testing.T) {
 		episodio  int
 		ok        bool
 	}{
-		{"/lib/Serie/Temporada 01/Serie.S01E07.mkv", 1, 7, true},           // nome completo vence
+		{"/lib/Serie/Temporada 01/Serie.S01E07.mkv", 1, 7, true},           // the complete name wins
 		{"/lib/Serie/Temporada 01/S1EP01.O.Homem.Galinha.mkv", 1, 1, true}, // S1EP01 (Dilbert)
 		{"/lib/Serie/Temporada 02/ToonSylvania T02E05.mkv", 2, 5, true},    // T02E05
 		{"/lib/Serie/Temporada 01/Ragnarok - T01E11.mp4", 1, 11, true},     // T01E11
 		{"/lib/Serie/Season 03/Show.E04.mkv", 3, 4, true},                  // E04
 		{"/lib/Serie/Season 03/Show.EP_04.mkv", 3, 4, true},                // EP_04
-		{"/lib/Serie/Temporada 01/12 - O Doutor.mkv", 1, 12, true},         // numero inicial
-		{"/lib/Serie/Temporada 01/S1EP01.mkv", 1, 1, true},                 // sem titulo
-		// sem pasta de temporada nao ha temporada para ancorar: fica para a revisao
+		{"/lib/Serie/Temporada 01/12 - O Doutor.mkv", 1, 12, true},         // leading number
+		{"/lib/Serie/Temporada 01/S1EP01.mkv", 1, 1, true},                 // no title
+		// with no season folder there is no season to anchor: it goes to review
 		{"/lib/Serie/S1EP01.O.Homem.Galinha.mkv", 0, 0, false},
-		// titulo com ano colado nao vira episodio
+		// a title with the year glued on does not become an episode
 		{"/lib/Serie/Temporada 01/Bio-Dome1996.mkv", 0, 0, false},
-		// "The 12 Days of ..." nao tem numero colado ao E
+		// "The 12 Days of ..." has no number glued to the E
 		{"/lib/Serie/Specials/The 12 Days of Beavis.avi", 0, 0, false},
-		// filme nunca ganha numero por acidente
+		// a film never gets a number by accident
 		{"/lib/Filmes/8 Mile (2002)/8.Mile.2002.1080p.BluRay.mkv", 0, 0, false},
 	}
 	for _, c := range casos {
@@ -344,9 +345,9 @@ func TestParseEpisodeNoCaminho(t *testing.T) {
 	}
 }
 
-// TestParseEpisodeNoCaminhoNaoMudaOQueJaCasava garante o contrato de compatibilidade: para todo
-// nome que ParseEpisode ja entende, a pilha nova devolve o MESMO resultado. E a garantia de que
-// nenhuma numeracao existente muda com a camada nova.
+// TestParseEpisodeNoCaminhoNaoMudaOQueJaCasava guarantees the compatibility contract: for every
+// name ParseEpisode already understands, the new stack returns the SAME result. That is the
+// guarantee that no existing numbering changes with the new layer.
 func TestParseEpisodeNoCaminhoNaoMudaOQueJaCasava(t *testing.T) {
 	nomes := []string{
 		"Serie.S01E07.mkv", "Show_S01E01.avi", "Serie - 1x05.mkv", "Anime - 013.mkv",
@@ -365,16 +366,16 @@ func TestParseEpisodeNoCaminhoNaoMudaOQueJaCasava(t *testing.T) {
 	}
 }
 
-// TestAbsoluteNeedsTheNumberRightAfterTheFirstSeparator garante que o numero absoluto seja o
-// que segue o PRIMEIRO " - " do nome. Medido na biblioteca do dono (16 284 arquivos): 175 nomes
-// casavam pelo caminho frouxo e 97 deles eram um numero no MEIO do titulo de um FILME
-// ("A Felicidade Não se Compra (1946) - 1080p 9.5 Mbps - 2.0 [por, eng]" lido como absoluto 5,
-// vindo de "- 5.1"). Depois da ancora, so os 78 nomes que trazem o numero depois do primeiro
-// separador continuam absolutos (X-Men x76, Spaceballs x2).
+// TestAbsoluteNeedsTheNumberRightAfterTheFirstSeparator guarantees that the absolute number is
+// the one that follows the FIRST " - " of the name. Measured on the owner's library (16 284
+// files): 175 names matched through the loose path and 97 of them were a number in the MIDDLE of
+// a MOVIE title (a title followed by "- 1080p 9.5 Mbps - 2.0 [por, eng]" read as absolute 5, from
+// "- 5.1"). After the anchor, only the 78 names that carry the number after the first separator
+// stay absolute (76 files of one series, 2 of another).
 func TestAbsoluteNeedsTheNumberRightAfterTheFirstSeparator(t *testing.T) {
 	casos := []struct {
 		nome     string
-		absoluto int // 0 = nao e absoluto
+		absoluto int // 0 = not absolute
 	}{
 		{"Show - 013", 13},
 		{"[Grupo] Show - 013 - Titulo", 13},
@@ -396,9 +397,9 @@ func TestAbsoluteNeedsTheNumberRightAfterTheFirstSeparator(t *testing.T) {
 	}
 }
 
-// TestEpisodeZeroLandsInSpecials cobre a convencao do Kodi que o dono escolheu: "E00" nomeia um
-// especial, nao "episodio zero da temporada N" (que nao existe e nao aparece em lugar nenhum).
-// Medido: 3 arquivos na biblioteca.
+// TestEpisodeZeroLandsInSpecials covers the Kodi convention the owner chose: "E00" names a
+// special, not "episode zero of season N" (which does not exist and shows up nowhere).
+// Measured: 3 files in the library.
 func TestEpisodeZeroLandsInSpecials(t *testing.T) {
 	for _, nome := range []string{"Juni.Lee.S02E00.WEB-DL480p", "Ren&Steam_s02e00", "Alienígenas do Passado s01e00"} {
 		info, ok := ParseEpisode(nome)
@@ -412,9 +413,10 @@ func TestEpisodeZeroLandsInSpecials(t *testing.T) {
 	}
 }
 
-// TestLeadingNumberBeatsAbsoluteFromTheTitle cobre o falso positivo medido: "12. Amor Divertido
-// - Ele Nao Me Ama Mais - 4 Olhos - 2 Mentes" era lido como absoluto 4 (o "4 Olhos" do titulo)
-// e virava rascunho. Com a ancora, o numero inicial e o episodio da temporada da pasta.
+// TestLeadingNumberBeatsAbsoluteFromTheTitle covers the measured false positive: a title that
+// starts with a number and carries another one in the middle ("- 4 Olhos - 2 Mentes") was read
+// as absolute 4 (the "4 Olhos" of the title) and became a draft. With the anchor, the leading
+// number is the episode of the season of the folder.
 func TestLeadingNumberBeatsAbsoluteFromTheTitle(t *testing.T) {
 	caminho := "/lib/Pucca/Temporada 02/12. Amor Divertido - Ele Não Me Ama Mais - 4 Olhos - 2 Mentes.mkv"
 	info, ok := ParseEpisodeNoCaminho(caminho)

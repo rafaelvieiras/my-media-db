@@ -219,11 +219,11 @@ export async function startScan(id: string): Promise<StartScan> {
   return lerJson<StartScan>(res)
 }
 
-// ─── Reprocessamento de uma biblioteca (POST/GET /library/{id}/reprocess) ───
-// A ação do dono para corrigir o catálogo JÁ existente: retenta os drafts sem o
-// teto de 4 min do pós-scan, purga os rascunhos vazios e, no modo `full`, reescaneia
-// antes (o scan re-parseia o nome de cada arquivo). O dry-run é o padrão e é o que a
-// UI mostra antes de qualquer escrita.
+// ─── Reprocessing of a library (POST/GET /library/{id}/reprocess) ───
+// The owner's action to fix the catalog that ALREADY exists: it retries the drafts
+// without the 4 min ceiling of the post-scan, purges the empty drafts and, in `full`
+// mode, rescans first (the scan re-parses the name of every file). The dry-run is the
+// default and it is what the UI shows before any write.
 export type ReprocessReport = {
   mode: 'fast' | 'full'
   dry_run: boolean
@@ -1776,11 +1776,11 @@ export async function confirmCandidate(
 // front; the shape is exactly that of `components['schemas']['Job']` (without
 // `config_json`/`created_at`/`updated_at` — those stay only in the backend).
 export type JobDefinition = components['schemas']['Job']
-// Progresso ao vivo de uma execução de job (ADR-0040): etapa, item atual,
-// contadores e tempo decorrido. `null` quando o job nunca rodou.
+// Live progress of a job execution (ADR-0040): step, current item,
+// counters and elapsed time. `null` when the job never ran.
 export type JobProgress = components['schemas']['JobProgress']
 
-// A fila de execução (ADR-0040): scan e job no mesmo recurso.
+// The execution queue (ADR-0040): scan and job in the same resource.
 export type QueueItem = components['schemas']['QueueItem']
 export type QueueView = components['schemas']['QueueView']
 export type QueueEvent = components['schemas']['QueueEvent']

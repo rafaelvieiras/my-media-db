@@ -107,8 +107,8 @@ func Casar(idx *Index, ep naming.EpisodeInfo) ([]string, bool) {
 // ordering that puts the absolute number in that season wins; when none does, the fixed
 // priority decides and temporadaResolvida tells the caller which season it landed in, so the
 // disagreement with the folder can be reported instead of silently accepted (measured: 1 of
-// the 76 files of the owner's X-Men, which the folder keeps in season 3 while the DVD order
-// puts in season 4).
+// 76 files of a series, which the folder keeps in season 3 while the DVD order puts in
+// season 4).
 //
 // temporadaResolvida is 0 when the number came from the provider's own absolute_number (that
 // field carries no season) or when nothing resolved.
@@ -247,10 +247,11 @@ func (idx *Index) IndexarEpisodioComTitulo(epID, titulo string, ns map[string]an
 // number.
 //
 // The split of a folder in a library comes from a RELEASE (a disc set, an iTunes season), not
-// from the airing schedule. Measured on the owner's X-Men: the folder split is 13/13/26/14/10,
-// which follows the TMDB "dvd-order" (13/13/25/15/10) for 75 of the 76 files and the "official"
-// one (13/13/19/17/14) for only 65. So the release orderings come first and official comes
-// last; alphabetical among the release orderings keeps the choice deterministic.
+// from the airing schedule. Measured on a series with 76 files: the folder split is
+// 13/13/26/14/10, which follows the TMDB "dvd-order" (13/13/25/15/10) for 75 of the 76 files
+// and the "official" one (13/13/19/17/14) for only 65. So the release orderings come first
+// and official comes last; alphabetical among the release orderings keeps the choice
+// deterministic.
 func prioridadeDeOrdem(ordem string) int {
 	switch ordem {
 	case "dvd-order":
@@ -341,10 +342,10 @@ func (idx *Index) ordensPorPrioridade() []string {
 // resolverAbsoluto resolves ONE absolute number through the orderings, in this order:
 //
 //  1. the TITLE: an ordering whose episode at that position carries the name the FILE
-//     states wins. Measured on the owner's X-Men, this is the only reliable vote — the
+//     states wins. Measured on a series with 76 files, this is the only reliable vote — the
 //     files follow the "disney" order (74 of 76 names match exactly), while the "dvd-order"
-//     fits the FOLDER COUNTS better and points at the wrong episodes ("X-Men - 46 - A Volta
-//     do Juggernaut" landed on "Um Trato com o Diabo");
+//     fits the FOLDER COUNTS better and points at the wrong episodes (a file stating one
+//     title landed on a different episode);
 //  2. the SEASON OF THE FOLDER: the folder says which block of episodes the file belongs to;
 //  3. the fixed priority (release orderings first, official last).
 //
@@ -373,8 +374,8 @@ func (idx *Index) resolverAbsoluto(n, temporadaDaPasta int, titulo string) (abso
 	}
 	// The file STATES a title and it matches no candidate at all: the number points at a
 	// different block of the release, or the name is simply not in the provider's list. Falling
-	// back to a priority here is how two files end up on ONE episode (measured: "Um Mutante dos
-	// Diabos" stole the episode of "O Valor de um Homem 1"). Review, not a guess.
+	// back to a priority here is how two files end up on ONE episode (measured: a name that
+	// exists in no provider list stole the episode of a real one). Review, not a guess.
 	if tituloDeclarado(titulo) && nenhumaSemelhanca(candidatos, titulo) {
 		return absolutoDerivado{}, false
 	}

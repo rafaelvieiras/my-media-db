@@ -109,8 +109,8 @@ func TestEnriquecerSerieComArvoreVaziaSinaliza(t *testing.T) {
 	}
 }
 
-// TestEnriquecerSerieComArvoreVaziaSemIrmao sinaliza mesmo sem candidato melhor: a linha
-// descreve o proprio match, e o servidor esconde o botao de aplicar (can_apply=false).
+// TestEnriquecerSerieComArvoreVaziaSemIrmao still signals even with no better candidate: the
+// row describes the match itself, and the server hides the apply button (can_apply=false).
 func TestEnriquecerSerieComArvoreVaziaSemIrmao(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()

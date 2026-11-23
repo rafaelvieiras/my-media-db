@@ -132,7 +132,7 @@ func TestProgressoComIntervaloNuncaDescartaOFinal(t *testing.T) {
 	p.agora = func() time.Time { return time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC) }
 
 	p.Contagem(0, 1)
-	p.Contagem(1, 1) // atual == total: forced
+	p.Contagem(1, 1) // current == total: forced
 
 	progressos := g.Progressos()
 	if len(progressos) != 2 {

@@ -199,9 +199,9 @@ func TestUrlImagemServidaReescreveEDegrada(t *testing.T) {
 	}
 }
 
-// TestEscreverAtomicoNaoDeixaArquivoPrivado cobre o modo do arquivo do cache de arte: sem o
-// Chmod, o rename do temporario (0600) deixa a imagem ilegivel para qualquer processo que nao
-// seja o uid do container.
+// TestEscreverAtomicoNaoDeixaArquivoPrivado covers the file mode of the artwork cache: without
+// the Chmod, the rename of the temporary file (0600) leaves the image unreadable to any process
+// that is not the container uid.
 func TestEscreverAtomicoNaoDeixaArquivoPrivado(t *testing.T) {
 	destino := filepath.Join(t.TempDir(), "capa.jpg")
 	if err := escreverAtomico(destino, []byte("bytes")); err != nil {

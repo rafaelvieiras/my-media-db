@@ -216,7 +216,7 @@ func tirarAnoDoFim(campos []string) ([]string, int) {
 	const janela = 3
 	inicio := len(campos) - janela
 	if inicio < 1 {
-		inicio = 1 // sempre sobra pelo menos um campo: o título nunca fica vazio
+		inicio = 1 // at least one field always remains: the title never becomes empty
 	}
 	for i := len(campos) - 1; i >= inicio; i-- {
 		if ano := anoDoCampo(campos[i]); ano > 0 {
@@ -469,9 +469,9 @@ var (
 	// number that shows up after a LATER separator belongs to the title, not to the
 	// episode. Measured on the owner's library (16 284 files): of 175 names the loose
 	// reading accepted, 97 were a number in the middle of a MOVIE title
-	// ("A Felicidade Não se Compra (1946) - 1080p 9.5 Mbps - 2.0 [por, eng]" read as
-	// absolute 5, from "- 5.1"), and only the 78 that carry the number right after the
-	// first separator were real (the X-Men and Spaceballs files).
+	// (a title followed by "- 1080p 9.5 Mbps - 2.0 [por, eng]" read as absolute 5,
+	// from "- 5.1"), and only the 78 that carry the number right after the
+	// first separator were real episode numbers.
 	rePrimeiroSeparador = regexp.MustCompile(`\s-\s`)
 	// Absolute veto by position: the number has to follow that first separator.
 	reAbsoluteNoPrimeiro = regexp.MustCompile(`^\s-\s+(\d{1,4})(?:-(\d{1,4}))?(?:\s|$|[._\[(])`)
@@ -650,8 +650,8 @@ func parseEpisodeSeason(name string) (EpisodeInfo, bool) {
 	}
 	// Kodi convention: season 0 is Specials, and a release that carries "E00" is naming a
 	// special, not "episode zero of season N" — that episode does not exist, and an NFO with
-	// <season>2</season><episode>0</episode> lands nowhere. Measured: 3 files
-	// ("Juniper Lee S02E00", "Ren&Stimpy s02e00", "Alienígenas do Passado s01e00").
+	// <season>2</season><episode>0</episode> lands nowhere. Measured: 3 files, in three
+	// different series, all with the season glued to "E00" ("S02E00"/"s02e00" shapes).
 	if season != 0 && len(episodios) == 1 && episodios[0] == 0 {
 		season = 0
 	}

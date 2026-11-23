@@ -11,7 +11,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/richfields"
 )
 
-// strPtr/floatPtr sao helpers de teste para os ponteiros de resolver.Entidade.
+// strPtr/floatPtr are test helpers for the pointers of resolver.Entidade.
 func strPtr(s string) *string     { return &s }
 func floatPtr(f float64) *float64 { return &f }
 
@@ -496,7 +496,7 @@ func TestMontarNFOEpisodiosUmBlocoPorEpisodio(t *testing.T) {
 	if !strings.Contains(texto, "<season>2</season>") || !strings.Contains(texto, "<episode>1</episode>") || !strings.Contains(texto, "<episode>2</episode>") {
 		t.Errorf("numeracao ausente:\n%s", texto)
 	}
-	// ordem do ARQUIVO: o bloco do primeiro episodio vem antes
+	// FILE order: the block of the first episode comes first
 	if strings.Index(texto, "Primeiro") > strings.Index(texto, "Segundo") {
 		t.Error("blocos fora de ordem (o do primeiro episodio tem que vir primeiro)")
 	}
@@ -552,16 +552,16 @@ func TestExtrairBlocosDeEpisodioParaConvergencia(t *testing.T) {
 	if blocos := ExtrairBlocosDeEpisodio(nil); blocos != nil {
 		t.Errorf("ExtrairBlocosDeEpisodio(nil) = %v, quero nil", blocos)
 	}
-	// um arquivo corrompido nao propaga erro: entrega o que deu para ler
+	// a corrupted file does not propagate an error: it delivers what was readable
 	if blocos := ExtrairBlocosDeEpisodio([]byte("<episodedetails><title>x</title></episo")); len(blocos) != 0 {
 		t.Errorf("arquivo truncado devolveu %d blocos, quero 0", len(blocos))
 	}
 }
 
-// TestCanonicalizarNFOEpisodiosMantemConteudo cobre o motivo de existir: o MESMO documento em
-// outro layout (o <season>/<episode> no meio das tags desconhecidas, como um gerenciador
-// antigo escreveu) canonicaliza para os mesmos bytes que MontarNFOEpisodios produz -- e e isso
-// que impede o primeiro run depois da mudanca de reescrever ~12 mil arquivos de episodio.
+// TestCanonicalizarNFOEpisodiosMantemConteudo covers its reason to exist: the SAME document in
+// another layout (the <season>/<episode> in the middle of the unknown tags, as an old
+// manager wrote it) canonicalizes to the same bytes that MontarNFOEpisodios produces -- and that
+// is what keeps the first run after the change from rewriting ~12 thousand episode files.
 func TestCanonicalizarNFOEpisodiosMantemConteudo(t *testing.T) {
 	antigo := `<?xml version="1.0" encoding="UTF-8"?>
 <episodedetails>
@@ -585,7 +585,7 @@ func TestCanonicalizarNFOEpisodiosMantemConteudo(t *testing.T) {
 	if string(canonico) != string(esperado) {
 		t.Errorf("canonico != esperado:\n--- canonico ---\n%s\n--- esperado ---\n%s", canonico, esperado)
 	}
-	// vazio/sem bloco: erro, para o chamador reescrever do zero
+	// empty/no block: error, so the caller rewrites from scratch
 	if _, err := CanonicalizarNFOEpisodios(nil); err == nil {
 		t.Error("CanonicalizarNFOEpisodios(nil) sem erro")
 	}
@@ -594,9 +594,10 @@ func TestCanonicalizarNFOEpisodiosMantemConteudo(t *testing.T) {
 	}
 }
 
-// TestEscreverArquivoAtomicoNaoDeixaArquivoPrivado cobre o modo do arquivo: os.CreateTemp cria
-// 0600 e o rename mantem -- sem o Chmod explicito, todo .nfo e toda arte gravados pelo app
-// ficavam ilegiveis para Kodi/Jellyfin com outro uid (medido na biblioteca: 14 880 .nfo em 0600).
+// TestEscreverArquivoAtomicoNaoDeixaArquivoPrivado covers the file mode: os.CreateTemp creates
+// the file with 0600 and the rename keeps it -- without the explicit Chmod, every .nfo and every
+// artwork written by the app stayed unreadable to Kodi/Jellyfin with another uid (measured in
+// the library: 14 880 .nfo with 0600).
 func TestEscreverArquivoAtomicoNaoDeixaArquivoPrivado(t *testing.T) {
 	destino := filepath.Join(t.TempDir(), "episodio.nfo")
 	if err := EscreverArquivoAtomico(destino, []byte("<episodedetails/>")); err != nil {
@@ -612,7 +613,7 @@ func TestEscreverArquivoAtomicoNaoDeixaArquivoPrivado(t *testing.T) {
 	if modo := info.Mode().Perm(); modo != 0o664 {
 		t.Errorf("modo = %04o, quero 0664", modo)
 	}
-	// Um .nfo rotacionado (rename, sem reescrita) tambem herda o modo do temporario.
+	// A rotated .nfo (rename, no rewrite) also inherits the mode of the temporary file.
 	rotacionado := filepath.Join(filepath.Dir(destino), "episodio (2).nfo")
 	if err := RenomearArquivo(destino, rotacionado); err != nil {
 		t.Fatalf("RenomearArquivo: %v", err)

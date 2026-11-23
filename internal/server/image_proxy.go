@@ -193,8 +193,9 @@ func escreverAtomico(destino string, dados []byte) error {
 	if err != nil {
 		return err
 	}
-	// Same reason as localmedia.EscreverArquivoAtomico: CreateTemp cria 0600 e o rename mantem
-	// o modo, o que deixa a arte do cache ilegivel para quem nao e o uid do container.
+	// Same reason as localmedia.EscreverArquivoAtomico: CreateTemp creates the file with 0600 and
+	// the rename keeps the mode, which makes the cached artwork unreadable to anyone but the
+	// container uid.
 	if err := tmp.Chmod(0o664); err != nil {
 		_ = tmp.Close()
 		_ = os.Remove(tmp.Name())
