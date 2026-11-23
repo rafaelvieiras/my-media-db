@@ -60,10 +60,21 @@ WHERE (e.status = 'draft'
    -- have is a HOLE IN THE COLLECTION, not a decision: 422 draft episodes measured in
    -- production, every one of them inside a season of an already cataloged series. They
    -- stay visible in the completeness of the series; the queue is for what the owner has.
+   -- NOTE: the junction arm joins media_file on purpose. `EXISTS (SELECT ... UNION ALL
+   -- SELECT ...)` without that join is a SQLite trap: measured here, the whole EXISTS answers
+   -- FALSE for an entity whose file is DIRECT on it (402 tracks vanished from the queue).
    AND EXISTS (
         SELECT 1 FROM media_file m WHERE m.entity_id = e.id
         UNION ALL
-        SELECT 1 FROM media_file_entity mfe WHERE mfe.entity_id = e.id
+        SELECT 1 FROM media_file_entity mfe JOIN media_file mf ON mf.id = mfe.media_file_id
+            WHERE mfe.entity_id = e.id
+   )
+   -- A PROVISIONAL episode is not a decision of its own: the missing identity belongs to the
+   -- SERIES, and the queue would hold 832 episodes of 16 series instead of 16 items. The
+   -- episode stays visible in the series tree, marked as provisional.
+   AND (
+        e.type <> 'episode'
+        OR json_extract(e.extension_data_json, '$."core.tv@1".provisorio') IS NULL
    )
 ORDER BY (match_confidence IS NULL), match_confidence ASC, e.title COLLATE NOCASE ASC, e.id;
 

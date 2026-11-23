@@ -755,7 +755,7 @@ func (r *scanRun) acharOuCriarEpisodioProvisorio(ctx context.Context, q *sqlcgen
 		// version to another (that was what created duplicate provisional episodes
 		// in the first round).
 		existente, oerr := q.ObterEntity(ctx, rel.ChildID)
-		if oerr == nil && strings.Contains(existente.ExtensionDataJson.String, `"arquivo":"`+arquivo+`"`) {
+		if oerr == nil && arquivoDoProvisorio(existente.ExtensionDataJson.String) == arquivo {
 			return rel.ChildID, nil
 		}
 	}
@@ -843,6 +843,32 @@ func extensionProvisorio(season, number int, comNumero bool, arquivo string) []b
 		return nil
 	}
 	return b
+}
+
+// arquivoDoProvisorio returns the file name the extension_data records for a provisional
+// episode, or "" when it is not one. It DECODES the JSON instead of looking for the raw
+// substring: json.Marshal escapes "&" (and "<", ">") as \u0026, so a comparison against the
+// literal name never matched a file called "Beavis & Butt-Head ..." -- every re-scan created
+// ANOTHER provisional episode of the same file (10 copies of one title measured, 213
+// duplicates in production).
+func arquivoDoProvisorio(extensao string) string {
+	if extensao == "" {
+		return ""
+	}
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(extensao), &doc); err != nil {
+		return ""
+	}
+	ns, ok := doc[nsTV].(map[string]any)
+	if !ok {
+		return ""
+	}
+	prov, ok := ns["provisorio"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	arquivo, _ := prov["arquivo"].(string)
+	return arquivo
 }
 
 // arquivosNaSerie counts the video files under the series folder -- the SIZE EVIDENCE the

@@ -562,11 +562,9 @@ func TestReviewEpisodioContaArquivoDaJuncao(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("AtualizarEntity: %v", err)
 	}
-	if err := escrita(t, d).CriarVinculoEntidade(context.Background(), sqlcgen.CriarVinculoEntidadeParams{
+	escrita(t, d).CriarVinculoEntidade(context.Background(), sqlcgen.CriarVinculoEntidadeParams{
 		MediaFileID: "mf1", EntityID: "ep1", Kind: "tv_episode", Ordinal: 0,
-	}); err != nil {
-		t.Fatalf("CriarVinculoEntidade: %v", err)
-	}
+	})
 
 	rec := do(t, h, http.MethodGet, "/api/v1/review", nil)
 	cards := decodeCards(t, rec)
@@ -746,4 +744,41 @@ func temAsset(assets []sqlcgen.Asset, id string) bool {
 		}
 	}
 	return false
+}
+
+// TestFilaRevisaoIgnoraEpisodioProvisorio guards the shape of the queue after the provisional
+// tree: an episode the scan built from the file name only has no identity OF ITS OWN -- the
+// identity that is missing belongs to the SERIES. Listing them would put 832 episodes of 16
+// series in the queue instead of 16 items (measured on the production copy), so the series is
+// the card and the episode stays in its tree.
+func TestFilaRevisaoIgnoraEpisodioProvisorio(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+
+	semearEntity(t, d, "e-serie", "tv", "Serie Sem Identidade")
+	definirStatus(t, d, "e-serie", "draft")
+	semearFile(t, d, "f-serie", "e-serie", "/lib/Serie S01E01.mkv", "present", 40, "")
+
+	// Provisional episode: draft + the scanner marker in the extension_data, linked to the
+	// same file through the junction.
+	semearEntity(t, d, "e-prov", "episode", "Episódio 1")
+	definirStatus(t, d, "e-prov", "draft")
+	if _, err := escrita(t, d).AtualizarEntity(context.Background(), sqlcgen.AtualizarEntityParams{
+		ID: "e-prov", Type: "episode", Title: "Episódio 1", Status: "draft",
+		ExtensionDataJson: nsOf(`{"core.tv@1":{"numbering":{"official":{"season":1,"number":1}},"provisorio":{"origem":"arquivo","arquivo":"Serie S01E01.mkv"}}}`),
+	}); err != nil {
+		t.Fatalf("marcar provisório: %v", err)
+	}
+	// CriarVinculoEntidade returns no error (sqlc :exec without RETURNING).
+	escrita(t, d).CriarVinculoEntidade(context.Background(), sqlcgen.CriarVinculoEntidadeParams{
+		MediaFileID: "f-serie", EntityID: "e-prov", Kind: "tv_episode",
+	})
+
+	cards := decodeCards(t, do(t, h, http.MethodGet, "/api/v1/review", nil))
+	got := idsDe(cards)
+	if !got["e-serie"] {
+		t.Error("fila de revisão não incluiu a série sem identidade (o item de decisão)")
+	}
+	if got["e-prov"] {
+		t.Error("fila de revisão incluiu episódio provisório (a decisão é da série)")
+	}
 }

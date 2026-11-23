@@ -884,3 +884,27 @@ func TestScanPastaEspeciaisViraTemporadaZero(t *testing.T) {
 		t.Errorf("temporadas 0 = %d, quero 1", n)
 	}
 }
+
+// TestScanProvisorioNaoDuplicaComAmpersand is the regression of a duplication measured in
+// production: the dedupe of a provisional episode compared the RAW extension_data against the
+// file name, and json.Marshal escapes "&" as \u0026 -- so every re-scan of a file called
+// "Beavis & Butt-Head ..." created ANOTHER provisional episode (10 copies of one title, 213
+// duplicates in the database). The key is now the DECODED file name.
+func TestScanProvisorioNaoDuplicaComAmpersand(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	// A specials file: no SxxEyy, so the key of the provisional episode is the file name.
+	escrever(t, filepath.Join(root, "Some Show", "Temporada Specials", "Making & Of.mkv"))
+
+	m := managerFake(t, d)
+	m.ConfigurarSeries(importerStub{err: enrich.ErrSerieNaoEncontrada}, nil)
+	src := criarSourceSerie(t, d, root)
+	for i := 0; i < 3; i++ {
+		if err := scanSync(t, m, src); err != nil {
+			t.Fatalf("scan %d: %v", i, err)
+		}
+	}
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='episode'"); n != 1 {
+		t.Errorf("episódios provisórios = %d, quero 1 (o mesmo arquivo, três scans)", n)
+	}
+}
