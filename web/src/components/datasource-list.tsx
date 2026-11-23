@@ -213,7 +213,7 @@ function EstadoBadge({ state }: { state: Source['state'] }) {
 
   if (state === 'online') {
     return (
-      <Badge className="border-transparent bg-emerald-600 text-white">
+      <Badge className="border-transparent bg-emerald-700 text-white">
         {t('settings.datasource.stateOnline')}
       </Badge>
     )

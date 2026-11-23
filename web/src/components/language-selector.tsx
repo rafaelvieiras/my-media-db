@@ -27,7 +27,13 @@ import {
 // do I read this?"), and two settings because one is a device preference and the
 // other belongs to the catalog. The metadata section disappears when the server
 // allows a single language — there is no choice to offer.
-export function LanguageSelector() {
+export function LanguageSelector({
+  container,
+}: {
+  /** Portal target. Inside the mobile `Sheet` the default (body) made the menu float at x=0,
+   *  over the darkened backdrop and on top of the sheet's own links. */
+  container?: HTMLElement | null
+} = {}) {
   const { lang: idiomaLeitura, setLang: setLeitura, allowed } = useLanguage()
   const { lang: idiomaUi, setLang: setUi } = useUiLanguage()
   const t = useT()
@@ -47,7 +53,11 @@ export function LanguageSelector() {
           </span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-52">
+      <DropdownMenuContent
+        align="end"
+        className="min-w-52"
+        container={container ?? undefined}
+      >
         <div className="px-2 py-1 text-xs font-medium text-muted-foreground">
           {t('nav.language.interface')}
         </div>

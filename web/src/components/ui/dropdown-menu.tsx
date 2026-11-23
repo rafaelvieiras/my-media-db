@@ -36,10 +36,15 @@ function DropdownMenuPortal({
 function DropdownMenuContent({
   className,
   sideOffset = 4,
+  container,
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Content> & {
+  /** Portal target (Radix puts it on the Portal, not on the Content). Needed when the
+   *  trigger lives inside a Sheet: without it the menu floats over the backdrop. */
+  container?: HTMLElement | null
+}) {
   return (
-    <DropdownMenuPortal>
+    <DropdownMenuPortal container={container ?? undefined}>
       <DropdownMenuPrimitive.Content
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}

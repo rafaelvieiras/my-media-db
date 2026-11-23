@@ -586,7 +586,7 @@ function YtdlpStatusBadge({ dados }: { dados: YtdlpSettings }) {
       : t('settings.ytdlp.badgeAvailableDownloaded')
 
   return (
-    <Badge className="w-fit border-transparent bg-emerald-600 text-white">
+    <Badge className="w-fit border-transparent bg-emerald-700 text-white">
       {rotulo}
     </Badge>
   )

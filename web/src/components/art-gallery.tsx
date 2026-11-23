@@ -175,7 +175,7 @@ function LinhaGaleria({
               {item.is_local_in_library ? (
                 <span
                   title={t('media.gallery.savedInFolder')}
-                  className={`absolute top-1.5 flex size-6 items-center justify-center rounded-full bg-emerald-600 text-white shadow ${
+                  className={`absolute top-1.5 flex size-6 items-center justify-center rounded-full bg-emerald-700 text-white shadow ${
                     item.is_principal ? 'left-8' : 'left-1.5'
                   }`}
                 >

@@ -50,7 +50,7 @@ function IntegrationCard({ integracao }: { integracao: IntegrationSummary }) {
         <div className="flex items-center justify-between gap-2">
           <span className="font-medium">{integracao.nome}</span>
           {integracao.configurada ? (
-            <Badge className="border-transparent bg-emerald-600 text-white">
+            <Badge className="border-transparent bg-emerald-700 text-white">
               {t('settings.integrations.configured')}
             </Badge>
           ) : (
