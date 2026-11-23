@@ -8,7 +8,7 @@ export const review = defineDomain({
       title: 'Review',
       subtitle:
         'Items matched with low confidence and unidentified items, grouped by album, series or source folder.',
-      autoSyncAll: 'Auto-sync eligible',
+      autoSyncAll: 'Sync eligible candidates',
       syncing: 'Syncing…',
       autoSyncSummary:
         '{resolved} resolved automatically, {pending} still need manual review.',
@@ -19,6 +19,16 @@ export const review = defineDomain({
       emptyTitle: 'Nothing to review',
       emptyDescription:
         'No item is waiting for curation — everything matched with confidence.',
+      thresholdHint:
+        'Items below 70% confidence land here; from 92% on, auto-sync applies the candidate by itself.',
+      autoSyncConfirmTitle: 'Sync the eligible candidates?',
+      autoSyncConfirm_one:
+        'This evaluates {n} item of the queue and re-enriches the ones that match.',
+      autoSyncConfirm_other:
+        'This evaluates {n} items of the queue and re-enriches the ones that match.',
+      autoSyncConfirmAction: 'Sync candidates',
+      filteredOf_one: '{shown} of {total} item',
+      filteredOf_other: '{shown} of {total} items',
     },
     group: {
       autoSync: 'Auto-sync this group',
@@ -30,6 +40,13 @@ export const review = defineDomain({
         semArquivo: 'no file',
       },
       noFileLabel: 'No file',
+      shownOf: 'Showing {shown} of {total}',
+      showMore: 'Show more ({n})',
+      autoSyncConfirmTitle: 'Sync the eligible candidates of this group?',
+      autoSyncConfirm_one:
+        'This evaluates {n} item of this group and re-enriches the ones that match.',
+      autoSyncConfirm_other:
+        'This evaluates {n} items of this group and re-enriches the ones that match.',
     },
     row: {
       posterAlt: 'Poster for {title}',
@@ -43,12 +60,19 @@ export const review = defineDomain({
         'Duplicate merged automatically — the item already imported was combined with this one.',
       notIdentified: 'not identified',
       lowConfidence: 'low confidence ({score}%)',
+      appliedKeep: '"{title}" kept as is — the identity was written.',
+      appliedCandidate:
+        '"{title}" — candidate applied, the item was re-enriched.',
+      keepConfirmTitle: 'Keep as is?',
+      keepConfirmDescription:
+        'This writes the current identity as final and re-enriches the item. There is no undo.',
+      keepConfirmAction: 'Keep as is',
     },
     preview: {
       searching: 'Looking for a candidate…',
       searchError: 'Could not look up a candidate — try again later.',
       none: 'no candidate found — neither in the local catalog nor in the external source',
-      score: 'score {score}',
+      confidence: 'confidence {score}%',
       methodLocal: 'local catalog',
       methodExternal: 'external provider',
       strongMatch: 'strong match',
@@ -149,13 +173,27 @@ export const review = defineDomain({
       incomplete: 'Incomplete cataloging: {missing}',
       artworkItem: '{kind} artwork',
     },
+    filters: {
+      searchLabel: 'Search the queue by title',
+      searchPlaceholder: 'Search by title, series, album or folder…',
+      kindLabel: 'Filter by group type',
+      kindAll: 'All types',
+      reasonLabel: 'Filter by reason',
+      reasonAll: 'All reasons',
+      reasonNotIdentified: 'Not identified',
+      reasonLowConfidence: 'Low confidence',
+      clear: 'Clear filters',
+      noResultsTitle: 'No item matches the filters',
+      noResultsDescription:
+        'Clear the search or change the filters to see the queue again.',
+    },
   },
   'pt-BR': {
     queue: {
       title: 'Revisão',
       subtitle:
         'Itens casados com baixa confiança e não identificados, agrupados pelo álbum, série ou pasta de origem.',
-      autoSyncAll: 'Auto-sincronizar elegíveis',
+      autoSyncAll: 'Sincronizar candidatos elegíveis',
       syncing: 'Sincronizando…',
       autoSyncSummary:
         '{resolved} resolvidos automaticamente, {pending} continuam para revisão manual.',
@@ -166,6 +204,16 @@ export const review = defineDomain({
       emptyTitle: 'Nada para revisar',
       emptyDescription:
         'Nenhum item pendente de curadoria — tudo casado com confiança.',
+      thresholdHint:
+        'Itens com confiança abaixo de 70% entram aqui; a partir de 92% o auto-sync aplica o candidato sozinho.',
+      autoSyncConfirmTitle: 'Sincronizar os candidatos elegíveis?',
+      autoSyncConfirm_one:
+        'Isso avalia {n} item da fila e re-enriquece os que casarem.',
+      autoSyncConfirm_other:
+        'Isso avalia {n} itens da fila e re-enriquece os que casarem.',
+      autoSyncConfirmAction: 'Sincronizar candidatos',
+      filteredOf_one: '{shown} de {total} item',
+      filteredOf_other: '{shown} de {total} itens',
     },
     group: {
       autoSync: 'Auto-sincronizar este grupo',
@@ -177,6 +225,13 @@ export const review = defineDomain({
         semArquivo: 'sem arquivo',
       },
       noFileLabel: 'Sem arquivo',
+      shownOf: 'Mostrando {shown} de {total}',
+      showMore: 'Mostrar mais ({n})',
+      autoSyncConfirmTitle: 'Sincronizar os candidatos elegíveis deste grupo?',
+      autoSyncConfirm_one:
+        'Isso avalia {n} item deste grupo e re-enriquece os que casarem.',
+      autoSyncConfirm_other:
+        'Isso avalia {n} itens deste grupo e re-enriquece os que casarem.',
     },
     row: {
       posterAlt: 'Pôster de {title}',
@@ -190,13 +245,20 @@ export const review = defineDomain({
         'Duplicata mesclada automaticamente — o item já importado foi combinado com este.',
       notIdentified: 'não identificado',
       lowConfidence: 'baixa confiança ({score}%)',
+      appliedKeep: '"{title}" mantido como está — a identidade foi gravada.',
+      appliedCandidate:
+        '"{title}" — candidato aplicado, o item foi re-enriquecido.',
+      keepConfirmTitle: 'Manter como está?',
+      keepConfirmDescription:
+        'Isso grava a identidade atual como definitiva e re-enriquece o item. Não há como desfazer.',
+      keepConfirmAction: 'Manter como está',
     },
     preview: {
       searching: 'Buscando candidato…',
       searchError:
         'Não foi possível buscar um candidato — tente novamente mais tarde.',
       none: 'nenhum candidato encontrado — nem no catálogo local, nem na fonte externa',
-      score: 'score {score}',
+      confidence: 'confiança {score}%',
       methodLocal: 'catálogo local',
       methodExternal: 'provedor externo',
       strongMatch: 'match forte',
@@ -297,13 +359,27 @@ export const review = defineDomain({
       incomplete: 'Catalogação incompleta: {missing}',
       artworkItem: 'arte {kind}',
     },
+    filters: {
+      searchLabel: 'Buscar na fila por título',
+      searchPlaceholder: 'Buscar por título, série, álbum ou pasta…',
+      kindLabel: 'Filtrar por tipo de grupo',
+      kindAll: 'Todos os tipos',
+      reasonLabel: 'Filtrar por motivo',
+      reasonAll: 'Todos os motivos',
+      reasonNotIdentified: 'Não identificado',
+      reasonLowConfidence: 'Baixa confiança',
+      clear: 'Limpar filtros',
+      noResultsTitle: 'Nenhum item corresponde aos filtros',
+      noResultsDescription:
+        'Limpe a busca ou mude os filtros para ver a fila novamente.',
+    },
   },
   es: {
     queue: {
       title: 'Revisión',
       subtitle:
         'Elementos emparejados con baja confianza y no identificados, agrupados por el álbum, la serie o la carpeta de origen.',
-      autoSyncAll: 'Sincronizar elegibles',
+      autoSyncAll: 'Sincronizar candidatos elegibles',
       syncing: 'Sincronizando…',
       autoSyncSummary:
         '{resolved} resueltos automáticamente, {pending} siguen para revisión manual.',
@@ -314,6 +390,16 @@ export const review = defineDomain({
       emptyTitle: 'Nada para revisar',
       emptyDescription:
         'Ningún elemento pendiente de curación: todo quedó emparejado con confianza.',
+      thresholdHint:
+        'Los elementos con confianza por debajo del 70% entran aquí; a partir del 92% el auto-sync aplica el candidato solo.',
+      autoSyncConfirmTitle: '¿Sincronizar los candidatos elegibles?',
+      autoSyncConfirm_one:
+        'Esto evalúa {n} elemento de la cola y vuelve a enriquecer los que coincidan.',
+      autoSyncConfirm_other:
+        'Esto evalúa {n} elementos de la cola y vuelve a enriquecer los que coincidan.',
+      autoSyncConfirmAction: 'Sincronizar candidatos',
+      filteredOf_one: '{shown} de {total} elemento',
+      filteredOf_other: '{shown} de {total} elementos',
     },
     group: {
       autoSync: 'Sincronizar este grupo',
@@ -325,6 +411,14 @@ export const review = defineDomain({
         semArquivo: 'sin archivo',
       },
       noFileLabel: 'Sin archivo',
+      shownOf: 'Mostrando {shown} de {total}',
+      showMore: 'Mostrar más ({n})',
+      autoSyncConfirmTitle:
+        '¿Sincronizar los candidatos elegibles de este grupo?',
+      autoSyncConfirm_one:
+        'Esto evalúa {n} elemento de este grupo y vuelve a enriquecer los que coincidan.',
+      autoSyncConfirm_other:
+        'Esto evalúa {n} elementos de este grupo y vuelve a enriquecer los que coincidan.',
     },
     row: {
       posterAlt: 'Póster de {title}',
@@ -338,12 +432,19 @@ export const review = defineDomain({
         'Duplicado fusionado automáticamente: el elemento ya importado se combinó con este.',
       notIdentified: 'no identificado',
       lowConfidence: 'baja confianza ({score}%)',
+      appliedKeep: '"{title}" se mantuvo como está: la identidad se guardó.',
+      appliedCandidate:
+        '"{title}": candidato aplicado, el elemento se volvió a enriquecer.',
+      keepConfirmTitle: '¿Dejar como está?',
+      keepConfirmDescription:
+        'Esto guarda la identidad actual como definitiva y vuelve a enriquecer el elemento. No se puede deshacer.',
+      keepConfirmAction: 'Dejar como está',
     },
     preview: {
       searching: 'Buscando un candidato…',
       searchError: 'No se pudo buscar un candidato; inténtalo más tarde.',
       none: 'no se encontró ningún candidato, ni en el catálogo local ni en la fuente externa',
-      score: 'puntuación {score}',
+      confidence: 'confianza {score}%',
       methodLocal: 'catálogo local',
       methodExternal: 'proveedor externo',
       strongMatch: 'coincidencia fuerte',
@@ -443,6 +544,20 @@ export const review = defineDomain({
       },
       incomplete: 'Catalogación incompleta: {missing}',
       artworkItem: 'arte {kind}',
+    },
+    filters: {
+      searchLabel: 'Buscar en la cola por título',
+      searchPlaceholder: 'Buscar por título, serie, álbum o carpeta…',
+      kindLabel: 'Filtrar por tipo de grupo',
+      kindAll: 'Todos los tipos',
+      reasonLabel: 'Filtrar por motivo',
+      reasonAll: 'Todos los motivos',
+      reasonNotIdentified: 'No identificado',
+      reasonLowConfidence: 'Baja confianza',
+      clear: 'Limpiar filtros',
+      noResultsTitle: 'Ningún elemento corresponde a los filtros',
+      noResultsDescription:
+        'Limpia la búsqueda o cambia los filtros para ver la cola de nuevo.',
     },
   },
 })
