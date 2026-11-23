@@ -65,7 +65,7 @@ type Progresso struct {
 	// needed at a STEP transition: the item of the previous step is not "the item
 	// of this one", and a step that reports no item at all must not inherit a
 	// file name from a step that reported one per file (measured: the health job
-	// froze "X-Men 76 Dia de Formatura" from the scan on screen through the six
+	// froze an episode file name from the scan on screen through the six
 	// steps that followed it).
 	ReiniciarItem bool
 }

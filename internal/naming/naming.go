@@ -313,8 +313,8 @@ func TituloSemSubtitulo(pasta string) string {
 }
 
 // enfeitesDeTitulo are the trailing phrases a folder or release title carries and the
-// source title usually does NOT ("Mortal Kombat O Filme", "Aladdin A Série", "Space Jam O
-// Jogo"). Compared as a SUFFIX, so a title that merely starts with them is untouched.
+// source title usually does NOT ("<title> O Filme", "<title> A Série", "<title> O Jogo").
+// Compared as a SUFFIX, so a title that merely starts with them is untouched.
 var enfeitesDeTitulo = [][]string{
 	{"o", "filme"}, {"the", "movie"}, {"the", "film"},
 	{"a", "série"}, {"a", "serie"}, {"the", "series"},
@@ -527,7 +527,8 @@ func ParseEpisode(name string) (EpisodeInfo, bool) {
 // Two deliberate differences from Kodi's pattern, both to avoid the false positives that a
 // loose rule produces on a library that mixes movies and episodes:
 //   - the digits follow "e" directly ("e" and "ep" glued, and "ep" may carry ONE separator:
-//     "EP01", "EP_01", "EP.01"), so "The 12 Days of Beavis" is not read as episode 12;
+//     "EP01", "EP_01", "EP.01"), so a title with a number in the middle is not read as an
+//     episode number;
 //   - the character before the "e" may not be a LETTER, so "Dome1996" is not read as episode
 //     1996, while "S1EP01" (digit before the E) and "Show.E05" still are.
 var reEpSolto = regexp.MustCompile(`(?i)(?:^|[^a-z])(?:ep[ ._-]?|e)(\d{1,4})(?:$|[^0-9a-z])`)

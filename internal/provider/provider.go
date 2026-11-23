@@ -180,9 +180,9 @@ type Similar struct {
 	// reports it (TMDB: original_title for movies, original_name for series).
 	//
 	// It exists because the LOCAL NAME being matched usually is the original title, not
-	// the translation: a folder "White Collar" compared only against the pt-BR
-	// "Crimes do Colarinho Branco" scores ~0, falls out of the top-N rescue and loses to
-	// "White Collar Blue" (measured, 94.1 vs 0). Empty when the source does not report it.
+	// the translation: a folder named in English compared only against the pt-BR translation
+	// scores ~0, falls out of the top-N rescue and loses to a longer same-name title
+	// (measured, 94.1 vs 0). Empty when the source does not report it.
 	TituloOriginal string
 	// Year are the first 4 digits of the release/first-air date, when available.
 	Year *string
@@ -285,9 +285,9 @@ type CreditoFilmografia struct {
 	// reports it (TMDB: original_title for movies, original_name for series).
 	//
 	// It exists because the LOCAL NAME being matched usually is the original title, not
-	// the translation: a folder "White Collar" compared only against the pt-BR
-	// "Crimes do Colarinho Branco" scores ~0, falls out of the top-N rescue and loses to
-	// "White Collar Blue" (measured, 94.1 vs 0). Empty when the source does not report it.
+	// the translation: a folder named in English compared only against the pt-BR translation
+	// scores ~0, falls out of the top-N rescue and loses to a longer same-name title
+	// (measured, 94.1 vs 0). Empty when the source does not report it.
 	TituloOriginal string
 	// Year are the first 4 digits of the release/first-air date, when available.
 	Year *string
@@ -650,9 +650,9 @@ type ResultadoExterno struct {
 	// reports it (TMDB: original_title for movies, original_name for series).
 	//
 	// It exists because the LOCAL NAME being matched usually is the original title, not
-	// the translation: a folder "White Collar" compared only against the pt-BR
-	// "Crimes do Colarinho Branco" scores ~0, falls out of the top-N rescue and loses to
-	// "White Collar Blue" (measured, 94.1 vs 0). Empty when the source does not report it.
+	// the translation: a folder named in English compared only against the pt-BR translation
+	// scores ~0, falls out of the top-N rescue and loses to a longer same-name title
+	// (measured, 94.1 vs 0). Empty when the source does not report it.
 	TituloOriginal string
 	// Year are the first 4 digits of the release date, when available.
 	Year *string

@@ -20,12 +20,12 @@ one is a naming problem:
    became provisional drafts. Same shape for another series (`tmdb 5565`): the entry is
    correct, TMDb simply never catalogued its episodes.
 
-2. **The tree exists but does not fit the files.** `Batman` matched "O Batman" (2004, 13
-   episodes per season) while the folder holds another Batman series (`BatmanOld_S01E14…`);
-   `Pica-Pau` matched a source that numbers its seasons `S2` and `S1940` against folders
-   named `Temporada 01..07`. In both, the matched part looks fine and the rest accumulates
-   as provisional episodes — which is why nobody noticed: only **2 of 106** affected series
-   had a completely empty tree.
+2. **The tree exists but does not fit the files.** One series matched a same-name remake (13
+   episodes per season) while the folder holds a different release of the older show; another
+   matched a source that numbers its seasons `S2` and `S1940` against folders named `Temporada
+01..07`. In both, the matched part looks fine and the rest accumulates as provisional
+   episodes — which is why nobody noticed: only **2 of 106** affected series had a completely
+   empty tree.
 
 Both were invisible: the series stays `cataloged`, the review queue fills with episodes the
 owner has no reason to suspect, and nothing in the UI compares "files that fit" against

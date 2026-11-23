@@ -63,8 +63,8 @@ const LimiarConfiancaFingerprint = 0.6
 // FOLDER very often omits (or writes when the catalog omits). Portuguese/Spanish/English/
 // French/Italian, lowercased and ASCII again after the folding of textsim.
 //
-// It exists because of a measured loss: "Clube do Terror" against "O Clube do Terror" scores
-// 82.75 with Jaro-Winkler -- 9 points BELOW LimiarAutoMatch -- so the correct show was never
+// It exists because of a measured loss: a title against the same title with a leading article
+// scores 82.75 with Jaro-Winkler -- 9 points BELOW LimiarAutoMatch -- so the correct show was never
 // taken and the item went to review while the wrong one (an exact-title remake) won the
 // ranking. An article is not part of the name.
 var artigosIniciais = map[string]bool{
@@ -75,8 +75,8 @@ var artigosIniciais = map[string]bool{
 	"il": true, "lo": true, "gli": true, "i": true,
 }
 
-// semArtigoInicial removes ONE leading article from a title ("O Clube do Terror" ->
-// "Clube do Terror"). A title made only of the article is returned as it is.
+// semArtigoInicial removes ONE leading article from a title ("O Show" -> "Show"). A title
+// made only of the article is returned as it is.
 func semArtigoInicial(titulo string) string {
 	campos := strings.Fields(titulo)
 	if len(campos) < 2 {

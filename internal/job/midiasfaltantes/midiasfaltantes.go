@@ -57,7 +57,7 @@ type ContadorMissing interface {
 
 // Titulador is the subset of *server.Server that the Handler consumes for the
 // NARRATION ONLY: the title of one entity, so the queue's `current_item` shows
-// "Mortal Kombat (1995)" instead of a bare UUID (issue #69). It is optional on
+// "<Title> (1995)" instead of a bare UUID (issue #69). It is optional on
 // purpose -- a nil Titulador (tests, direct call) makes the narration fall back
 // to the id and changes nothing in the work.
 //

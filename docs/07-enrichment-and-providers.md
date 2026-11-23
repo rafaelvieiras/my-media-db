@@ -85,7 +85,8 @@ literal title always goes first.
 The name is compared against **every title the source knows**: the translated title, the
 **original** title (free in the search payload) and, for the three closest candidates only, the
 alternative/translated titles (`/tv/{id}?append_to_response=translations`). A leading article is
-ignored on both sides — "Clube do Terror" and "O Clube do Terror" are the same name.
+ignored on both sides — `O Show` and `Show` are the same name, and that difference alone costs
+17 points of Jaro-Winkler.
 
 The year the folder states is a **score** input with a **2-year slack**, never a filter: a folder
 marked `(1990)` was measured against the 1992 show, so a 1-year gate would discard the only
@@ -112,8 +113,8 @@ and none of them is ever applied automatically:
 The two tree signals come from the same component, `internal/enrich/alertas.go`, and share
 the row with the typo hint (migration 0029 adds `reason` and the file counts). The
 difference is what the row points at: `name` and `empty_tree` carry a **real candidate**
-(another item of the same name — measured, the phantom `Aladdin` #14383 with 0 episodes has
-the real `Aladdin: A Série Animada` #2745 next to it), while `tree_mismatch` initially
+(another item of the same name — measured, a phantom entry #14383 with 0 episodes has the real
+one #2745 next to it, under the translated title), while `tree_mismatch` initially
 carries the **current identity**, because that is the thing under suspicion. The API reflects
 that in `can_apply`, so the screen never offers to reapply what the item already is.
 

@@ -6,7 +6,7 @@
 // It NEVER changes an identity. The owner's decision (21/nov/2026) was the middle ground
 // between "the alert says something is wrong" and "something changes without me": the job
 // rewrites the hint with the candidate it found, so the item screen shows
-// "suggested: O Clube do Terror (1992) - 91 episodes, fits 78/78" and one click applies it.
+// "suggested: <show title> (1992), 91 episodes, fits 78/78" and one click applies it.
 // The hint is still a hint, so ADR-0038 holds.
 //
 // Same pattern of small injected interfaces as internal/job/midiasfaltantes: it avoids an
