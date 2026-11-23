@@ -2,10 +2,9 @@
 
 - **Status:** Accepted
 - **Date:** 2026-11-22
-- **Agenda:** issue #105. 76 files of one series (X-Men, TMDB 4574) named only by their
-  absolute position (`X-Men - 14 - Até que a Morte nos Separe 1.mkv`) had no
-  `<episode>` in their NFO, and each one sat as a DRAFT episode next to the real one,
-  which had no file.
+- **Agenda:** issue #105. 76 files of one series named only by their absolute position
+  (`<series> - 14 - <episode title>.mkv`) had no `<episode>` in their NFO, and each one sat
+  as a DRAFT episode next to the real one, which had no file.
 - **Builds on:** [ADR-0021](0021-series-model-hierarchy-orderings-and-file-link.md) (the series
   model, the absolute number), [ADR-0033](0033-alternate-and-owner-orderings.md) (alternate and
   owner orderings), [ADR-0044](0044-one-nfo-per-file.md) (the NFO unit).
@@ -17,7 +16,7 @@ The parser has an absolute (anime) tier since ADR-0021: a name that carries
 resolves it against `absolute_number` in the episode's extension data.
 
 The provider fills `absolute_number` only for the series that declare it. TMDB leaves it
-empty for X-Men, so the matcher had nothing to match: `Casar` returned false, the scanner
+empty for that series, so the matcher had nothing to match: `Casar` returned false, the scanner
 created a provisional episode from the file name, and the real episode stayed fileless.
 
 What the provider DID give for that series is four alternate orderings (DVD, iTunes,
@@ -54,9 +53,9 @@ Nth episode as absolute N.
    disagreement is logged by the scanner, never silent.
 5. **A file that states a title (two or more words) matching no candidate at all goes to
    review.** Falling back to the priority there is how two files ended up on ONE episode
-   ("Um Mutante dos Diabos" took the episode of "O Valor de um Homem 1"). A name with no
-   episode title (`X-Men - 02.mkv`) does not fall under this rule: it has nothing to compare,
-   and the folder still anchors it.
+   (a name that exists in no provider list took the episode of a real one). A file with no
+   episode title (`<series> - 02.mkv`) does not fall under this rule: it has nothing to
+   compare, and the folder still anchors it.
 6. An ordering whose flattened numbering has a **hole inside a season** (season 2 starting at
    episode 5) is discarded: counting positions over a broken grid would shift every number
    after the hole. Sending the file to review is better than a wrong absolute.
@@ -71,7 +70,7 @@ Nth episode as absolute N.
   the release against every ordering (`60`/`61`) — a per-number resolution cannot see a
   permutation.
 - The season of the NFO follows the series TREE (the provider's official seasons), not the
-  folder: `X-Men - 52` in `Temporada 03` carries season 4. Kodi/Jellyfin/tinyfin read the NFO,
+  folder: absolute `52` inside the folder's third season carries season 4. Kodi/Jellyfin/tinyfin read the NFO,
   so it displays in the right place while the file stays where it was.
 - A series with no alternate ordering keeps today's behaviour: absolute without
   `absolute_number` → review.

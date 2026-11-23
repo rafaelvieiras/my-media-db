@@ -13,11 +13,11 @@ one is a naming problem:
 
 1. **The entry has no episodes.** TMDb carries phantom entries: full duplicates of a real
    series with no seasons, no episodes, an empty overview and an origin country that means
-   nothing. For `Aladdin` the library matched `tmdb 14383` (0 seasons, 0 episodes, origin
-   `IO`, homepage of an Indian site) instead of `tmdb 2745` ("Aladdin: A Série Animada",
+   nothing. One measured series matched `tmdb 14383` (0 seasons, 0 episodes, origin `IO`,
+   homepage of an Indian site) instead of `tmdb 2745` (the same name in its translated form,
    1994). The name comparison was exact and the folder had no year, so nothing vetoed it.
-   The tree imported empty, and all 86 files — with a clean `Aladdin.S01E01` — became
-   provisional drafts. Same shape for `Esquadrilha Aérea` (`tmdb 5565`): the entry is
+   The tree imported empty, and all 86 files — each with a clean `S01E01` in its name —
+   became provisional drafts. Same shape for another series (`tmdb 5565`): the entry is
    correct, TMDb simply never catalogued its episodes.
 
 2. **The tree exists but does not fit the files.** `Batman` matched "O Batman" (2004, 13
@@ -61,10 +61,10 @@ gets the warning without waiting for another full scan.
 
 The cut was measured against a production library rather than guessed:
 
-| rule                                | series selected | comment                                                        |
-| ----------------------------------- | --------------- | -------------------------------------------------------------- |
-| `prov ≥ 5` and `prov ≥ cataloged`   | **10**          | all 10 genuine (Pica-Pau 97/43, Aladdin 86/0, Batman 81/78, …) |
-| `prov ≥ 5` and `prov ≥ cataloged/2` | 11+             | `Beavis & Butt-Head` 290/430 enters on legitimate specials     |
+| rule                                | series selected | comment                                                |
+| ----------------------------------- | --------------- | ------------------------------------------------------ |
+| `prov ≥ 5` and `prov ≥ cataloged`   | **10**          | all 10 genuine (e.g. 97 vs 43, 86 vs 0, 81 vs 78)      |
+| `prov ≥ 5` and `prov ≥ cataloged/2` | 11+             | one of them enters on legitimate specials (290 vs 430) |
 
 A false negative costs nothing — the series keeps dropping drafts into the review queue,
 where it already was. A false positive costs trust in the warning, which is the only thing
@@ -91,7 +91,7 @@ that makes the owner act.
 The census counted episodes **by status**, so a series where the owner has a fraction of the
 show tripped it: 21 files of a 42-episode show means 21 cataloged episodes (each holding a file)
 and 21 draft episodes (the ones the library does not have), which satisfies "provisional ≥
-cataloged". Measured in production: `Toonsylvania`, 0 draft episodes holding a file, wearing the
+cataloged". Measured in production: a series with 0 draft episodes holding a file, wearing the
 warning. A draft episode that holds nothing is the provider's episode, not evidence against the
 match.
 

@@ -52,10 +52,9 @@ carries the underlying `id`, `season_number` and `episode_number`.
 Limits, measured:
 
 - **One entry = exactly one episode.** No field attaches two or more episodes to one entry:
-  no `combined`, no `parent_episode`, no `sub_episodes`. Confirmed on the case that matters
-  most here — _Beavis and Butt-Head_, group "The Mike Judge Collection" (type 3): **141
-  entries for 141 distinct episodes**, even though that collection merged many two-minute
-  shorts into longer units.
+  no `combined`, no `parent_episode`, no `sub_episodes`. Confirmed on the group that matters
+  most here — a collection group that merges many two-minute shorts into longer units: **141
+  entries for 141 distinct episodes**.
 - No duplicates inside a group: 277 entries / 277 distinct episodes in the Blu-ray order of 2316.
 - Groups are **community data and often absent**: **4549** (_Comedians in Cars Getting
   Coffee_) returned **0 groups**. An order may simply not exist for a given series.

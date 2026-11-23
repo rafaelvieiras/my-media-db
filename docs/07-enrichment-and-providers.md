@@ -87,8 +87,8 @@ The name is compared against **every title the source knows**: the translated ti
 alternative/translated titles (`/tv/{id}?append_to_response=translations`). A leading article is
 ignored on both sides — "Clube do Terror" and "O Clube do Terror" are the same name.
 
-The year the folder states is a **score** input with a **2-year slack**, never a filter: the
-measured `Clube do Terror (1990)` is the 1992 show, so a 1-year gate would discard the only
+The year the folder states is a **score** input with a **2-year slack**, never a filter: a folder
+marked `(1990)` was measured against the 1992 show, so a 1-year gate would discard the only
 correct candidate. A candidate outside the slack is discarded, which is what keeps a remake out.
 
 Before anything is written, the **shape** of the tree is checked: the provider's tree must be able
@@ -140,8 +140,9 @@ gap without touching a single identity:
    differs from the current identity.
 
 Nothing is applied: the owner still clicks once per series. That keeps ADR-0038 intact and
-turns 14 alerts that said "this is wrong" into 14 alerts that say which identity to use —
-`Clube do Terror` → `O Clube do Terror (1992), score 100, 91 episodes for 78 files`.
+turns 14 alerts that said "this is wrong" into 14 alerts that say which identity to use — the
+folder name, an arrow, and the candidate it points at with the score and the episode/file count
+(`score 100, 91 episodes for 78 files`).
 
 **The identity is kept when the tree is empty on purpose.** Revoking it would make the next
 scan try the same name, pick the same broken entry and revoke it again — a loop with a tree
