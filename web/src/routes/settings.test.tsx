@@ -273,6 +273,21 @@ function corpoDoPut(fetchMock: ReturnType<typeof fetchRouter>, url: string) {
   return JSON.parse((putCall![1] as RequestInit).body as string) as unknown
 }
 
+// salvarYtdlp clicks the section's save button, waits for the success message and
+// returns the body of the yt-dlp PUT — the closing step of every write test of that
+// section.
+async function salvarYtdlp(
+  user: ReturnType<typeof userEvent.setup>,
+  secao: ReturnType<typeof within>,
+  fetchMock: ReturnType<typeof fetchRouter>,
+) {
+  await user.click(secao.getByRole('button', { name: BOTAO_SALVAR }))
+  await waitFor(() =>
+    expect(secao.getByText('Settings saved.')).toBeInTheDocument(),
+  )
+  return corpoDoPut(fetchMock, '/api/v1/settings/ytdlp')
+}
+
 describe('SettingsScreen', () => {
   it('reads the current config and seeds the form', async () => {
     const secaoIdiomas = await renderForm(fetchRouter())
@@ -643,12 +658,8 @@ describe('SettingsScreen', () => {
 
     const input = secao.getByLabelText('yt-dlp custom binary path')
     await user.type(input, '/opt/yt-dlp')
-    await user.click(secao.getByRole('button', { name: BOTAO_SALVAR }))
 
-    await waitFor(() =>
-      expect(secao.getByText('Settings saved.')).toBeInTheDocument(),
-    )
-    expect(corpoDoPut(fetchMock, '/api/v1/settings/ytdlp')).toEqual({
+    expect(await salvarYtdlp(user, secao, fetchMock)).toEqual({
       custom_binary_path: '/opt/yt-dlp',
     })
   })
@@ -667,12 +678,8 @@ describe('SettingsScreen', () => {
 
     const input = secao.getByLabelText('yt-dlp custom binary path')
     await user.clear(input)
-    await user.click(secao.getByRole('button', { name: BOTAO_SALVAR }))
 
-    await waitFor(() =>
-      expect(secao.getByText('Settings saved.')).toBeInTheDocument(),
-    )
-    expect(corpoDoPut(fetchMock, '/api/v1/settings/ytdlp')).toEqual({
+    expect(await salvarYtdlp(user, secao, fetchMock)).toEqual({
       custom_binary_path: null,
     })
   })

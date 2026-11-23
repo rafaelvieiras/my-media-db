@@ -250,10 +250,8 @@ function CopyButton({ label, valor }: { label: string; valor: string }) {
   }
 
   return (
-    <Button type="button" variant="outline" size="sm" onClick={copiar}>
-      {/* The feedback is announced, not only painted: a `role="status"` inside the
-          button is what the screen reader gets when the label swaps. */}
-      <span role="status" className="inline-flex items-center gap-1">
+    <>
+      <Button type="button" variant="outline" size="sm" onClick={copiar}>
         {copiado ? (
           <>
             <Check className="size-4" aria-hidden />
@@ -265,7 +263,14 @@ function CopyButton({ label, valor }: { label: string; valor: string }) {
             {label}
           </>
         )}
+      </Button>
+      {/* The feedback is announced, not only painted: the visible label swaps, so this
+          live region is what the screen reader hears. It lives NEXT TO the button, not
+          inside it — a `role="status"` subtree inside a button is skipped by the
+          accessible name computation (the button would lose the name the E2E/AT need). */}
+      <span role="status" className="sr-only">
+        {copiado ? t('settings.webhook.copied') : ''}
       </span>
-    </Button>
+    </>
   )
 }

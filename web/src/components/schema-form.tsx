@@ -363,24 +363,12 @@ function LinhaCampo({
 
   return (
     <label className="flex flex-col gap-1.5 text-sm" htmlFor={inputId}>
-      <span className="font-medium">
-        {d.label}
-        {obrigatorio ? (
-          <span aria-hidden className="text-destructive">
-            {' '}
-            *
-          </span>
-        ) : null}
-      </span>
+      <RotuloDoCampo d={d} obrigatorio={obrigatorio} />
       <div className="flex items-center gap-2">
         {controle}
         {limpar}
       </div>
-      {erro ? (
-        <span id={erroId} role="alert" className="text-xs text-destructive">
-          {erro}
-        </span>
-      ) : null}
+      <TextoDoErro id={erroId} erro={erro} />
     </label>
   )
 }
@@ -422,15 +410,7 @@ function CampoTags({
 
   return (
     <div className="flex flex-col gap-1.5 text-sm">
-      <span className="font-medium">
-        {d.label}
-        {obrigatorio ? (
-          <span aria-hidden className="text-destructive">
-            {' '}
-            *
-          </span>
-        ) : null}
-      </span>
+      <RotuloDoCampo d={d} obrigatorio={obrigatorio} />
       <div className="flex flex-wrap items-center gap-1.5">
         {tags.map((tag) => (
           <Badge key={tag} variant="outline" className="gap-1 pr-1">
@@ -469,12 +449,44 @@ function CampoTags({
         </Button>
         {limpar}
       </div>
-      {erro ? (
-        <span id={erroId} role="alert" className="text-xs text-destructive">
-          {erro}
+      <TextoDoErro id={erroId} erro={erro} />
+    </div>
+  )
+}
+
+// RotuloDoCampo is the label of a descriptor plus the required asterisk: the `*` is
+// `aria-hidden` because the meaning travels on `aria-required` of the control (the
+// screen reader announces the requirement once, not twice).
+function RotuloDoCampo({
+  d,
+  obrigatorio,
+}: {
+  d: FieldDescriptor
+  obrigatorio?: boolean
+}) {
+  return (
+    <span className="font-medium">
+      {d.label}
+      {obrigatorio ? (
+        <span aria-hidden className="text-destructive">
+          {' '}
+          *
         </span>
       ) : null}
-    </div>
+    </span>
+  )
+}
+
+// TextoDoErro is the inline error of the field, linked by `aria-describedby` to the
+// control (`id`) and announced as an alert when it appears.
+function TextoDoErro({ id, erro }: { id: string; erro: string | null }) {
+  if (erro === null) {
+    return null
+  }
+  return (
+    <span id={id} role="alert" className="text-xs text-destructive">
+      {erro}
+    </span>
   )
 }
 

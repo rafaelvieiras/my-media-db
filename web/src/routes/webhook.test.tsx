@@ -135,6 +135,12 @@ describe('WebhookScreen', () => {
     expect(
       await screen.findByRole('button', { name: 'Copied!' }),
     ).toBeInTheDocument()
+    // The announcement lives in a live region NEXT TO the button: a `role="status"`
+    // inside it would be skipped by the accessible name computation (Chrome drops the
+    // name, the E2E hit it) — the button keeps its name, the region says "Copied!".
+    expect(screen.getAllByRole('status').map((r) => r.textContent)).toContain(
+      'Copied!',
+    )
 
     await user.click(screen.getByRole('button', { name: 'Copy webhook URL' }))
     expect(writeText).toHaveBeenCalledWith(

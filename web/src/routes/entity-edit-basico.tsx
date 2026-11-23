@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { SchemaForm } from '@/components/schema-form'
@@ -105,6 +105,16 @@ function EntityEditBasicoForm({
   const navigate = useNavigate()
   const t = useT()
 
+  // "Leave without saving" guard: the dirty state of THIS block (the SchemaForm owns it)
+  // plus the in-flight save. While the PATCH runs the guard steps aside — the redirect to
+  // the detail after a SUCCESSFUL save is not "leaving without saving" (the creation
+  // screens use the same rule). A failure puts it back, so the typed data is not lost.
+  const [sujo, setSujo] = useState(false)
+  const [salvando, setSalvando] = useState(false)
+  useEffect(() => {
+    onDirtyChange(sujo && !salvando)
+  }, [sujo, salvando, onDirtyChange])
+
   const sementes = valoresDeEdicao(fields, blob, lang, entity)
 
   // Invalidation after the edit: `['entity', id]` is a PREFIX — it drops the entity in all
@@ -146,7 +156,8 @@ function EntityEditBasicoForm({
       navigate({ to: '/entities/$id', params: { id } })
       return
     }
-    salvar.mutate(patch)
+    setSalvando(true)
+    salvar.mutate(patch, { onError: () => setSalvando(false) })
   }
 
   const mensagemErro =
@@ -173,7 +184,7 @@ function EntityEditBasicoForm({
       onClear={(campo, traduzivel) => limpar.mutate({ campo, traduzivel })}
       clearDisabled={ocupado}
       lang={lang}
-      onDirtyChange={onDirtyChange}
+      onDirtyChange={setSujo}
     />
   )
 }

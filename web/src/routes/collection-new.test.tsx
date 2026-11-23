@@ -1,28 +1,25 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ReactNode } from 'react'
 import { CollectionNewScreen } from '@/routes/collection-new'
 import { useUnsavedGuard } from '@/lib/use-unsaved-guard'
 import { I18nProvider } from '@/lib/i18n'
 import { renderWithClient } from '@/test/render'
 import { okJson } from '@/test/entity-fixtures'
-import { stubCriacao } from '@/test/criacao-harness'
+import { navegacaoDaCriacao, stubCriacao } from '@/test/criacao-harness'
 import { erroJson } from '@/test/detail-harness'
 
-// The "leave without saving" guard is the router blocker: outside a
-// RouterProvider it cannot run, so it is mocked here (the hook has its own test and
-// each screen asserts the argument it passes).
+// `useUnsavedGuard` talks to the router blocker, which needs a RouterProvider: here it
+// becomes a spy so the collection screen test can assert the dirty argument (the hook
+// itself is covered by its own test).
 vi.mock('@/lib/use-unsaved-guard', () => ({ useUnsavedGuard: vi.fn() }))
 
 // Route `/new/collection`: creates a LOCAL collection (title + description) and
-// navigates to `/entities/{id}`; the 422 (empty title) appears inline.
-const spies = vi.hoisted(() => ({ navigate: vi.fn() }))
-
-vi.mock('@tanstack/react-router', () => ({
-  useNavigate: () => spies.navigate,
-  Link: ({ children }: { children: ReactNode }) => <a href="#">{children}</a>,
-}))
+// navigates to `/entities/{id}`; the 422 (empty title) appears inline. The mocked
+// router comes from the shared harness of the creation screens.
+vi.mock('@tanstack/react-router', async () =>
+  (await import('@/test/criacao-harness')).roteadorDaCriacao(),
+)
 
 const fetchRouter = (resp: () => Response) =>
   stubCriacao('/api/v1/collections', resp)
@@ -30,7 +27,7 @@ const fetchRouter = (resp: () => Response) =>
 afterEach(() => {
   vi.restoreAllMocks()
   localStorage.clear()
-  spies.navigate.mockReset()
+  navegacaoDaCriacao.navigate.mockReset()
 })
 
 describe('CollectionNewScreen', () => {
@@ -55,7 +52,7 @@ describe('CollectionNewScreen', () => {
     await user.click(screen.getByRole('button', { name: 'Create collection' }))
 
     await vi.waitFor(() =>
-      expect(spies.navigate).toHaveBeenCalledWith({
+      expect(navegacaoDaCriacao.navigate).toHaveBeenCalledWith({
         to: '/entities/$id',
         params: { id: 'col-9' },
       }),
@@ -73,7 +70,7 @@ describe('CollectionNewScreen', () => {
     await user.click(screen.getByRole('button', { name: 'Create collection' }))
 
     expect(await screen.findByText('titulo obrigatorio')).toBeInTheDocument()
-    expect(spies.navigate).not.toHaveBeenCalled()
+    expect(navegacaoDaCriacao.navigate).not.toHaveBeenCalled()
   })
 
   it('renders the copy in pt-BR when the interface language is pt-BR', async () => {

@@ -1,28 +1,24 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ReactNode } from 'react'
 import { ItemNewScreen } from '@/routes/item-new'
 import { useUnsavedGuard } from '@/lib/use-unsaved-guard'
 import { renderWithClient } from '@/test/render'
 import { okJson } from '@/test/entity-fixtures'
-import { stubCriacao } from '@/test/criacao-harness'
+import { navegacaoDaCriacao, stubCriacao } from '@/test/criacao-harness'
 import { erroJson } from '@/test/detail-harness'
 
-// The "leave without saving" guard is the router blocker: outside a
-// RouterProvider it cannot run, so it is mocked here (the hook has its own test and
-// each screen asserts the argument it passes).
+// The guarding hook is a router blocker: without a RouterProvider it cannot run, so
+// it is swapped for a plain spy (the hook has its own test) — the item screen test
+// only checks the argument it receives on the dirty transition.
 vi.mock('@/lib/use-unsaved-guard', () => ({ useUnsavedGuard: vi.fn() }))
 
 // Route `/new/item`: the schema-driven form creates a LOCAL item and
-// navigates to `/entities/{id}`; the 422 appears inline. `useNavigate` is a spy; `Link`
-// becomes an <a>.
-const spies = vi.hoisted(() => ({ navigate: vi.fn() }))
-
-vi.mock('@tanstack/react-router', () => ({
-  useNavigate: () => spies.navigate,
-  Link: ({ children }: { children: ReactNode }) => <a href="#">{children}</a>,
-}))
+// navigates to `/entities/{id}`; the 422 appears inline. `useNavigate` is a spy and
+// `Link` becomes an <a> (both come from the shared harness of the creation screens).
+vi.mock('@tanstack/react-router', async () =>
+  (await import('@/test/criacao-harness')).roteadorDaCriacao(),
+)
 
 // fetchRouter serves the descriptors (GET) and routes POST /entities to `resp`.
 const fetchRouter = (resp: () => Response) =>
@@ -30,7 +26,7 @@ const fetchRouter = (resp: () => Response) =>
 
 afterEach(() => {
   vi.restoreAllMocks()
-  spies.navigate.mockReset()
+  navegacaoDaCriacao.navigate.mockReset()
 })
 
 describe('ItemNewScreen', () => {
@@ -46,7 +42,7 @@ describe('ItemNewScreen', () => {
     await user.click(screen.getByRole('button', { name: 'Create item' }))
 
     await vi.waitFor(() =>
-      expect(spies.navigate).toHaveBeenCalledWith({
+      expect(navegacaoDaCriacao.navigate).toHaveBeenCalledWith({
         to: '/entities/$id',
         params: { id: 'mv-3' },
       }),
@@ -102,7 +98,7 @@ describe('ItemNewScreen', () => {
         ([, init]) => (init as RequestInit | undefined)?.method === 'POST',
       ),
     ).toBe(false)
-    expect(spies.navigate).not.toHaveBeenCalled()
+    expect(navegacaoDaCriacao.navigate).not.toHaveBeenCalled()
   })
 
   it('Enter in the title submits the form', async () => {
@@ -113,7 +109,7 @@ describe('ItemNewScreen', () => {
     await user.type(await screen.findByLabelText('Título'), 'Duna{Enter}')
 
     await vi.waitFor(() =>
-      expect(spies.navigate).toHaveBeenCalledWith({
+      expect(navegacaoDaCriacao.navigate).toHaveBeenCalledWith({
         to: '/entities/$id',
         params: { id: 'mv-7' },
       }),
@@ -142,7 +138,7 @@ describe('ItemNewScreen', () => {
     await user.click(screen.getByRole('button', { name: 'Create item' }))
 
     expect(await screen.findByText('titulo obrigatorio')).toBeInTheDocument()
-    expect(spies.navigate).not.toHaveBeenCalled()
+    expect(navegacaoDaCriacao.navigate).not.toHaveBeenCalled()
   })
 
   it('tells the leave guard the screen is pristine, then dirty after typing', async () => {

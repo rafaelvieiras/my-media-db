@@ -55,6 +55,8 @@ interface Opcoes {
   blob?: OverrideBlob
   entityOver?: Partial<ResolvedEntity>
   patchErro?: { status: number; code: string; message: string }
+  // PATCH that stays unanswered until the test releases it (the in-flight window).
+  patchPendente?: Promise<Response>
 }
 
 function fetchRouter(opts: Opcoes, espioes: Espioes) {
@@ -75,6 +77,9 @@ function fetchRouter(opts: Opcoes, espioes: Espioes) {
       return okJson(blob)
     }
     if (path === '/api/v1/entities/e1/override' && method === 'PATCH') {
+      if (opts.patchPendente) {
+        return opts.patchPendente
+      }
       espioes.onPatch(
         u.searchParams.get('lang'),
         JSON.parse(String(init?.body)),
@@ -320,6 +325,30 @@ describe('EntityEditBasicoScreen — leave without saving guard (0073/0080)', ()
     await user.click(linkVoltar())
     // The link is plain navigation now: intercepting it is the blocker's job.
     expect(spies.navigate).not.toHaveBeenCalled()
+  })
+
+  it('while the PATCH is in flight the guard steps aside: a save is not a leave', async () => {
+    let liberar: (r: Response) => void = () => {}
+    const patchPendente = new Promise<Response>((resolve) => {
+      liberar = resolve
+    })
+    const { user } = await editar({ patchPendente })
+    await user.type(screen.getByLabelText('Título'), 'Duna')
+    await waitFor(() => expect(useUnsavedGuard).toHaveBeenLastCalledWith(true))
+
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    // With the PATCH unanswered the guard already sees a pristine section: the redirect
+    // that follows a SUCCESSFUL save must not ask "leave without saving?". (The E2E of
+    // the edit journey caught the opposite: the product dialog right after saving.)
+    await waitFor(() => expect(useUnsavedGuard).toHaveBeenLastCalledWith(false))
+
+    liberar(okJson(baseEntity()))
+    await waitFor(() =>
+      expect(spies.navigate).toHaveBeenCalledWith({
+        to: '/entities/$id',
+        params: { id: 'e1' },
+      }),
+    )
   })
 
   it('editing the Title marks the section dirty, and Cancel still works', async () => {
